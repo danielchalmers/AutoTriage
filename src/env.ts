@@ -35,20 +35,22 @@ export function getConfig(): Config {
   const singleIssue = core.getInput('issue-number');
   const multiIssues = core.getInput('issue-numbers');
 
+  const issueNumber = singleIssue ? Number(singleIssue) : undefined;
+  const issueNumbers = parseNumbers(multiIssues);
+
   return {
     owner,
     repo,
     token,
     geminiApiKey,
     enabled,
-    issueNumber: singleIssue ? Number(singleIssue) : undefined,
-    issueNumbers: parseNumbers(multiIssues),
+    ...(issueNumber !== undefined ? { issueNumber } : {}),
+    ...(issueNumbers ? { issueNumbers } : {}),
     promptPath,
     dbPath,
     modelFast,
     modelPro,
     labelAllowlist: labelAllowlist.length ? labelAllowlist : undefined,
     maxTimelineEvents: Number.isFinite(maxTimelineEvents) ? maxTimelineEvents : 50,
-  };
+  } as Config;
 }
-

@@ -14,6 +14,13 @@ export type TriageDb = Record<string, {
   labels: string[];
 }>;
 
+export type ActionPlan = {
+  labels?: { toAdd: string[]; toRemove: string[]; merged: string[] };
+  commentBody?: string;
+  newTitle?: string;
+  close?: boolean;
+};
+
 export type Config = {
   owner: string;
   repo: string;
@@ -29,4 +36,3 @@ export type Config = {
   labelAllowlist?: string[];
   maxTimelineEvents: number;
 };
-
