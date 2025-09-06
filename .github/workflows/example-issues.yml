@@ -10,11 +10,11 @@ permissions:
 
 jobs:
   triage_issue:
-    if: ${{ secrets.GEMINI_API_KEY != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: AutoTriage - triage issue
+        if: ${{ secrets.GEMINI_API_KEY != '' }}
         uses: ./
         with:
           issue-number: ${{ github.event.issue.number }}
