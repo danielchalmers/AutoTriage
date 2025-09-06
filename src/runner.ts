@@ -1,34 +1,13 @@
 import * as core from '@actions/core';
 import { AnalysisResult, Config, TriageDb } from './types';
-import { getIssue, listOpenIssues, getOctokit, isBot, listRepoLabels } from './github';
+import { getIssue, listOpenIssues, getOctokit, listRepoLabels } from './github';
 import { buildMetadata, buildPrompt } from './prompt';
-import { callGemini } from './gemini';
 import { saveArtifact } from './artifacts';
 import { TriageOperation } from './operations';
 import { planOperations } from './planner';
+import { writeAnalysisToDb, getPreviousReasoning } from './db';
+import { evaluateStage } from './analysis';
 
-type StageName = 'quick' | 'review';
-
-async function evaluateStage(
-  cfg: Config,
-  issueNumber: number,
-  model: string,
-  basePrompt: string,
-  stage: StageName
-): Promise<AnalysisResult | null> {
-  const prompt = basePrompt;
-  saveArtifact(issueNumber, `gemini-input-${model}.${stage}.md`, prompt);
-  try {
-    const res = await callGemini(prompt, model, cfg.geminiApiKey, issueNumber, cfg.modelTemperature);
-    saveArtifact(issueNumber, `analysis-${model}.${stage}.json`, JSON.stringify(res, null, 2));
-    core.info(`${model} [${stage}] OK for #${issueNumber}`);
-    return res;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    core.warning(`${model} [${stage}] failed for #${issueNumber}: ${message}`);
-    return null;
-  }
-}
 
 export async function processIssue(
   cfg: Config,
@@ -40,8 +19,7 @@ export async function processIssue(
   const issue = await getIssue(octokit, cfg.owner, cfg.repo, issueNumber);
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: string | null = dbEntry?.lastTriaged || null;
-  // Backward compat: use prior 'reason' if present
-  const previousReasoning: string = (dbEntry as any)?.reasoning || (dbEntry as any)?.reason || '';
+  const previousReasoning: string = getPreviousReasoning(triageDb, issueNumber);
 
   const metadata = await buildMetadata(issue);
   const basePrompt = await buildPrompt(
@@ -73,6 +51,8 @@ export async function processIssue(
   // If quick succeeded and produced no operations, skip review stage entirely
   if (quickAnalysis && ops.length === 0) {
     core.info(`#${issueNumber}: quick stage found no operations; skipping review stage.`);
+    // Persist triage metadata from quick analysis even when no actions are needed
+    if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
     return 0;
   }
 
@@ -116,14 +96,7 @@ export async function processIssue(
     core.info(`#${issueNumber}: review stage has no actions.`);
   }
 
-  if (cfg.dbPath && cfg.enabled) {
-    triageDb[issueNumber] = {
-      lastTriaged: new Date().toISOString(),
-      reasoning: reviewAnalysis.reasoning || 'no reasoning',
-      summary: reviewAnalysis.summary || (issue.title || 'no summary'),
-      labels: Array.isArray(reviewAnalysis.labels) ? reviewAnalysis.labels : [],
-    } as any;
-  }
+  if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title);
   return performedCount;
 }
 
