@@ -91,11 +91,16 @@ Examples
               artifacts/
 
 Project Prompt
-- The prompt is your policy and labeling logic. The action injects the item body, metadata, timeline, triage context, and an output contract. Keep it concise and explicit.
-- Start with `examples/AutoTriage.prompt` and customize labels, rules, and tone for your project.
+- Your project policy lives at `.github/scripts/AutoTriage.prompt`. The action injects the item body, metadata, timeline, triage context, and an output contract.
+- Keep the policy concise and explicit. Use Markdown (HTML) comments `<!-- ... -->` for editor-only notes; the assistant ignores anything inside these comments.
+- A minimal starter template is included; customize labels, rules, links, and tone for your project.
+
+Analysis Flow
+- Two-pass analysis: a quick pass (fast model) followed by a review pass (pro model) when needed.
+- If the quick pass proposes any operations or fails, the review pass runs and may critique/confirm the quick result. Actions are taken only from the review pass.
 
 Artifacts
-- The action saves per-issue artifacts under `./artifacts` in the runner workspace: Gemini input, raw outputs by model (flash/pro), and parsed analyses.
+- The action saves per-issue artifacts under `./artifacts` in the runner workspace: Gemini inputs, raw outputs by model for each stage (quick/review), and planned operations.
 
 Backlog Example
 - A complete backlog workflow demonstrating cache and artifact upload is provided at `examples/workflows/batch-triage.yml`. Copy it into `.github/workflows/` in your repo to enable the schedule/dispatch flow.

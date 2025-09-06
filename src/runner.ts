@@ -38,12 +38,6 @@ export async function processIssue(
 ): Promise<number> {
   const octokit = getOctokit(cfg.token);
   const issue = await getIssue(octokit, cfg.owner, cfg.repo, issueNumber);
-
-  if (isBot(issue)) {
-    core.info(`#${issueNumber} created by bot; skipping.`);
-    return 0;
-  }
-
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: string | null = dbEntry?.lastTriaged || null;
   const previousReasoning: string = dbEntry?.reason || '';
