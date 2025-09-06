@@ -7,17 +7,7 @@ import { saveArtifact } from './artifacts';
 import { TriageOperation } from './operations';
 import { planOperations } from './planner';
 
-type StageName = 'plan' | 'final';
-
-function buildRunSection(stage: StageName, model: string): string {
-  return `
-=== SECTION: RUN MODE ===
-Stage: ${stage}
-Model: ${model}
-Task: Propose all actions you would take based on the instructions above.
-If you would take no actions, return required fields but omit all optional fields.
-`;
-}
+type StageName = 'quick' | 'review';
 
 async function evaluateStage(
   cfg: Config,
@@ -26,7 +16,7 @@ async function evaluateStage(
   basePrompt: string,
   stage: StageName
 ): Promise<AnalysisResult | null> {
-  const prompt = `${basePrompt}\n${buildRunSection(stage, model)}`;
+  const prompt = basePrompt;
   saveArtifact(issueNumber, `gemini-input-${model}.${stage}.md`, prompt);
   try {
     const res = await callGemini(prompt, model, cfg.geminiApiKey, issueNumber);
@@ -40,14 +30,7 @@ async function evaluateStage(
   }
 }
 
-async function executeOperations(cfg: Config, issue: any, ops: TriageOperation[]): Promise<void> {
-  const octokit = getOctokit(cfg.token);
-  for (const op of ops) {
-    await op.perform(octokit, cfg, issue);
-  }
-}
-
-export async function processSingle(
+export async function processIssue(
   cfg: Config,
   triageDb: TriageDb,
   issueNumber: number
@@ -77,46 +60,53 @@ export async function processSingle(
     cfg.maxTimelineEvents
   );
 
-  // Stage 1: plan (fast model)
-  const first = await evaluateStage(cfg, issueNumber, cfg.modelFast, basePrompt, 'plan');
-  let firstOps: TriageOperation[] = [];
-  if (first) {
-    firstOps = planOperations(cfg, issue, first, metadata);
-  }
+  // Stage 1: quick (fast model)
+  const quickAnalysis: AnalysisResult | null = await evaluateStage(
+    cfg,
+    issueNumber,
+    cfg.modelFast,
+    basePrompt,
+    'quick'
+  );
+  let ops: TriageOperation[] = [];
+  if (quickAnalysis) ops = planOperations(cfg, issue, quickAnalysis, metadata);
 
-  // If first stage succeeded and has no actions, skip second stage
-  if (first && firstOps.length === 0) {
-    core.info(`#${issueNumber}: planning stage found no actions; skipping final stage.`);
+  // If quick succeeded and produced no operations, skip review stage entirely
+  if (quickAnalysis && ops.length === 0) {
+    core.info(`#${issueNumber}: quick stage found no operations; skipping review stage.`);
     return;
   }
 
-  // Stage 2: final stage model. Only this stage's actions can be executed
-  const second = await evaluateStage(cfg, issueNumber, cfg.modelPro, basePrompt, 'final');
-  let finalOps: TriageOperation[] = [];
-  if (second) {
-    finalOps = planOperations(cfg, issue, second, metadata);
+  // If quick failed or proposed operations, evaluate review
+  let reviewAnalysis: AnalysisResult | null = null;
+  if (!quickAnalysis || ops.length > 0) {
+    reviewAnalysis = await evaluateStage(cfg, issueNumber, cfg.modelPro, basePrompt, 'review');
+    if (reviewAnalysis) {
+      ops = planOperations(cfg, issue, reviewAnalysis, metadata);
+    } else {
+      ops = [];
+    }
   }
 
-  const finalAnalysis = second || first; // For auditing; actions only from second
-  if (!finalAnalysis) {
+  if (!reviewAnalysis) {
     core.warning(`analysis failed for #${issueNumber}`);
     return;
   }
 
-  // Persist the chosen analysis for auditing
-  saveArtifact(issueNumber, 'analysis-final.json', JSON.stringify(finalAnalysis, null, 2));
-  if (finalOps.length > 0) {
-    saveArtifact(issueNumber, 'operations-final.json', JSON.stringify(finalOps.map(o => o.toJSON()), null, 2));
-    await executeOperations(cfg, issue, finalOps);
+  if (ops.length > 0) {
+    saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
+    for (const op of ops) {
+      await op.perform(octokit, cfg, issue);
+    }
   } else {
-    core.info(`#${issueNumber}: final plan has no actions.`);
+    core.info(`#${issueNumber}: review stage has no actions.`);
   }
 
   if (cfg.dbPath && cfg.enabled) {
     triageDb[issueNumber] = {
       lastTriaged: new Date().toISOString(),
-      reason: finalAnalysis.reason || 'no reason',
-      labels: Array.isArray(finalAnalysis.labels) ? finalAnalysis.labels : [],
+      reason: reviewAnalysis.reason || 'no reason',
+      labels: Array.isArray(reviewAnalysis.labels) ? reviewAnalysis.labels : [],
     };
   }
 }

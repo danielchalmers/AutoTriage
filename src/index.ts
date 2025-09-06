@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveDatabase } from './artifacts';
-import { listTargets, processSingle } from './runner';
+import { listTargets, processIssue } from './runner';
 
 async function run(): Promise<void> {
   try {
@@ -13,7 +13,7 @@ async function run(): Promise<void> {
 
     core.info(`Processing ${targets.length} item(s)`);
     for (const n of targets) {
-      await processSingle(cfg, db, n);
+      await processIssue(cfg, db, n);
     }
 
     saveDatabase(db, cfg.dbPath, cfg.enabled);
