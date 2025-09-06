@@ -1,0 +1,35 @@
+{
+  "name": "autotriage",
+  "version": "0.1.0",
+  "description": "Triage GitHub issues with AI.",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "ncc build -s -o dist src/index.ts",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsc -w",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "github-actions",
+    "typescript",
+    "triage",
+    "issues"
+  ],
+  "author": "Daniel Chalmers",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.1",
+    "typescript": "^5.5.0",
+  "rimraf": "^5.0.0",
+  "@types/node": "^20.11.0"
+  },
+  "dependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/github": "^6.0.0"
+  }
+}
