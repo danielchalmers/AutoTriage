@@ -1,5 +1,6 @@
-import { ActionPlan, AnalysisResult, Config } from './types';
+import { AnalysisResult, Config } from './types';
 import { diffLabels } from './labels';
+import { TriageOperation, UpdateLabelsOp, CreateCommentOp, UpdateTitleOp, CloseIssueOp } from './operations';
 
 function filterLabels(labels: string[] | undefined, allowlist?: string[]): string[] | undefined {
   if (!labels || labels.length === 0) return labels;
@@ -8,44 +9,37 @@ function filterLabels(labels: string[] | undefined, allowlist?: string[]): strin
   return labels.filter(l => allowed.has(l));
 }
 
-export function buildActionPlan(
+export function planOperations(
   cfg: Config,
   issue: any,
   analysis: AnalysisResult,
   metadata: any
-): [ActionPlan, boolean] {
-  let hasActions = false;
-  const plan: ActionPlan = {};
+): TriageOperation[] {
+  const ops: TriageOperation[] = [];
 
   // Labels
   if (Array.isArray(analysis.labels)) {
     const filtered = filterLabels(analysis.labels, cfg.labelAllowlist) || [];
     const current = Array.isArray(metadata.labels) ? (metadata.labels as string[]) : [];
     const { toAdd, toRemove, merged } = diffLabels(current, filtered);
-    if (toAdd.length || toRemove.length) {
-      plan.labels = { toAdd, toRemove, merged };
-      hasActions = true;
-    }
+    if (toAdd.length || toRemove.length) ops.push(new UpdateLabelsOp(toAdd, toRemove, merged));
   }
 
   // Comment
   if (typeof analysis.comment === 'string' && analysis.comment.trim().length > 0) {
     const body = `<!-- ${analysis.reason || 'No reasoning provided'} -->\n\n${analysis.comment}`;
-    plan.commentBody = body;
-    hasActions = true;
+    ops.push(new CreateCommentOp(body));
   }
 
   // Title change
   if (analysis.newTitle && analysis.newTitle.trim() && analysis.newTitle !== issue.title) {
-    plan.newTitle = analysis.newTitle;
-    hasActions = true;
+    ops.push(new UpdateTitleOp(analysis.newTitle));
   }
 
   // Close
   if (analysis.close === true) {
-    plan.close = true;
-    hasActions = true;
+    ops.push(new CloseIssueOp());
   }
 
-  return [plan, hasActions];
+  return ops;
 }

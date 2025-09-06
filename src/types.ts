@@ -4,22 +4,13 @@ export type AnalysisResult = {
   comment?: string;
   close?: boolean;
   newTitle?: string;
-  _model?: 'flash' | 'pro';
-  skipped?: boolean;
 };
 
 export type TriageDb = Record<string, {
   lastTriaged: string;
   reason: string;
   labels: string[];
-}>;
-
-export type ActionPlan = {
-  labels?: { toAdd: string[]; toRemove: string[]; merged: string[] };
-  commentBody?: string;
-  newTitle?: string;
-  close?: boolean;
-};
+}>; 
 
 export type Config = {
   owner: string;

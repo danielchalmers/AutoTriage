@@ -78,7 +78,6 @@ export async function analyzeWithModels(
   let flash: AnalysisResult | null = null;
   try {
     flash = await callGemini(prompt, modelFast, apiKey, issueNumber);
-    flash._model = 'flash';
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
@@ -88,7 +87,6 @@ export async function analyzeWithModels(
   let pro: AnalysisResult | null = null;
   try {
     pro = await callGemini(prompt, modelPro, apiKey, issueNumber);
-    pro._model = 'pro';
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
@@ -97,4 +95,3 @@ export async function analyzeWithModels(
 
   return { flash, pro };
 }
-

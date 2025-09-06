@@ -1,47 +1,11 @@
 import * as core from '@actions/core';
 import { AnalysisResult, Config, TriageDb } from './types';
-import { getIssue, listOpenIssues, getOctokit, isBot, addLabels, removeLabel, createComment, updateTitle, closeIssue } from './github';
+import { getIssue, listOpenIssues, getOctokit, isBot } from './github';
 import { buildMetadata, buildPrompt } from './prompt';
 import { callGemini } from './gemini';
 import { saveArtifact } from './artifacts';
-import { ActionPlan } from './types';
-import { buildActionPlan } from './planner';
-
- 
-
-async function executeActions(
-  cfg: Config,
-  issue: any,
-  plan: ActionPlan
-): Promise<void> {
-  const octokit = getOctokit(cfg.token);
-
-  if (plan.labels) {
-    const { toAdd, toRemove, merged } = plan.labels;
-    if (toAdd.length || toRemove.length) {
-      core.info(`Labels => ${merged.join(', ')}`);
-      if (cfg.enabled) {
-        if (toAdd.length) await addLabels(octokit, cfg.owner, cfg.repo, issue.number, toAdd);
-        for (const name of toRemove) await removeLabel(octokit, cfg.owner, cfg.repo, issue.number, name);
-      }
-    }
-  }
-
-  if (plan.commentBody) {
-    core.info(`Comment: ${plan.commentBody.substring(0, 120)}...`);
-    if (cfg.enabled) await createComment(octokit, cfg.owner, cfg.repo, issue.number, plan.commentBody);
-  }
-
-  if (plan.newTitle && plan.newTitle !== issue.title) {
-    core.info(`Title: "${issue.title}" -> "${plan.newTitle}"`);
-    if (cfg.enabled) await updateTitle(octokit, cfg.owner, cfg.repo, issue.number, plan.newTitle);
-  }
-
-  if (plan.close === true) {
-    core.info('Closing issue');
-    if (cfg.enabled) await closeIssue(octokit, cfg.owner, cfg.repo, issue.number, 'not_planned');
-  }
-}
+import { TriageOperation } from './operations';
+import { planOperations } from './planner';
 
 type StageName = 'plan' | 'final';
 
@@ -73,6 +37,13 @@ async function evaluateStage(
     const message = err instanceof Error ? err.message : String(err);
     core.warning(`${model} [${stage}] failed for #${issueNumber}: ${message}`);
     return null;
+  }
+}
+
+async function executeOperations(cfg: Config, issue: any, ops: TriageOperation[]): Promise<void> {
+  const octokit = getOctokit(cfg.token);
+  for (const op of ops) {
+    await op.perform(octokit, cfg, issue);
   }
 }
 
@@ -108,26 +79,22 @@ export async function processSingle(
 
   // Stage 1: plan (fast model)
   const first = await evaluateStage(cfg, issueNumber, cfg.modelFast, basePrompt, 'plan');
-  let firstHasActions = false;
+  let firstOps: TriageOperation[] = [];
   if (first) {
-    const [, hasActions] = buildActionPlan(cfg, issue, first, metadata);
-    firstHasActions = hasActions;
+    firstOps = planOperations(cfg, issue, first, metadata);
   }
 
   // If first stage succeeded and has no actions, skip second stage
-  if (first && !firstHasActions) {
+  if (first && firstOps.length === 0) {
     core.info(`#${issueNumber}: planning stage found no actions; skipping final stage.`);
     return;
   }
 
-  // Stage 2: final stage model. Only this stage's plan can be executed
+  // Stage 2: final stage model. Only this stage's actions can be executed
   const second = await evaluateStage(cfg, issueNumber, cfg.modelPro, basePrompt, 'final');
-  let finalPlan: ActionPlan | null = null;
-  let finalHasActions = false;
+  let finalOps: TriageOperation[] = [];
   if (second) {
-    const [plan, hasActions] = buildActionPlan(cfg, issue, second, metadata);
-    finalPlan = plan;
-    finalHasActions = hasActions;
+    finalOps = planOperations(cfg, issue, second, metadata);
   }
 
   const finalAnalysis = second || first; // For auditing; actions only from second
@@ -138,9 +105,9 @@ export async function processSingle(
 
   // Persist the chosen analysis for auditing
   saveArtifact(issueNumber, 'analysis-final.json', JSON.stringify(finalAnalysis, null, 2));
-  if (finalPlan && finalHasActions) {
-    saveArtifact(issueNumber, 'actions-final.json', JSON.stringify(finalPlan, null, 2));
-    await executeActions(cfg, issue, finalPlan);
+  if (finalOps.length > 0) {
+    saveArtifact(issueNumber, 'operations-final.json', JSON.stringify(finalOps.map(o => o.toJSON()), null, 2));
+    await executeOperations(cfg, issue, finalOps);
   } else {
     core.info(`#${issueNumber}: final plan has no actions.`);
   }
