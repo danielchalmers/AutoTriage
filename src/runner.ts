@@ -95,8 +95,15 @@ export async function processIssue(
 
   if (ops.length > 0) {
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
-    for (const op of ops) {
-      await op.perform(octokit, cfg, issue);
+    if (!cfg.enabled) {
+      core.info(`[dry-run] Skipping ${ops.length} operation(s) for #${issueNumber}.`);
+      for (const op of ops) {
+        core.info(`[dry-run] would: ${op.kind}`);
+      }
+    } else {
+      for (const op of ops) {
+        await op.perform(octokit, cfg, issue);
+      }
     }
   } else {
     core.info(`#${issueNumber}: review stage has no actions.`);
