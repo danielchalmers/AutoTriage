@@ -19,13 +19,14 @@ export async function callGemini(
       responseSchema: {
         type: 'OBJECT',
         properties: {
-          reason: { type: 'STRING' },
+          summary: { type: 'STRING' },
+          reasoning: { type: 'STRING' },
           comment: { type: 'STRING' },
           labels: { type: 'ARRAY', items: { type: 'STRING' } },
           close: { type: 'BOOLEAN' },
           newTitle: { type: 'STRING' },
         },
-        required: ['reason', 'labels']
+        required: ['summary', 'reasoning', 'labels']
       },
       temperature: temperature,
     },

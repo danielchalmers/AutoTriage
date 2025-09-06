@@ -59,12 +59,19 @@ Return only valid JSON (no Markdown fences, no prose).
 
 Only perform actions (labels, comments, edits, closing) when this prompt explicitly authorizes them and all action-specific preconditions are satisfied. 
 Do not take subjective or discretionary actions (for example: "this looks resolved", "seems low-priority", or "apply label because maintainer implied it"). 
-Never act based on your own interpretation or summary of maintainer comments — maintainer statements are not instructions unless they explicitly direct the bot. 
+Never act based on your own interpretation or summary of maintainer comments - maintainer statements are not instructions unless they explicitly direct the bot. 
 If the conditions for any action are ambiguous, incomplete, or not precisely met, do not act.
 
 Required fields (always include):
-- reason: string (explanation of analysis and every decision)
+- summary: string (one canonical, stable description of the core problem for duplicate detection; include key symptoms, affected area, minimal repro hints, and environment/version if available; avoid volatile details like timestamps, usernames, or links unless essential)
+- reasoning: string (full cumulative reasoning history; see rules below)
 - labels: array of strings (complete final label set for the issue)
+
+Reasoning history rules:
+- Treat the provided "Previous reasoning" as the prior log; include it verbatim at the start of the reasoning string.
+- Append a new single-line or short-paragraph entry for this triage run describing your analysis and actions, e.g., "I wrote a comment to ask for more information and added the 'info required' label, but a user has now provided that information so I will remove the label".
+- Prefer first-person past-tense, include concise justifications, and keep entries compact but informative.
+- This history is allowed to keep growing across runs; do not truncate prior content.
 
 Optional fields (include only when conditions are met):
 - comment: string (comment to post on the issue)

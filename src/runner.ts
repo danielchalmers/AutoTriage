@@ -40,7 +40,8 @@ export async function processIssue(
   const issue = await getIssue(octokit, cfg.owner, cfg.repo, issueNumber);
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: string | null = dbEntry?.lastTriaged || null;
-  const previousReasoning: string = dbEntry?.reason || '';
+  // Backward compat: use prior 'reason' if present
+  const previousReasoning: string = (dbEntry as any)?.reasoning || (dbEntry as any)?.reason || '';
 
   const metadata = await buildMetadata(issue);
   const basePrompt = await buildPrompt(
@@ -118,9 +119,10 @@ export async function processIssue(
   if (cfg.dbPath && cfg.enabled) {
     triageDb[issueNumber] = {
       lastTriaged: new Date().toISOString(),
-      reason: reviewAnalysis.reason || 'no reason',
+      reasoning: reviewAnalysis.reasoning || 'no reasoning',
+      summary: reviewAnalysis.summary || (issue.title || 'no summary'),
       labels: Array.isArray(reviewAnalysis.labels) ? reviewAnalysis.labels : [],
-    };
+    } as any;
   }
   return performedCount;
 }

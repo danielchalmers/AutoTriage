@@ -28,7 +28,7 @@ export function planOperations(
 
   // Comment
   if (typeof analysis.comment === 'string' && analysis.comment.trim().length > 0) {
-    const body = `<!-- ${analysis.reason || 'No reasoning provided'} -->\n\n${analysis.comment}`;
+    const body = `<!-- ${analysis.reasoning || 'No reasoning provided'} -->\n\n${analysis.comment}`;
     ops.push(new CreateCommentOp(body));
   }
 

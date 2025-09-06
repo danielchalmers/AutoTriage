@@ -21,7 +21,7 @@ inputs:
     required: false
     default: "false"
   db-path:
-    description: "Optional JSON file to persist minimal triage history across runs."
+    description: "Optional JSON file to persist per-issue summary, full reasoning history, and last triaged date."
     required: false
   model-fast:
     description: "Gemini fast model name."

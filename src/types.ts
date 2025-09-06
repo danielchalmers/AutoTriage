@@ -1,5 +1,8 @@
 export type AnalysisResult = {
-  reason: string;
+  // A canonical, stable summary of the core problem for duplicate detection
+  summary: string;
+  // Full cumulative reasoning history
+  reasoning: string;
   labels?: string[];
   comment?: string;
   close?: boolean;
@@ -8,7 +11,10 @@ export type AnalysisResult = {
 
 export type TriageDb = Record<string, {
   lastTriaged: string;
-  reason: string;
+  // Full cumulative reasoning history (append-only log)
+  reasoning: string;
+  // Canonical issue summary for duplicate detection
+  summary: string;
   labels: string[];
 }>; 
 
