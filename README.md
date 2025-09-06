@@ -47,7 +47,7 @@ Examples
 1) Single-issue triage from an issue-opened event
   - See `.github/workflows/example-issues.yml` in this repo.
 
-2) Batch triage (manual or scheduled)
+2) Backlog triage (manual or scheduled, with cache)
   on:
     workflow_dispatch:
       inputs:
@@ -61,15 +61,31 @@ Examples
       runs-on: ubuntu-latest
       steps:
         - uses: actions/checkout@v4
+        - name: Restore triage DB
+          uses: actions/cache@v4
+          with:
+            path: triage-db.json
+            key: ${{ runner.os }}-triage-db-${{ github.run_id }}
+            restore-keys: |
+              ${{ runner.os }}-triage-db-
         - name: AutoTriage (batch)
           uses: <owner>/AutoTriage@v0
           with:
             prompt-path: .github/scripts/AutoTriage.prompt
             issue-numbers: ${{ github.event.inputs.issues }}
+            db-path: triage-db.json
             enabled: true
           env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
             GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        - name: Upload artifacts
+          if: always()
+          uses: actions/upload-artifact@v4
+          with:
+            name: triage-artifacts-${{ github.run_number }}
+            path: |
+              triage-db.json
+              artifacts/
 
 Project Prompt
 - The prompt is your policy and labeling logic. The action injects the item body, metadata, timeline, triage context, and an output contract. Keep it concise and explicit.
@@ -77,6 +93,9 @@ Project Prompt
 
 Artifacts
 - The action saves per-issue artifacts under `./artifacts` in the runner workspace: Gemini input, raw outputs by model (flash/pro), and parsed analyses.
+
+Backlog Example
+- A complete backlog workflow demonstrating cache and artifact upload is provided at `examples/workflows/batch-triage.yml`. Copy it into `.github/workflows/` in your repo to enable the schedule/dispatch flow.
 
 Local Development
 - Requirements: Node 20+, npm.
@@ -96,4 +115,3 @@ Security
 
 License
 - MIT
-

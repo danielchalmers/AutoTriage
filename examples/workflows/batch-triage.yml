@@ -1,30 +1,58 @@
-name: AutoTriage Batch Example
+name: AutoTriage Backlog (Example)
 
 on:
+  schedule:
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       issues:
-        description: "Space-separated issue numbers"
+        description: 'Space-separated issue numbers'
         required: false
-  schedule:
-    - cron: "0 3 * * *"
+      enabled:
+        description: 'Enable writes (false = dry-run)'
+        type: boolean
+        required: false
 
 permissions:
   contents: read
   issues: write
 
+concurrency:
+  group: autotriage-backlog
+  cancel-in-progress: true
+
 jobs:
   triage:
+    if: ${{ secrets.GEMINI_API_KEY != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cache triage DB
+        id: cache-db
+        uses: actions/cache@v4
+        with:
+          path: triage-db.json
+          key: ${{ runner.os }}-triage-db-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-triage-db-
+
       - name: AutoTriage (batch)
         uses: ./
         with:
           prompt-path: .github/scripts/AutoTriage.prompt
           issue-numbers: ${{ github.event.inputs.issues }}
-          enabled: true
+          db-path: triage-db.json
+          enabled: ${{ github.event_name == 'workflow_dispatch' && inputs.enabled || true }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: triage-artifacts-${{ github.run_number }}
+          path: |
+            triage-db.json
+            artifacts/
