@@ -5,4 +5,4 @@ pnpm-debug.log*
 .DS_Store
 coverage/
 dist/
-
+artifacts/

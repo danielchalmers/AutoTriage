@@ -1,24 +1,30 @@
-name: AutoTriage Example (Issues Opened)
+name: AutoTriage Batch Example
 
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: "Space-separated issue numbers"
+        required: false
+  schedule:
+    - cron: "0 3 * * *"
 
 permissions:
   contents: read
   issues: write
 
 jobs:
-  comment_test:
+  triage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: AutoTriage - triage issue
+      - name: AutoTriage (batch)
         uses: ./
         with:
-          issue-number: ${{ github.event.issue.number }}
           prompt-path: .github/scripts/AutoTriage.prompt
+          issue-numbers: ${{ github.event.inputs.issues }}
           enabled: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+

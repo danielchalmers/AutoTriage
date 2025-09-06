@@ -19,7 +19,7 @@ jobs:
           node-version: 20
           cache: npm
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Typecheck
         run: npm run typecheck
       - name: Build
@@ -28,4 +28,3 @@ jobs:
         run: |
           git status --porcelain
           git diff --exit-code --name-only
-

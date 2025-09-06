@@ -1,5 +1,5 @@
 name: "AutoTriage"
-description: "AI assistant that labels issues/PRs and comments to gather info. Minimal version posts 'Test' on issues."
+description: "AI assistant that labels issues/PRs and comments to gather info using a project prompt and Gemini."
 author: "AutoTriage"
 branding:
   color: "blue"
@@ -9,6 +9,35 @@ inputs:
   issue-number:
     description: "Issue number to comment on. Defaults to the current event's issue."
     required: false
+  issue-numbers:
+    description: "Space- or comma-separated list of issue numbers to process."
+    required: false
+  prompt-path:
+    description: "Path to the project prompt file (relative to repo root)."
+    required: false
+    default: ".github/scripts/AutoTriage.prompt"
+  enabled:
+    description: "If true, performs write actions (labels/comments/close). Otherwise dry-run."
+    required: false
+    default: "false"
+  db-path:
+    description: "Optional JSON file to persist minimal triage history across runs."
+    required: false
+  model-fast:
+    description: "Gemini fast model name."
+    required: false
+    default: "gemini-2.5-flash"
+  model-pro:
+    description: "Gemini pro model name."
+    required: false
+    default: "gemini-2.5-pro"
+  label-allowlist:
+    description: "Optional comma-separated labels to allow. If set, labels outside this set are ignored."
+    required: false
+  max-timeline-events:
+    description: "Trim timeline to this many most recent events to control prompt size."
+    required: false
+    default: "50"
 
 runs:
   using: "node20"
