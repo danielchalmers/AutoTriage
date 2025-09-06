@@ -31,9 +31,6 @@ inputs:
     description: "Gemini pro model name."
     required: false
     default: "gemini-2.5-pro"
-  label-allowlist:
-    description: "Optional comma-separated labels to allow. If set, labels outside this set are ignored."
-    required: false
   max-timeline-events:
     description: "Trim timeline to this many most recent events to control prompt size."
     required: false

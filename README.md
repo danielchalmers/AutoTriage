@@ -36,8 +36,10 @@ Inputs
 - `enabled`: When `true`, performs write actions (labels/comments/close). When `false`, runs in dry-run mode and only logs.
 - `db-path`: Optional path to a JSON file for maintaining minimal state (e.g., last triaged time and last reasoning per issue).
 - `model-fast` / `model-pro`: Gemini model names (defaults: `gemini-2.5-flash`, `gemini-2.5-pro`).
-- `label-allowlist`: Optional comma-separated list of labels; suggested labels outside this set are ignored.
 - `max-timeline-events`: Limit of recent timeline events included in the prompt (default: 50).
+
+Labeling behavior
+- Suggested labels are filtered against the repository's existing label set. The action fetches labels from the repo and ignores any labels that do not exist.
 
 Permissions
 - Minimum required: `issues: write`, `contents: read`.

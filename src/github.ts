@@ -41,6 +41,17 @@ export async function listOpenIssues(octokit: any, owner: string, repo: string) 
   return issues as IssueLike[];
 }
 
+export async function listRepoLabels(octokit: any, owner: string, repo: string): Promise<string[]> {
+  const labels = await octokit.paginate(octokit.rest.issues.listLabelsForRepo, {
+    owner,
+    repo,
+    per_page: 100,
+  });
+  return (labels as any[])
+    .map((l: any) => (typeof l?.name === 'string' ? l.name : ''))
+    .filter((n: string) => n.length > 0);
+}
+
 export async function listTimelineEvents(
   octokit: any,
   owner: string,

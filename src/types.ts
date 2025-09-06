@@ -24,6 +24,5 @@ export type Config = {
   dbPath?: string;
   modelFast: string;
   modelPro: string;
-  labelAllowlist?: string[];
   maxTimelineEvents: number;
 };

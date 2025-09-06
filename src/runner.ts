@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import { AnalysisResult, Config, TriageDb } from './types';
-import { getIssue, listOpenIssues, getOctokit, isBot } from './github';
+import { getIssue, listOpenIssues, getOctokit, isBot, listRepoLabels } from './github';
 import { buildMetadata, buildPrompt } from './prompt';
 import { callGemini } from './gemini';
 import { saveArtifact } from './artifacts';
@@ -60,6 +60,9 @@ export async function processIssue(
     cfg.maxTimelineEvents
   );
 
+  // Fetch repository labels for filtering proposed labels
+  const repoLabels = await listRepoLabels(octokit, cfg.owner, cfg.repo);
+
   // Stage 1: quick (fast model)
   const quickAnalysis: AnalysisResult | null = await evaluateStage(
     cfg,
@@ -69,7 +72,7 @@ export async function processIssue(
     'quick'
   );
   let ops: TriageOperation[] = [];
-  if (quickAnalysis) ops = planOperations(cfg, issue, quickAnalysis, metadata);
+  if (quickAnalysis) ops = planOperations(cfg, issue, quickAnalysis, metadata, repoLabels);
 
   // If quick succeeded and produced no operations, skip review stage entirely
   if (quickAnalysis && ops.length === 0) {
@@ -82,7 +85,7 @@ export async function processIssue(
   if (!quickAnalysis || ops.length > 0) {
     reviewAnalysis = await evaluateStage(cfg, issueNumber, cfg.modelPro, basePrompt, 'review');
     if (reviewAnalysis) {
-      ops = planOperations(cfg, issue, reviewAnalysis, metadata);
+      ops = planOperations(cfg, issue, reviewAnalysis, metadata, repoLabels);
     } else {
       ops = [];
     }

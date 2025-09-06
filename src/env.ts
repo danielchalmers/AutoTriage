@@ -26,10 +26,6 @@ export function getConfig(): Config {
   const dbPath = core.getInput('db-path') || undefined;
   const modelFast = core.getInput('model-fast') || 'gemini-2.5-flash';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
-  const labelAllowlist = (core.getInput('label-allowlist') || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
   const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
 
   const singleIssue = core.getInput('issue-number');
@@ -50,7 +46,6 @@ export function getConfig(): Config {
     dbPath,
     modelFast,
     modelPro,
-    labelAllowlist: labelAllowlist.length ? labelAllowlist : undefined,
     maxTimelineEvents: Number.isFinite(maxTimelineEvents) ? maxTimelineEvents : 50,
   } as Config;
 }
