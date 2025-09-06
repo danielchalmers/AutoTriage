@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { IssueLike, listTimelineEvents } from './github';
-import { saveArtifact } from './artifacts';
+import { saveArtifact } from './storage';
 
 export async function buildMetadata(issue: IssueLike) {
   return {

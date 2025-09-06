@@ -2,10 +2,8 @@ import * as core from '@actions/core';
 import { AnalysisResult, Config, TriageDb } from './types';
 import { getIssue, listOpenIssues, getOctokit, listRepoLabels } from './github';
 import { buildMetadata, buildPrompt } from './prompt';
-import { saveArtifact } from './artifacts';
-import { TriageOperation } from './operations';
-import { planOperations } from './planner';
-import { writeAnalysisToDb, getPreviousReasoning } from './db';
+import { saveArtifact, writeAnalysisToDb, getPreviousReasoning } from './storage';
+import { TriageOperation, planOperations } from './triage';
 import { evaluateStage } from './analysis';
 
 

@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
-import { loadDatabase, saveDatabase } from './db';
+import { loadDatabase, saveDatabase } from './storage';
 import { listTargets, processIssue } from './runner';
 
 async function run(): Promise<void> {
