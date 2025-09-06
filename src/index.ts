@@ -10,10 +10,21 @@ async function run(): Promise<void> {
 
     const db = loadDatabase(cfg.dbPath);
     const targets = await listTargets(cfg);
+    let performedTotal = 0;
 
     core.info(`Processing ${targets.length} item(s)`);
     for (const n of targets) {
-      await processIssue(cfg, db, n);
+      const remaining = cfg.maxOperations - performedTotal;
+      if (remaining <= 0) {
+        core.info(`Max operations (${cfg.maxOperations}) reached; exiting early.`);
+        break;
+      }
+      const performed = await processIssue(cfg, db, n, remaining);
+      performedTotal += performed;
+      if (performedTotal >= cfg.maxOperations) {
+        core.info(`Max operations (${cfg.maxOperations}) reached; exiting early.`);
+        break;
+      }
     }
 
     saveDatabase(db, cfg.dbPath, cfg.enabled);
@@ -24,4 +35,3 @@ async function run(): Promise<void> {
 }
 
 run();
-

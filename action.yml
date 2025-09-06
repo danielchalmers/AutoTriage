@@ -35,6 +35,10 @@ inputs:
     description: "Trim timeline to this many most recent events to control prompt size."
     required: false
     default: "50"
+  max-operations:
+    description: "Maximum number of operations to perform across the entire run before exiting early."
+    required: false
+    default: "10"
 
 runs:
   using: "node20"

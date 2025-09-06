@@ -33,14 +33,15 @@ async function evaluateStage(
 export async function processIssue(
   cfg: Config,
   triageDb: TriageDb,
-  issueNumber: number
-) {
+  issueNumber: number,
+  remainingOps: number
+): Promise<number> {
   const octokit = getOctokit(cfg.token);
   const issue = await getIssue(octokit, cfg.owner, cfg.repo, issueNumber);
 
   if (isBot(issue)) {
     core.info(`#${issueNumber} created by bot; skipping.`);
-    return;
+    return 0;
   }
 
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
@@ -77,7 +78,7 @@ export async function processIssue(
   // If quick succeeded and produced no operations, skip review stage entirely
   if (quickAnalysis && ops.length === 0) {
     core.info(`#${issueNumber}: quick stage found no operations; skipping review stage.`);
-    return;
+    return 0;
   }
 
   // If quick failed or proposed operations, evaluate review
@@ -93,9 +94,10 @@ export async function processIssue(
 
   if (!reviewAnalysis) {
     core.warning(`analysis failed for #${issueNumber}`);
-    return;
+    return 0;
   }
 
+  let performedCount = 0;
   if (ops.length > 0) {
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
     if (!cfg.enabled) {
@@ -103,9 +105,16 @@ export async function processIssue(
       for (const op of ops) {
         core.info(`[dry-run] would: ${op.kind}`);
       }
+      return 0;
     } else {
-      for (const op of ops) {
+      const toExecute = Math.min(ops.length, Math.max(0, remainingOps));
+      for (let i = 0; i < toExecute; i++) {
+        const op = ops[i]!;
         await op.perform(octokit, cfg, issue);
+        performedCount++;
+      }
+      if (toExecute < ops.length) {
+        core.info(`Operation budget exhausted for #${issueNumber}. Executed ${toExecute}/${ops.length} planned ops.`);
       }
     }
   } else {
@@ -119,6 +128,7 @@ export async function processIssue(
       labels: Array.isArray(reviewAnalysis.labels) ? reviewAnalysis.labels : [],
     };
   }
+  return performedCount;
 }
 
 export async function listTargets(cfg: Config): Promise<number[]> {

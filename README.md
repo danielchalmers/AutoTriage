@@ -37,6 +37,7 @@ Inputs
 - `db-path`: Optional path to a JSON file for maintaining minimal state (e.g., last triaged time and last reasoning per issue).
 - `model-fast` / `model-pro`: Gemini model names (defaults: `gemini-2.5-flash`, `gemini-2.5-pro`).
 - `max-timeline-events`: Limit of recent timeline events included in the prompt (default: 50).
+- `max-operations`: Maximum number of operations to perform across the entire run before exiting early (default: 10).
 
 Labeling behavior
 - Suggested labels are filtered against the repository's existing label set. The action fetches labels from the repo and ignores any labels that do not exist.
