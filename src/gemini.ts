@@ -9,7 +9,8 @@ export async function callGemini(
   prompt: string,
   model: string,
   apiKey: string,
-  issueNumber: number
+  issueNumber: number,
+  temperature: number
 ): Promise<AnalysisResult> {
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -26,7 +27,7 @@ export async function callGemini(
         },
         required: ['reason', 'labels']
       },
-      temperature: 0.0,
+      temperature: temperature,
     },
   };
 

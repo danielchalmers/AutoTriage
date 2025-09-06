@@ -17,6 +17,7 @@ export type Config = {
   repo: string;
   token: string;
   geminiApiKey: string;
+  modelTemperature: number;
   enabled: boolean;
   issueNumber?: number;
   issueNumbers?: number[];

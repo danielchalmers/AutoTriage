@@ -31,6 +31,10 @@ inputs:
     description: "Gemini pro model name."
     required: false
     default: "gemini-2.5-pro"
+  model-temperature:
+    description: "Generation temperature for the model (0.0–2.0 typical)."
+    required: false
+    default: "1.0"
   max-timeline-events:
     description: "Trim timeline to this many most recent events to control prompt size."
     required: false

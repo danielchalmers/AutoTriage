@@ -19,7 +19,7 @@ async function evaluateStage(
   const prompt = basePrompt;
   saveArtifact(issueNumber, `gemini-input-${model}.${stage}.md`, prompt);
   try {
-    const res = await callGemini(prompt, model, cfg.geminiApiKey, issueNumber);
+    const res = await callGemini(prompt, model, cfg.geminiApiKey, issueNumber, cfg.modelTemperature);
     saveArtifact(issueNumber, `analysis-${model}.${stage}.json`, JSON.stringify(res, null, 2));
     core.info(`${model} [${stage}] OK for #${issueNumber}`);
     return res;

@@ -26,6 +26,10 @@ export function getConfig(): Config {
   const dbPath = core.getInput('db-path') || undefined;
   const modelFast = core.getInput('model-fast') || 'gemini-2.5-flash';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
+  const modelTemperature = (() => {
+    const n = Number(core.getInput('model-temperature') || '1.0');
+    return Number.isFinite(n) ? n : 1.0;
+  })();
   const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
   const maxOperations = Number(core.getInput('max-operations') || '10');
 
@@ -40,6 +44,7 @@ export function getConfig(): Config {
     repo,
     token,
     geminiApiKey,
+    modelTemperature,
     enabled,
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
