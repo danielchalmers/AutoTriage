@@ -59,20 +59,16 @@ export async function listTimelineEvents(
   issue_number: number,
   limit: number
 ) {
-  const events = await octokit.paginate(
-    octokit.request as any,
-    'GET /repos/{owner}/{repo}/issues/{issue_number}/timeline',
-    {
-      owner,
-      repo,
-      issue_number,
-      per_page: 100,
-      headers: {
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-      mediaType: { previews: ['mockingbird'] },
-    }
-  );
+  const events = await octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
+    owner,
+    repo,
+    issue_number,
+    per_page: 100,
+    headers: {
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    mediaType: { previews: ['mockingbird'] },
+  });
 
   const sliced = (events as any[]).slice(-limit);
   return sliced.map((event: any) => {
