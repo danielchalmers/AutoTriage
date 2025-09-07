@@ -10,7 +10,22 @@ function parseNumbers(input?: string): number[] | undefined {
 }
 
 export function getConfig(): Config {
-  const { owner, repo } = github.context.repo;
+  // Resolve repo context robustly
+  let { owner, repo } = github.context.repo as { owner?: string; repo?: string };
+  owner = owner || '';
+  repo = repo || '';
+  const ghRepoEnv = process.env.GITHUB_REPOSITORY || '';
+  if ((!owner || !repo) && ghRepoEnv.includes('/')) {
+    const [o, r] = ghRepoEnv.split('/', 2);
+    if (!owner) owner = o;
+    if (!repo) repo = r;
+  }
+  const payloadRepo: any = (github as any).context?.payload?.repository;
+  if (!owner && payloadRepo?.owner?.login) owner = String(payloadRepo.owner.login);
+  if (!repo && payloadRepo?.name) repo = String(payloadRepo.name);
+  if (!owner || !repo) {
+    throw new Error('Failed to resolve repository context (owner/repo). Ensure this runs in GitHub Actions with a valid repository context.');
+  }
   const token = process.env.GITHUB_TOKEN || '';
   const geminiApiKey = process.env.GEMINI_API_KEY || '';
 

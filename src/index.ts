@@ -7,9 +7,11 @@ async function run(): Promise<void> {
   try {
     const cfg = getConfig();
     core.info(`Enabled: ${cfg.enabled ? 'true' : 'false'} (dry-run if false)`);
+    core.info(`Repo: ${cfg.owner}/${cfg.repo}`);
 
     const db = loadDatabase(cfg.dbPath);
     const targets = await listTargets(cfg);
+    core.info(`Targets: ${targets.join(', ') || '(none)'}`);
     let performedTotal = 0;
 
     core.info(`Processing ${targets.length} item(s)`);
