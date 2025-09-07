@@ -33,7 +33,7 @@ Inputs
 - `issue-number`: Specific issue to process; defaults to the current event’s item if available.
 - `issue-numbers`: Space- or comma-separated list of issue numbers to process.
 - `prompt-path`: Path to your project policy prompt file (default: `.github/scripts/AutoTriage.prompt`).
-- `enabled`: When `true`, performs write actions (labels/comments/close). When `false`, runs in dry-run mode and only logs.
+- `enabled`: When `true`, performs write actions (labels/comments/close). When `false`, runs in dry-run mode and only logs. Default: `true`.
 - `db-path`: Optional path to a JSON file for maintaining minimal state per issue: last triaged time, a canonical issue summary (for duplicate detection), and the full cumulative reasoning history.
 - `model-fast` / `model-pro`: Gemini model names (defaults: `gemini-2.5-flash`, `gemini-2.5-pro`).
 - `model-temperature`: Sampling temperature for the model output (default: 1.0).

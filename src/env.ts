@@ -21,7 +21,7 @@ export function getConfig(): Config {
     throw new Error('GEMINI_API_KEY is missing. Add it as a repository secret.');
   }
 
-  const enabled = (core.getInput('enabled') || 'false').toLowerCase() === 'true';
+  const enabled = (core.getInput('enabled') || 'true').toLowerCase() === 'true';
   const promptPath = core.getInput('prompt-path') || '.github/scripts/AutoTriage.prompt';
   const dbPath = core.getInput('db-path') || undefined;
   const modelFast = core.getInput('model-fast') || 'gemini-2.5-flash';

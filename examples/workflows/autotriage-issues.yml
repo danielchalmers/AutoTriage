@@ -1,7 +1,7 @@
-name: AutoTriage (PRs)
+name: AutoTriage (Issues)
 
 on:
-  pull_request_target:
+  issues:
     types: [opened, edited]
 
 permissions:
@@ -9,17 +9,18 @@ permissions:
   issues: write
 
 jobs:
-  triage_pr:
+  triage_issue:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: AutoTriage - triage PR
+      - name: AutoTriage - triage issue
         if: ${{ secrets.GEMINI_API_KEY != '' }}
-        uses: ./
+        uses: danielchalmers/AutoTriage@main
         with:
-          issue-number: ${{ github.event.pull_request.number }}
+          issue-number: ${{ github.event.issue.number }}
           prompt-path: .github/scripts/AutoTriage.prompt
           enabled: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+

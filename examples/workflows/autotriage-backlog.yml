@@ -1,4 +1,4 @@
-name: AutoTriage Backlog (Example)
+name: AutoTriage Backlog
 
 on:
   schedule:
@@ -38,7 +38,7 @@ jobs:
             ${{ runner.os }}-triage-db-
 
       - name: AutoTriage (batch)
-        uses: ./
+        uses: danielchalmers/AutoTriage@main
         with:
           prompt-path: .github/scripts/AutoTriage.prompt
           issue-numbers: ${{ github.event.inputs.issues }}
@@ -56,3 +56,4 @@ jobs:
           path: |
             triage-db.json
             artifacts/
+

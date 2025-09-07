@@ -19,7 +19,7 @@ inputs:
   enabled:
     description: "If true, performs write actions (labels/comments/close). Otherwise dry-run."
     required: false
-    default: "false"
+    default: "true"
   db-path:
     description: "Optional JSON file to persist per-issue summary, full reasoning history, and last triaged date."
     required: false
