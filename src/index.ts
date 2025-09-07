@@ -28,7 +28,17 @@ async function run(): Promise<void> {
     }
 
     saveDatabase(db, cfg.dbPath, cfg.enabled);
-  } catch (err) {
+  } catch (err: any) {
+    // Surface richer context for Octokit errors
+    const status = err?.status || err?.response?.status;
+    const method = err?.request?.method;
+    const url = err?.request?.url;
+    const reqId = err?.response?.headers?.['x-github-request-id'];
+    if (status || method || url) {
+      if (status) core.error(`HTTP ${status}`);
+      if (method && url) core.error(`${method} ${url}`);
+      if (reqId) core.error(`x-github-request-id: ${reqId}`);
+    }
     const message = err instanceof Error ? err.message : String(err);
     core.setFailed(message);
   }
