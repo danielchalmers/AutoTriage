@@ -11,7 +11,7 @@ export function saveArtifact(issueNumber: number, name: string, contents = ''): 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
-    console.error(`Failed to save artifact ${name} for #${issueNumber}: ${message}`);
+    console.error(`⚠️ Failed to save artifact ${name} for #${issueNumber}: ${message}`);
   }
 }
 
@@ -24,7 +24,7 @@ export function loadDatabase(dbPath?: string): TriageDb {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
-    console.error(`Failed to load database: ${message}. Starting with empty database.`);
+    console.error(`⚠️ Failed to load database: ${message}. Starting with empty database.`);
     return {};
   }
 }
@@ -37,7 +37,7 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
-    console.error(`Failed to save database: ${message}`);
+    console.error(`⚠️ Failed to save database: ${message}`);
   }
 }
 

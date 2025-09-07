@@ -48,7 +48,7 @@ export async function processIssue(
 
   // If quick succeeded and produced no operations, skip review stage entirely
   if (quickAnalysis && ops.length === 0) {
-    core.info(`#${issueNumber}: quick stage found no operations; skipping review stage.`);
+    core.info(`⏭️ #${issueNumber}: quick stage found no operations; skipping review stage.`);
     // Persist triage metadata from quick analysis even when no actions are needed
     if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
     return 0;
@@ -66,7 +66,7 @@ export async function processIssue(
   }
 
   if (!reviewAnalysis) {
-    core.warning(`analysis failed for #${issueNumber}`);
+    core.warning(`⚠️ analysis failed for #${issueNumber}`);
     return 0;
   }
 
@@ -74,9 +74,10 @@ export async function processIssue(
   if (ops.length > 0) {
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
     if (!cfg.enabled) {
-      core.info(`[dry-run] Skipping ${ops.length} operation(s) for #${issueNumber}.`);
+      core.info(`🧪 [dry-run] Skipping ${ops.length} operation(s) for #${issueNumber}.`);
       for (const op of ops) {
-        core.info(`[dry-run] would: ${op.kind}`);
+        const emoji = op.kind === 'labels' ? '🏷️' : op.kind === 'comment' ? '💬' : op.kind === 'title' ? '✏️' : op.kind === 'close' ? '🔒' : '•';
+        core.info(`🧪 [dry-run] would: ${emoji} ${op.kind}`);
       }
       return 0;
     } else {
@@ -87,11 +88,11 @@ export async function processIssue(
         performedCount++;
       }
       if (toExecute < ops.length) {
-        core.info(`Operation budget exhausted for #${issueNumber}. Executed ${toExecute}/${ops.length} planned ops.`);
+        core.info(`⏳ Operation budget exhausted for #${issueNumber}. Executed ${toExecute}/${ops.length} planned ops.`);
       }
     }
   } else {
-    core.info(`#${issueNumber}: review stage has no actions.`);
+    core.info(`⏭️ #${issueNumber}: review stage has no actions.`);
   }
 
   if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title);

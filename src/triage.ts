@@ -16,7 +16,8 @@ export class UpdateLabelsOp implements TriageOperation {
   }
   async perform(octokit: any, cfg: Config, issue: any): Promise<void> {
     if (this.toAdd.length || this.toRemove.length) {
-      core.info(`Labels => ${this.merged.join(', ')}`);
+      const labelLine = this.merged.length ? this.merged.join(', ') : 'none';
+      core.info(`🏷️ Labels: ${labelLine}`);
       if (cfg.enabled) {
         if (this.toAdd.length) await addLabels(octokit, cfg.owner, cfg.repo, issue.number, this.toAdd);
         for (const name of this.toRemove) await removeLabel(octokit, cfg.owner, cfg.repo, issue.number, name);
@@ -30,7 +31,8 @@ export class CreateCommentOp implements TriageOperation {
   constructor(public body: string) {}
   toJSON() { return { kind: this.kind, body: this.body }; }
   async perform(octokit: any, cfg: Config, issue: any): Promise<void> {
-    core.info(`Comment: ${this.body.substring(0, 120)}...`);
+    const preview = this.body.replace(/\s+/g, ' ').slice(0, 120);
+    core.info(`💬 Posting comment for #${issue.number}: ${preview}${this.body.length > 120 ? '…' : ''}`);
     if (cfg.enabled) await createComment(octokit, cfg.owner, cfg.repo, issue.number, this.body);
   }
 }
@@ -40,7 +42,7 @@ export class UpdateTitleOp implements TriageOperation {
   constructor(public newTitle: string) {}
   toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
   async perform(octokit: any, cfg: Config, issue: any): Promise<void> {
-    core.info(`Title: "${issue.title}" -> "${this.newTitle}"`);
+    core.info('✏️ Updating title from "' + issue.title + '" to "' + this.newTitle + '"');
     if (cfg.enabled) await updateTitle(octokit, cfg.owner, cfg.repo, issue.number, this.newTitle);
   }
 }
@@ -49,7 +51,7 @@ export class CloseIssueOp implements TriageOperation {
   kind: 'close' = 'close';
   toJSON() { return { kind: this.kind }; }
   async perform(octokit: any, cfg: Config, issue: any): Promise<void> {
-    core.info('Closing issue');
+    core.info('🔒 Closing issue');
     if (cfg.enabled) await closeIssue(octokit, cfg.owner, cfg.repo, issue.number, 'not_planned');
   }
 }

@@ -85,11 +85,11 @@ export async function evaluateStage(
   try {
     const res = await callGemini(prompt, model, cfg.geminiApiKey, issueNumber, cfg.modelTemperature);
     saveArtifact(issueNumber, `analysis-${model}.${stage}.json`, JSON.stringify(res, null, 2));
-    core.info(`${model} [${stage}] OK for #${issueNumber}`);
+    core.info(`🤖 ${model} [${stage}] #${issueNumber}: OK`);
     return res;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    core.warning(`${model} [${stage}] failed for #${issueNumber}: ${message}`);
+    core.warning(`⚠️ ${model} [${stage}] #${issueNumber}: ${message}`);
     return null;
   }
 }
