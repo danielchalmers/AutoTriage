@@ -64,10 +64,6 @@ export async function listTimelineEvents(
     repo,
     issue_number,
     per_page: 100,
-    headers: {
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-    mediaType: { previews: ['mockingbird'] },
   });
 
   const sliced = (events as any[]).slice(-limit);
@@ -124,10 +120,6 @@ export async function closeIssue(
   reason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | undefined = 'not_planned'
 ) {
   await octokit.rest.issues.update({ owner, repo, issue_number, state: 'closed', state_reason: reason });
-}
-
-export function isBot(issue: IssueLike): boolean {
-  return (issue.user?.type || '').toLowerCase() === 'bot';
 }
 
 export type { IssueLike };

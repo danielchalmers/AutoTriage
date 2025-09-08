@@ -56,6 +56,5 @@ export function writeAnalysisToDb(
     lastTriaged: new Date().toISOString(),
     reasoning: analysis.reasoning || 'no reasoning',
     summary: analysis.summary || (fallbackTitle || 'no summary'),
-    labels: Array.isArray(analysis.labels) ? analysis.labels : [],
   } as any;
 }
