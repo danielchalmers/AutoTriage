@@ -86,10 +86,9 @@ export async function evaluateStage(
     const res = await callGemini(prompt, model, cfg.geminiApiKey, issueNumber, cfg.modelTemperature);
     saveArtifact(issueNumber, `analysis-${model}.${stage}.json`, JSON.stringify(res, null, 2));
 
-    // Log full, unsquashed summary and reasoning (inline expressions)
-    core.info(`🤖 ${model} [${stage}] #${issueNumber}: OK`);
-    core.info(`summary:\n${(res as any).summary ?? ''}`);
-    core.info(`reasoning:\n${(res as any).reasoning ?? ''}`);
+    core.info(`🤖 ${model} [${stage}] #${issueNumber}:`);
+    core.info(`💭 ${(res as any).summary ?? ''}`);
+    core.info(`💭 ${(res as any).reasoning ?? ''}`);
     return res;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

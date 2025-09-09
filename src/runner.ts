@@ -18,9 +18,9 @@ export async function processIssue(
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: string | null = dbEntry?.lastTriaged || null;
   const previousReasoning: string = getPreviousReasoning(triageDb, issueNumber);
-
+  const repoLabels = await listRepoLabels(octokit, cfg.owner, cfg.repo);
   const metadata = await buildMetadata(issue);
-  const basePrompt = await buildPrompt(
+  const basePromptQuick = await buildPrompt(
     octokit,
     cfg.owner,
     cfg.repo,
@@ -33,14 +33,13 @@ export async function processIssue(
   );
 
   // Fetch repository labels for filtering proposed labels
-  const repoLabels = await listRepoLabels(octokit, cfg.owner, cfg.repo);
 
   // Stage 1: quick (fast model)
   const quickAnalysis: AnalysisResult | null = await evaluateStage(
     cfg,
     issueNumber,
     cfg.modelFast,
-    basePrompt,
+    basePromptQuick,
     'quick'
   );
   let ops: TriageOperation[] = [];
@@ -57,7 +56,18 @@ export async function processIssue(
   // If quick failed or proposed operations, evaluate review
   let reviewAnalysis: AnalysisResult | null = null;
   if (!quickAnalysis || ops.length > 0) {
-    reviewAnalysis = await evaluateStage(cfg, issueNumber, cfg.modelPro, basePrompt, 'review');
+    const basePromptReview = await buildPrompt(
+      octokit,
+      cfg.owner,
+      cfg.repo,
+      issue,
+      metadata,
+      lastTriaged,
+      quickAnalysis?.reasoning || previousReasoning,
+      cfg.promptPath,
+      cfg.maxTimelineEvents
+    );
+    reviewAnalysis = await evaluateStage(cfg, issueNumber, cfg.modelPro, basePromptReview, 'review');
     if (reviewAnalysis) {
       ops = planOperations(cfg, issue, reviewAnalysis, metadata, repoLabels);
     } else {

@@ -52,35 +52,31 @@ ${JSON.stringify(timelineReport, null, 2)}
 === SECTION: TRIAGE CONTEXT ===
 Last triaged: ${lastTriaged || 'never'}
 Previous reasoning: ${previousReasoning || 'none'}
-Current date: ${new Date().toISOString()}. Do all date logic by explicit comparison to the provided "Current date" timestamp (no vague relative wording).
+Current date: ${new Date().toISOString()}. Do all date logic by explicit comparison.
 
 === SECTION: OUTPUT FORMAT ===
-Return only valid JSON (no Markdown fences, no prose).
-
-Only perform actions (labels, comments, edits, closing) when this prompt explicitly authorizes them and all action-specific preconditions are satisfied. 
-Do not take subjective or discretionary actions (for example: "this looks resolved", "seems low-priority", or "apply label because maintainer implied it"). 
-Never act based on your own interpretation or summary of maintainer comments - maintainer statements are not instructions unless they explicitly direct the bot. 
-If the conditions for any action are ambiguous, incomplete, or not precisely met, do not act.
+Core rules:
+- Return only valid JSON (no Markdown fences, no prose).
+- Only perform actions (labels, comments, edits, closing) when this prompt explicitly authorizes them and all action-specific preconditions are satisfied. 
+- If the conditions for any action are ambiguous, incomplete, or not precisely met, do not act.
+- Only include an optional field if the prompt explicitly authorizes the action
+- Do not include fields with null values or empty strings
+- Prefer first-person past-tense, include concise justifications, and keep entries compact but informative.
 
 Required fields (always include):
-- summary: string (one canonical, stable description of the core problem for duplicate detection; include key symptoms, affected area, minimal repro hints, and environment/version if available; avoid volatile details like timestamps, usernames, or links unless essential)
+- summary: string (stable description of the core problem for duplicate detection; include key symptoms, affected area, minimal repro hints, and environment/version if available; avoid volatile details like timestamps, usernames, or links unless essential)
 - reasoning: string (full cumulative reasoning history; see rules below)
 - labels: array of strings (complete final label set for the issue)
 
 Reasoning history rules:
-- Treat the provided "Previous reasoning" as the prior log; include it verbatim at the start of the reasoning string.
-- Append a new single-line or short-paragraph entry for this triage run describing your analysis and actions, e.g., "I wrote a comment to ask for more information and added the 'info required' label, but a user has now provided that information so I will remove the label".
-- Prefer first-person past-tense, include concise justifications, and keep entries compact but informative.
-- This history is allowed to keep growing across runs; do not truncate prior content.
+- Include the provided 'Previous reasoning' verbatim at the start of the reasoning string; keep the log append-only (never truncate).
+- Append a compact first-person entry for this run (analysis + actions) and briefly self-debate whether you agree with the prior reasoning, citing concrete evidence from the body or timeline.
+- If changing course, state the new evidence and why the prior view no longer holds; otherwise explain why it still holds.
 
 Optional fields (include only when conditions are met):
 - comment: string (comment to post on the issue)
 - close: boolean (set to true to close the issue)  
 - newTitle: string (new title for the issue)
-
-Inclusion rules for optional fields:
-- Only include an optional field if the prompt explicitly authorizes the action
-- Do not include fields with null values or empty strings
 `;
 
   saveArtifact(issue.number, 'gemini-input.md', promptString);

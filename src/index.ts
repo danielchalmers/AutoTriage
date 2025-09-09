@@ -11,7 +11,6 @@ async function run(): Promise<void> {
 
     const db = loadDatabase(cfg.dbPath);
     const targets = await listTargets(cfg);
-    core.info(`🎯 Targets: ${targets.join(', ') || '(none)'}`);
     let performedTotal = 0;
 
     core.info(`▶️ Processing ${targets.length} item(s)`);
