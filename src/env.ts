@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { Config } from './types';
+import type { Config } from "./storage";
 
 function parseNumbers(input?: string): number[] | undefined {
   if (!input) return undefined;
@@ -37,20 +37,15 @@ export function getConfig(): Config {
   }
 
   const enabled = (core.getInput('enabled') || 'true').toLowerCase() === 'true';
-  const promptPath = core.getInput('prompt-path') || 'AutoTriage.prompt';
+  const promptPath = core.getInput('prompt-path') || '.github/scripts/AutoTriage.prompt';
   const dbPath = core.getInput('db-path') || undefined;
   const modelFast = core.getInput('model-fast') || 'gemini-2.5-flash';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
-  const modelTemperature = (() => {
-    const n = Number(core.getInput('model-temperature') || '1.0');
-    return Number.isFinite(n) ? n : 1.0;
-  })();
+  const modelTemperature = core.getInput('model-temperature') || '1.0';
   const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
   const maxOperations = Number(core.getInput('max-operations') || '10');
-
   const singleIssue = core.getInput('issue-number');
   const multiIssues = core.getInput('issue-numbers');
-
   const issueNumber = singleIssue ? Number(singleIssue) : undefined;
   const issueNumbers = parseNumbers(multiIssues);
 

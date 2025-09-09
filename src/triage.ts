@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
-import { AnalysisResult, Config } from './types';
+import type { Config } from "./storage";
+import type { AnalysisResult } from "./analysis";
 import { addLabels, createComment, removeLabel, updateTitle, closeIssue } from './github';
 
 export interface TriageOperation {
@@ -8,7 +9,7 @@ export interface TriageOperation {
   perform(octokit: any, cfg: Config, issue: any): Promise<void>;
 }
 
-export class UpdateLabelsOp implements TriageOperation {
+class UpdateLabelsOp implements TriageOperation {
   kind: 'labels' = 'labels';
   constructor(public toAdd: string[], public toRemove: string[], public merged: string[]) {}
   toJSON() {
@@ -26,7 +27,7 @@ export class UpdateLabelsOp implements TriageOperation {
   }
 }
 
-export class CreateCommentOp implements TriageOperation {
+class CreateCommentOp implements TriageOperation {
   kind: 'comment' = 'comment';
   constructor(public body: string) {}
   toJSON() { return { kind: this.kind, body: this.body }; }
@@ -37,7 +38,7 @@ export class CreateCommentOp implements TriageOperation {
   }
 }
 
-export class UpdateTitleOp implements TriageOperation {
+class UpdateTitleOp implements TriageOperation {
   kind: 'title' = 'title';
   constructor(public newTitle: string) {}
   toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
@@ -47,7 +48,7 @@ export class UpdateTitleOp implements TriageOperation {
   }
 }
 
-export class CloseIssueOp implements TriageOperation {
+class CloseIssueOp implements TriageOperation {
   kind: 'close' = 'close';
   toJSON() { return { kind: this.kind }; }
   async perform(octokit: any, cfg: Config, issue: any): Promise<void> {
@@ -78,7 +79,6 @@ function filterLabels(labels: string[] | undefined, repoLabels: string[] | undef
 }
 
 export function planOperations(
-  cfg: Config,
   issue: any,
   analysis: AnalysisResult,
   metadata: any,

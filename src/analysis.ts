@@ -1,6 +1,17 @@
 import * as core from '@actions/core';
-import { AnalysisResult, Config } from './types';
 import { saveArtifact } from './storage';
+import { buildPrompt } from './prompt';
+import type { IssueLike } from './github';
+import type { Config } from './storage';
+
+export type AnalysisResult = {
+  summary: string;
+  reasoning: string;
+  labels?: string[];
+  comment?: string;
+  close?: boolean;
+  newTitle?: string;
+};
 
 type GeminiResponse = {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -11,7 +22,7 @@ async function callGemini(
   model: string,
   apiKey: string,
   issueNumber: number,
-  temperature: number
+  temperature: string
 ): Promise<AnalysisResult> {
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -29,7 +40,7 @@ async function callGemini(
         },
         required: ['summary', 'reasoning', 'labels']
       },
-      temperature: temperature,
+      temperature: temperature
     },
   };
 
@@ -71,28 +82,39 @@ async function callGemini(
   }
 }
 
-export type StageName = 'quick' | 'review';
-
-export async function evaluateStage(
+export async function generateAnalysis(
   cfg: Config,
-  issueNumber: number,
+  issue: IssueLike,
+  metadata: any,
+  lastTriaged: string | null,
+  previousReasoning: string,
   model: string,
-  basePrompt: string,
-  stage: StageName
+  timelineEvents: any[]
 ): Promise<AnalysisResult | null> {
-  const prompt = basePrompt;
-  saveArtifact(issueNumber, `gemini-input-${model}.${stage}.md`, prompt);
-  try {
-    const res = await callGemini(prompt, model, cfg.geminiApiKey, issueNumber, cfg.modelTemperature);
-    saveArtifact(issueNumber, `analysis-${model}.${stage}.json`, JSON.stringify(res, null, 2));
+  const prompt = await buildPrompt(
+    issue,
+    metadata,
+    lastTriaged,
+    previousReasoning,
+    cfg.promptPath,
+    timelineEvents
+  );
 
-    core.info(`🤖 ${model} [${stage}] #${issueNumber}:`);
+  saveArtifact(issue.number, `gemini-input-${model}.md`, prompt);
+  let analysis: AnalysisResult | null = null;
+  try {
+    const res = await callGemini(prompt, model, cfg.geminiApiKey, issue.number, cfg.modelTemperature);
+    saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(res, null, 2));
+    core.info(`🤖 ${model} #${issue.number}:`);
     core.info(`💭 ${(res as any).summary ?? ''}`);
     core.info(`💭 ${(res as any).reasoning ?? ''}`);
-    return res;
+    analysis = res;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    core.warning(`⚠️ ${model} [${stage}] #${issueNumber}: ${message}`);
-    return null;
+    core.warning(`⚠️ ${model} #${issue.number}: ${message}`);
+    analysis = null;
   }
+
+  return analysis;
 }
+

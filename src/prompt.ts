@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { IssueLike, listTimelineEvents } from './github';
+import type { IssueLike } from './github';
 import { saveArtifact } from './storage';
 
-export async function buildMetadata(issue: IssueLike) {
+export function buildMetadata(issue: IssueLike) {
   return {
     title: issue.title,
     state: issue.state,
@@ -25,19 +25,15 @@ export async function buildMetadata(issue: IssueLike) {
 }
 
 export async function buildPrompt(
-  octokit: any,
-  owner: string,
-  repo: string,
   issue: IssueLike,
   metadata: any,
   lastTriaged: string | null,
   previousReasoning: string,
   promptPath: string,
-  maxTimelineEvents: number
+  timelineEvents: any[]
 ) {
   const resolvedPath = path.isAbsolute(promptPath) ? promptPath : path.join(process.cwd(), promptPath);
   const basePrompt = fs.readFileSync(resolvedPath, 'utf8');
-  const timelineReport = await listTimelineEvents(octokit, owner, repo, issue.number, maxTimelineEvents);
   const promptString = `${basePrompt}
 
 === SECTION: BODY OF ISSUE TO ANALYZE ===
@@ -47,7 +43,7 @@ ${issue.body || ''}
 ${JSON.stringify(metadata, null, 2)}
 
 === SECTION: ISSUE TIMELINE (JSON) ===
-${JSON.stringify(timelineReport, null, 2)}
+${JSON.stringify(timelineEvents, null, 2)}
 
 === SECTION: TRIAGE CONTEXT ===
 Last triaged: ${lastTriaged || 'never'}

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { AnalysisResult, TriageDb } from './types';
+import type { AnalysisResult } from "./analysis";
 
 export function saveArtifact(issueNumber: number, name: string, contents = ''): void {
   try {
@@ -58,3 +58,30 @@ export function writeAnalysisToDb(
     summary: analysis.summary || (fallbackTitle || 'no summary'),
   } as any;
 }
+
+export type TriageDb = Record<string, {
+  lastTriaged: string;
+  // Full cumulative reasoning history (append-only log)
+  reasoning: string;
+  // Canonical issue summary for duplicate detection
+  summary: string;
+  labels?: string[];
+}>;
+
+export type Config = {
+  owner: string;
+  repo: string;
+  token: string;
+  geminiApiKey: string;
+  modelTemperature: string;
+  enabled: boolean;
+  issueNumber?: number;
+  issueNumbers?: number[];
+  promptPath: string;
+  dbPath?: string;
+  modelFast: string;
+  modelPro: string;
+  maxTimelineEvents: number;
+  maxOperations: number;
+};
+

@@ -5,7 +5,7 @@ Overview
 - It is written in TypeScript, bundles with ncc, and exposes lean inputs for easy reuse across repositories.
 
 Quick Start
-- Add a project policy prompt file (recommended path): `.github/scripts/AutoTriage.prompt`. See `examples/AutoTriage.prompt` for a starter template.
+- Add a project policy prompt file (recommended path and default): `.github/scripts/AutoTriage.prompt`. See `examples/AutoTriage.prompt` for a starter template.
 - Add a workflow in your repo:
 
   .github/workflows/autotriage.yml
@@ -36,7 +36,7 @@ Inputs
 - `enabled`: When `true`, performs write actions (labels/comments/close). When `false`, runs in dry-run mode and only logs. Default: `true`.
 - `db-path`: Optional path to a JSON file for maintaining minimal state per issue: last triaged time, a canonical issue summary (for duplicate detection), and the full cumulative reasoning history.
 - `model-fast` / `model-pro`: Gemini model names (defaults: `gemini-2.5-flash`, `gemini-2.5-pro`).
-- `model-temperature`: Sampling temperature for the model output (default: 1.0).
+- `model-temperature`: Sampling temperature forwarded as a string (default: `"1.0"`).
 - `max-timeline-events`: Limit of recent timeline events included in the prompt (default: 50).
 - `max-operations`: Maximum number of operations to perform across the entire run before exiting early (default: 10).
 
@@ -49,7 +49,7 @@ Permissions
 
 Examples
 1) Single-issue triage from an issue-opened event
-  - See `.github/workflows/example-issues.yml` in this repo.
+  - See `.github/workflows/issues.yml` in this repo.
 
 2) Backlog triage (manual or scheduled, with cache)
   on:
@@ -104,7 +104,7 @@ Artifacts
 - The action saves per-issue artifacts under `./artifacts` in the runner workspace: Gemini inputs, raw outputs by model for each stage (quick/review), and planned operations.
 
 Backlog Example
-- A complete backlog workflow demonstrating cache and artifact upload is provided at `examples/workflows/batch-triage.yml`. Copy it into `.github/workflows/` in your repo to enable the schedule/dispatch flow.
+- A complete backlog workflow demonstrating cache and artifact upload is provided at `examples/workflows/autotriage-backlog.yml`. Copy it into `.github/workflows/` in your repo to enable the schedule/dispatch flow.
 
 Local Development
 - Requirements: Node 20+, npm.
