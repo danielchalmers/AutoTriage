@@ -6,7 +6,7 @@ interface GeminiResponse {
 }
 
 export class GeminiClient {
-  constructor(private apiKey: string, private fetchFn: typeof fetch = fetch) {}
+  constructor(private apiKey: string, private fetchFn: typeof fetch = fetch) { }
 
   async generate(prompt: string, model: string, temperature: string, issueNumber: number): Promise<AnalysisResult> {
     const payload = {

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { AnalysisResult } from "./analysis";
 
+// Best-effort write; failures are non-fatal and only logged to stderr.
 export function saveArtifact(issueNumber: number, name: string, contents = ''): void {
   try {
     const artifactsDir = path.join(process.cwd(), 'artifacts');
@@ -41,6 +42,7 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
   }
 }
 
+// Return prior reasoning log (older field alias supported for forward compatibility).
 export function getPreviousReasoning(db: TriageDb, issueNumber: number): string {
   const entry = db[String(issueNumber)] as any;
   return (entry?.reasoning || entry?.reason || '') as string;
@@ -63,7 +65,7 @@ export type TriageDb = Record<string, {
   lastTriaged: string;
   // Full cumulative reasoning history (append-only log)
   reasoning: string;
-  // Canonical issue summary for duplicate detection
+  // Canonical issue summary for duplicate detection / clustering
   summary: string;
   labels?: string[];
 }>;

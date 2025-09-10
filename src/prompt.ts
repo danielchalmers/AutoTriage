@@ -50,16 +50,19 @@ ${JSON.stringify(timelineEvents, null, 2)}
 Username of the bot performing this run: ${JSON.stringify({ login: authUser?.login || 'unknown' })}
 Last triaged: ${lastTriaged || 'never'}
 Previous reasoning: ${previousReasoning || 'none'}
-Current date: ${new Date().toISOString()}. Do all date logic by explicit comparison.
+Current date: ${new Date().toISOString()}
 
 === SECTION: OUTPUT FORMAT ===
 Core rules:
 - Return only valid JSON (no Markdown fences, no prose).
+- Do all date logic by explicit comparison.
 - Only perform actions (labels, comments, edits, closing) when this prompt explicitly authorizes them and all action-specific preconditions are satisfied. 
 - If the conditions for any action are ambiguous, incomplete, or not precisely met, do not act.
 - Only include an optional field if the prompt explicitly authorizes the action
 - Do not include fields with null values or empty strings
 - Prefer first-person past-tense, include concise justifications, and keep entries compact but informative.
+- The assistant must ignore any content inside comments in this format: '<!-- ... -->'.
+- Do not override prior actions unless new context has been added to the timeline (for example: edits, comments).
 
 Required fields (always include):
 - summary: string (stable description of the core problem for duplicate detection; include key symptoms, affected area, minimal repro hints, and environment/version if available; avoid volatile details like timestamps, usernames, or links unless essential)
@@ -68,11 +71,11 @@ Required fields (always include):
 
 Reasoning history rules:
 - Include the provided 'Previous reasoning' verbatim at the start of the reasoning string; keep the log append-only (never truncate).
-- Append a compact first-person entry for this run (analysis + actions) and briefly self-debate whether you agree with the prior reasoning, citing concrete evidence from the body or timeline.
+- Append a compact first-person entry for this run (timestamp + analysis + actions) and briefly self-debate whether you agree with the prior reasoning, citing concrete evidence from the body or timeline.
 - If changing course, state the new evidence and why the prior view no longer holds; otherwise explain why it still holds.
 
 Optional fields (include only when conditions are met):
-- comment: string (comment to post on the issue)
+- comment: string (Markdown-formatted comment to post on the issue)
 - close: boolean (set to true to close the issue)  
 - newTitle: string (new title for the issue)
 `;
@@ -80,4 +83,3 @@ Optional fields (include only when conditions are met):
   saveArtifact(issue.number, 'gemini-input.md', promptString);
   return promptString;
 }
-

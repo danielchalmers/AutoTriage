@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import type { Config } from "./storage";
 
+// Parse a space / comma separated list of integers; ignore non-numeric fragments.
 function parseNumbers(input?: string): number[] | undefined {
   if (!input) return undefined;
   const parts = input.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
@@ -9,6 +10,10 @@ function parseNumbers(input?: string): number[] | undefined {
   return nums.length ? nums : undefined;
 }
 
+/**
+ * Resolve runtime config. Throws early with actionable messages if mandatory
+ * secrets (GITHUB_TOKEN, GEMINI_API_KEY) are missing or repo context is absent.
+ */
 export function getConfig(): Config {
   // Resolve repo context robustly
   let { owner, repo } = github.context.repo as { owner?: string; repo?: string };
@@ -29,12 +34,8 @@ export function getConfig(): Config {
   const token = process.env.GITHUB_TOKEN || '';
   const geminiApiKey = process.env.GEMINI_API_KEY || '';
 
-  if (!token) {
-    throw new Error('GITHUB_TOKEN is missing. Provide via env using secrets.GITHUB_TOKEN.');
-  }
-  if (!geminiApiKey) {
-    throw new Error('GEMINI_API_KEY is missing. Add it as a repository secret.');
-  }
+  if (!token) throw new Error('GITHUB_TOKEN missing (add: secrets.GITHUB_TOKEN).');
+  if (!geminiApiKey) throw new Error('GEMINI_API_KEY missing (add it as a repository secret).');
 
   const enabled = (core.getInput('enabled') || 'true').toLowerCase() === 'true';
   const promptPath = core.getInput('prompt-path') || '.github/AutoTriage.prompt';

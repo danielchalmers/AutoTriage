@@ -14,6 +14,10 @@ export type AnalysisResult = {
   newTitle?: string;
 };
 
+/**
+ * Run a single model pass (fast or pro) returning the structured triage analysis.
+ * Never throws for model logic errors; returns null if the model call or parse fails.
+ */
 export async function generateAnalysis(
   cfg: Config,
   gemini: GeminiClient,

@@ -1,137 +1,82 @@
 # AutoTriage
 
-Lean AI triage for GitHub Issues & PRs (labels, info requests, title cleanup, optional closure) powered by a project prompt + Gemini.
+AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes items, applies / removes labels, posts comments, suggests better titles, and can optionally close items. It is driven by a project-specific prompt plus two Gemini model passes (fast first, then a higher quality review only if needed). A lightweight JSON DB (optional) preserves cumulative reasoning so model decisions stay explainable and append-only.
 
-## 1. What It Does
+## Key Features
 
-AutoTriage reads a configurable policy prompt, injects issue/PR context (body, metadata, recent timeline, prior reasoning), then:
+* Two-stage analysis (fast pass, conditional review pass) to save tokens.
+* Deterministic prompt template you fully control (checked into your repo).
+* Cumulative reasoning log: every run appends instead of overwriting context.
+* Dry-run mode for safe experimentation (no writes).
+* Explicit op budget (max operations) to keep runs predictable.
+* Artifacts (prompt + model raw output + planned operations) for debugging.
 
-* Suggests & applies existing repository labels (never creates new ones)
-* Posts a single clarifying comment when information is missing
-* Optionally rewrites unclear/misleading titles
-* Optionally closes issues when policy criteria are explicitly met
-* Maintains a lightweight JSON DB (summary + cumulative reasoning history) for duplicate detection and consistency
+## Inputs
 
-Two-pass safety: fast model first; if it proposes actions (or fails), a review (pro) model re-evaluates before anything is written.
+| Input | Description | Default |
+|-------|-------------|---------|
+| `issue-number` | Single issue or PR number to triage (defaults to event context). | - |
+| `issue-numbers` | Space or comma separated list of issue/PR numbers to triage explicitly. | - |
+| `prompt-path` | Repo-relative path to the prompt template. | `.github/AutoTriage.prompt` |
+| `enabled` | `true` = apply changes, `false` = dry-run only. | `true` |
+| `db-path` | Optional JSON file storing per-issue summary + reasoning history. | - |
+| `model-fast` | Gemini model for the first (fast) pass. | `gemini-2.5-flash` |
+| `model-pro` | Gemini model for the second (review) pass. | `gemini-2.5-pro` |
+| `model-temperature` | Sampling temperature (0-2). Lower = more deterministic. | `1.0` |
+| `max-timeline-events` | Max most-recent timeline events included in prompt. | `50` |
+| `max-operations` | Cap on actions (label/comment/title/close) per run. | `10` |
 
-## 2. Quick Start
+## Required Secrets
 
-Use the examples below as starting points:
+| Secret | Purpose |
+|--------|---------|
+| `GITHUB_TOKEN` | Standard Actions token (provided automatically in most workflows). |
+| `GEMINI_API_KEY` | API key for Google Gemini models. |
 
-Examples directory: `examples/`
+## Prompt Template
 
-* Minimal policy prompt: `examples/AutoTriage.prompt`
-* Issue workflow: `examples/workflows/autotriage-issues.yml`
-* PR workflow: `examples/workflows/autotriage-prs.yml`
-* Backlog batch/schedule: `examples/workflows/autotriage-backlog.yml`
+Create a project prompt (default path: `.github/AutoTriage.prompt`). Keep: rules, labeling conventions, closure criteria, tone for comments, title style guidelines. The action injects issue body, metadata, timeline, prior reasoning, and a strict JSON output schema section.
 
-Recommended prompt location (default): `.github/AutoTriage.prompt`
+## Example Workflows
 
-Required secrets:
+See ready-to-use workflow files in [`examples/workflows`](./examples/workflows/):
 
-* `GEMINI_API_KEY`
-* `GITHUB_TOKEN` (provided automatically, just set permissions)
+* [`autotriage-issues.yml`](./examples/workflows/autotriage-issues.yml) – run on issue events.
+* [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) – run on pull request events.
+* [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) – scheduled/backlog sweep.
 
-Minimum workflow permissions:
+Copy one into `.github/workflows/` and adjust `enabled`, schedules, or permissions as needed.
 
-```yaml
-permissions:
-  contents: read
-  issues: write
-```
-Add `pull-requests: write` only if you later extend behavior beyond Issues API basics.
+## Targeting Specific Issues
 
-## 3. Inputs
+To triage specific items manually (e.g. via a workflow_dispatch input or a one-off run), set `issue-numbers` or `issue-number` in the job step `with:` block. Spaces or commas are both accepted, e.g. `issue-numbers: "123 456,789"`. Combine with `enabled: "false"` for a safe dry-run.
 
-| Input | Default | Purpose |
-|-------|---------|---------|
-| `issue-number` | (event) | Single issue/PR number override. |
-| `issue-numbers` |  | Space/comma list for batch runs. |
-| `prompt-path` | `.github/AutoTriage.prompt` | Project policy prompt path. |
-| `enabled` | `true` | If `false`, dry-run (logs only, no writes). |
-| `db-path` |  | JSON file to persist summary, reasoning history, last triaged timestamp. |
-| `model-fast` | `gemini-2.5-flash` | First-pass model. |
-| `model-pro` | `gemini-2.5-pro` | Review model. |
-| `model-temperature` | `1.0` | Sampling temperature (string). |
-| `max-timeline-events` | `50` | Recent timeline events injected into prompt. |
-| `max-operations` | `10` | Hard cap on total write operations per run. |
+## Dry-Run Mode
 
-## 4. Capabilities & Safeguards
+Set `enabled: "false"` to log planned operations with an `🧪 [dry-run]` prefix. No labels, comments, titles, or closures are changed.
 
-| Capability | Details |
-|------------|---------|
-| Labeling | Filters to existing labels only; computes add/remove diff. |
-| Commenting | At most one model-generated comment per run; embeds reasoning in an HTML comment footer. |
-| Title edits | Only when clearly misleading/ambiguous AND improved title provided. |
-| Closing | Only when prompt policy authorizes (e.g. invalid template, clearly obsolete, etc.). |
-| Reasoning memory | Appends new reasoning to prior log (never truncates). |
-| Operation budgeting | Stops after `max-operations` modifications. |
-| Dry-run mode | `enabled: false` shows exactly what would happen (artifacts + logs). |
+## Reasoning History
 
-## 5. Authoring / Updating Your Prompt
+If `db-path` is provided and `enabled` is true, each run appends to the reasoning log + maintains a canonical summary. This powers duplicate detection or clustering later (out of scope here, but data is retained).
 
-File: `.github/AutoTriage.prompt` (or custom path via `prompt-path`).
+## Artifacts
 
-Guidelines:
+For each item the action writes (in `./artifacts`):
 
-* Keep policy concise; the action appends large structured context automatically.
-* Use HTML comments `<!-- ... -->` for maintainer notes the model should ignore.
-* Define: labeling taxonomy, when to request info, closure rules, title hygiene rules, tone.
-* Be explicit: “If X and Y then add label Z” > “Consider Z”.
-* Avoid repeating output contract; the action injects a strict JSON schema.
-* Iterate safely by running with `enabled: false` first and reviewing artifacts.
+* `ISSUEID-gemini-input-<model>.md` - exact prompt sent to the model.
+* `ISSUEID-gemini-output-<model>.json` - raw Gemini response.
+* `ISSUEID-analysis-<model>.json` - parsed structured analysis.
+* `ISSUEID-operations.json` - final planned ops.
 
-Suggested sections inside your prompt file:
-
-```text
-Core Behavior
-Label Semantics
-Missing Information Policy
-Title Rules
-Closure Rules
-Contribution Labels (help wanted / good first issue)
-Project Context (short, stable)
-```
-
-## 6. State & Artifacts
-
-When `db-path` is set (e.g. `triage-db.json`), we persist:
-
-* `summary` (canonical essence for de-duping)
-* `reasoning` (full append-only chain)
-* `lastTriaged`
-
-Artifacts (always, per item) under `artifacts/`:
-
-* `gemini-input-<model>.md` – full constructed prompt (each pass)
-* `analysis-<model>.json` – raw model JSON output
-* `operations.json` – planned operations (if any)
-
-## 7. Typical Workflows
-
-* Real-time issues: trigger on `issues` opened/edited.
-* PR grooming: trigger on `pull_request` events (labels + info requests).
-* Backlog sweep: scheduled + manual dispatch, pass `issue-numbers` or let it enumerate recent open items.
-* Migration / auditing: run dry first to build summaries DB, then enable writes.
-
-## 8. Local Development
+## Local Development
 
 ```bash
 npm install
-npm run typecheck
-npm run build
+npm run build   # produces dist/index.js via ncc
 ```
-The bundle is emitted to `dist/` via `@vercel/ncc`.
 
-## 9. Security & Permissions
+The build uses `@vercel/ncc` to bundle dependencies into a single `dist` folder for the GitHub Action runtime.
 
-* Uses the provided `GITHUB_TOKEN`; never stores secrets in artifacts.
-* Only writes when `enabled: true`.
-* Supply least privileges (no code checkout write needed beyond standard checkout + issues:write).
-
-## 10. License
+## License
 
 MIT
-
----
-Need a starting point? Open `examples/AutoTriage.prompt` and adapt to your project in minutes.

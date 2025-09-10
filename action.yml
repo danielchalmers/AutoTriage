@@ -1,5 +1,5 @@
 name: "AutoTriage"
-description: "Labels, comments, edits titles, and optionally closes issues/PRs via a project prompt + Gemini."
+description: "AI issue & PR triage: summarize, label, comment, retitle, and optionally close using a project prompt + Gemini."
 author: "AutoTriage"
 branding:
   color: "blue"
@@ -7,40 +7,40 @@ branding:
 
 inputs:
   issue-number:
-    description: "Issue number to comment on. Defaults to the current event's issue."
+    description: "Single issue or PR number to triage (defaults to the GitHub event context)."
     required: false
   issue-numbers:
-    description: "Space- or comma-separated list of issue numbers to process."
+    description: "Space or comma separated list of issue / PR numbers to triage explicitly."
     required: false
   prompt-path:
-    description: "Path to the project prompt file (relative to repo root)."
+    description: "Repo-relative path to the prompt template that governs triage behavior."
     required: false
-  default: ".github/AutoTriage.prompt"
+    default: ".github/AutoTriage.prompt"
   enabled:
-    description: "If true, performs write actions (labels/comments/close). Otherwise dry-run."
+    description: "true = apply changes; false = dry-run (log planned operations only)."
     required: false
     default: "true"
   db-path:
-    description: "Optional JSON file to persist per-issue summary, full reasoning history, and last triaged date."
+    description: "Optional path to JSON file storing per-issue summary + cumulative reasoning history."
     required: false
   model-fast:
-    description: "Gemini fast model name."
+    description: "Gemini model name for the first (fast / inexpensive) analysis pass."
     required: false
     default: "gemini-2.5-flash"
   model-pro:
-    description: "Gemini pro model name."
+    description: "Gemini model name for the second (higher quality) pass if needed."
     required: false
     default: "gemini-2.5-pro"
   model-temperature:
-    description: "Generation temperature for the model (0.0–2.0 typical)."
+    description: "Sampling temperature (0-2). Lower = deterministic; higher = more exploratory."
     required: false
     default: "1.0"
   max-timeline-events:
-    description: "Trim timeline to this many most recent events to control prompt size."
+    description: "Maximum most-recent timeline events included in the prompt context."
     required: false
     default: "50"
   max-operations:
-    description: "Maximum number of operations to perform across the entire run before exiting early."
+    description: "Global cap on how many actions (label/comment/title/close) may execute this run."
     required: false
     default: "10"
 

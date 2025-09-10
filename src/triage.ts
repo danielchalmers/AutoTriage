@@ -9,9 +9,10 @@ export interface TriageOperation {
   perform(client: GitHubClient, cfg: Config, issue: any): Promise<void>;
 }
 
+// Apply the delta between current and proposed label sets.
 class UpdateLabelsOp implements TriageOperation {
   kind: 'labels' = 'labels';
-  constructor(public toAdd: string[], public toRemove: string[], public merged: string[]) {}
+  constructor(public toAdd: string[], public toRemove: string[], public merged: string[]) { }
   toJSON() {
     return { kind: this.kind, toAdd: this.toAdd, toRemove: this.toRemove, merged: this.merged };
   }
@@ -27,9 +28,10 @@ class UpdateLabelsOp implements TriageOperation {
   }
 }
 
+// Post a model-suggested comment (includes hidden reasoning log for traceability).
 class CreateCommentOp implements TriageOperation {
   kind: 'comment' = 'comment';
-  constructor(public body: string) {}
+  constructor(public body: string) { }
   toJSON() { return { kind: this.kind, body: this.body }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     const preview = this.body.replace(/\s+/g, ' ').slice(0, 120);
@@ -38,9 +40,10 @@ class CreateCommentOp implements TriageOperation {
   }
 }
 
+// Retitle the issue / PR when model proposes a more canonical, specific title.
 class UpdateTitleOp implements TriageOperation {
   kind: 'title' = 'title';
-  constructor(public newTitle: string) {}
+  constructor(public newTitle: string) { }
   toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     core.info('✏️ Updating title from "' + issue.title + '" to "' + this.newTitle + '"');
@@ -48,6 +51,7 @@ class UpdateTitleOp implements TriageOperation {
   }
 }
 
+// Close the issue if the model explicitly flags it (conservative default reason: not_planned).
 class CloseIssueOp implements TriageOperation {
   kind: 'close' = 'close';
   toJSON() { return { kind: this.kind }; }
@@ -57,6 +61,7 @@ class CloseIssueOp implements TriageOperation {
   }
 }
 
+// Compute minimal label add/remove set while preserving proposed order for merged preview.
 function diffLabels(current: string[] = [], proposed: string[] = []) {
   const cur = new Set(current);
   const prop = new Set(proposed);
@@ -71,6 +76,7 @@ function diffLabels(current: string[] = [], proposed: string[] = []) {
   return { toAdd, toRemove, merged };
 }
 
+// Ensure proposed labels exist in the repository; silently drop unknown labels.
 function filterLabels(labels: string[] | undefined, repoLabels: string[] | undefined): string[] | undefined {
   if (!labels || labels.length === 0) return labels;
   if (!repoLabels || repoLabels.length === 0) return labels;
@@ -78,6 +84,10 @@ function filterLabels(labels: string[] | undefined, repoLabels: string[] | undef
   return labels.filter(l => allowed.has(l));
 }
 
+/**
+ * Translate model output into a concrete ordered list of operations.
+ * Each optional field must be explicitly present and valid to produce an op.
+ */
 export function planOperations(
   issue: any,
   analysis: AnalysisResult,

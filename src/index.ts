@@ -39,7 +39,7 @@ async function run(): Promise<void> {
 
     saveDatabase(db, cfg.dbPath, cfg.enabled);
   } catch (err: any) {
-    // Surface richer context for Octokit errors
+    // Enrich failure output with HTTP + request metadata when available.
     const status = err?.status || err?.response?.status;
     const method = err?.request?.method;
     const url = err?.request?.url;
@@ -89,7 +89,7 @@ async function processIssue(
     ? planOperations(issue, quickAnalysis, metadata, repoLabels)
     : [];
 
-  // If quick succeeded and produced no operations, skip review stage entirely
+  // Fast pass produced no work: persist reasoning (so history grows) and skip expensive pass.
   if (quickAnalysis && ops.length === 0) {
     core.info(`⏭️ #${issueNumber}: Quick stage found no operations; skipping review stage.`);
     // Persist triage metadata from quick analysis even when no actions are needed
@@ -97,7 +97,7 @@ async function processIssue(
     return 0;
   }
 
-  // If the first pass failed or proposed ops, run the pro model
+  // Only escalate to the pro model if fast pass failed or wants to change something.
   let reviewAnalysis: AnalysisResult | null = null;
   if (!quickAnalysis || ops.length > 0) {
     reviewAnalysis = await generateAnalysis(
@@ -125,6 +125,7 @@ async function processIssue(
 
   let performedCount = 0;
   if (ops.length > 0) {
+    // Persist the concrete operation plan for later inspection / debugging.
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
     if (!cfg.enabled) {
       core.info(`🧪 [dry-run] Skipping ${ops.length} operation(s) for #${issueNumber}.`);
@@ -156,12 +157,12 @@ async function listTargets(cfg: Config, gh: GitHubClient): Promise<number[]> {
   const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
   if (fromInput.length > 0) return fromInput;
 
-  // If event supplies an issue or PR, prefer that
+  // Event payload single target (issue or PR) takes priority over fallback listing.
   const payload: any = (await import('@actions/github')).context.payload;
   const num = payload?.issue?.number || payload?.pull_request?.number;
   if (num) return [Number(num)];
 
-  // Fallback to recent open items
+  // Fallback: process all open issues/PRs (ordered recent first) when nothing explicit given.
   const issues = await gh.listOpenIssues();
   return issues.map(i => i.number);
 }
