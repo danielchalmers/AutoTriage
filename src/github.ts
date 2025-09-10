@@ -108,4 +108,13 @@ export class GitHubClient {
       state_reason: reason,
     });
   }
+
+  async reopenIssue(issue_number: number): Promise<void> {
+    await this.octokit.rest.issues.update({
+      owner: this.owner,
+      repo: this.repo,
+      issue_number,
+      state: 'open',
+    });
+  }
 }

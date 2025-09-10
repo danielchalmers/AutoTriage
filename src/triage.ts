@@ -4,7 +4,7 @@ import type { AnalysisResult } from "./analysis";
 import type { GitHubClient } from './github';
 
 export interface TriageOperation {
-  kind: 'labels' | 'comment' | 'title' | 'close';
+  kind: 'labels' | 'comment' | 'title' | 'close' | 'reopen';
   toJSON(): any;
   perform(client: GitHubClient, cfg: Config, issue: any): Promise<void>;
 }
@@ -51,13 +51,24 @@ class UpdateTitleOp implements TriageOperation {
   }
 }
 
-// Close the issue if the model explicitly flags it (conservative default reason: not_planned).
+// Close the issue with specified reason (not_planned or completed).
 class CloseIssueOp implements TriageOperation {
   kind: 'close' = 'close';
+  constructor(public reason: 'not_planned' | 'completed') { }
+  toJSON() { return { kind: this.kind, reason: this.reason }; }
+  async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
+    core.info(`🔒 Closing issue as ${this.reason}`);
+    if (cfg.enabled) await client.closeIssue(issue.number, this.reason);
+  }
+}
+
+// Reopen a closed issue.
+class ReopenIssueOp implements TriageOperation {
+  kind: 'reopen' = 'reopen';
   toJSON() { return { kind: this.kind }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    core.info('🔒 Closing issue');
-    if (cfg.enabled) await client.closeIssue(issue.number, 'not_planned');
+    core.info('🔓 Reopening issue');
+    if (cfg.enabled) await client.reopenIssue(issue.number);
   }
 }
 
@@ -115,9 +126,13 @@ export function planOperations(
     ops.push(new UpdateTitleOp(analysis.newTitle));
   }
 
-  // Close
-  if (analysis.close === true) {
-    ops.push(new CloseIssueOp());
+  // Status (close or reopen)
+  if (analysis.status === 'close_not_planned') {
+    ops.push(new CloseIssueOp('not_planned'));
+  } else if (analysis.status === 'close_completed') {
+    ops.push(new CloseIssueOp('completed'));
+  } else if (analysis.status === 'reopen') {
+    ops.push(new ReopenIssueOp());
   }
 
   return ops;

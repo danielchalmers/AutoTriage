@@ -22,7 +22,7 @@
   "author": "Daniel Chalmers",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   },
   "files": [
     "dist",

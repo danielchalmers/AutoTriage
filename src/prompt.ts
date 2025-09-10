@@ -74,7 +74,7 @@ Reasoning history rules:
 
 Optional fields (include only when conditions are met):
 - comment: string (Markdown-formatted comment to post on the issue)
-- close: boolean (set to true to close the issue)  
+- status: string (one of: "close_not_planned", "close_completed", "reopen")
 - newTitle: string (new title for the issue)
 `;
 

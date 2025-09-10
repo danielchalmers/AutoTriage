@@ -126,7 +126,7 @@ async function processIssue(
     if (!cfg.enabled) {
       core.info(`🧪 [dry-run] Skipping ${ops.length} operation(s) for #${issueNumber}.`);
       for (const op of ops) {
-        const emoji = op.kind === 'labels' ? '🏷️' : op.kind === 'comment' ? '💬' : op.kind === 'title' ? '✏️' : op.kind === 'close' ? '🔒' : '•';
+        const emoji = op.kind === 'labels' ? '🏷️' : op.kind === 'comment' ? '💬' : op.kind === 'title' ? '✏️' : op.kind === 'close' ? '🔒' : op.kind === 'reopen' ? '🔓' : '•';
         core.info(`🧪 [dry-run] Would: ${emoji} ${op.kind}`);
       }
       return 0;
