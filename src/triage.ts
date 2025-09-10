@@ -19,7 +19,7 @@ class UpdateLabelsOp implements TriageOperation {
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.toAdd.length || this.toRemove.length) {
       const labelLine = this.merged.length ? this.merged.join(', ') : 'none';
-      core.info(`🏷️ Labels: ${labelLine}`);
+      core.info(`  🏷️ Labels: ${labelLine}`);
       if (cfg.enabled) {
         if (this.toAdd.length) await client.addLabels(issue.number, this.toAdd);
         for (const name of this.toRemove) await client.removeLabel(issue.number, name);
@@ -35,7 +35,7 @@ class CreateCommentOp implements TriageOperation {
   toJSON() { return { kind: this.kind, body: this.body }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     const preview = this.body.replace(/\s+/g, ' ').slice(0, 120);
-    core.info(`💬 Posting comment for #${issue.number}: ${preview}${this.body.length > 120 ? '…' : ''}`);
+    core.info(`  💬 Posting comment for #${issue.number}: ${preview}${this.body.length > 120 ? '…' : ''}`);
     if (cfg.enabled) await client.createComment(issue.number, this.body);
   }
 }
@@ -46,7 +46,7 @@ class UpdateTitleOp implements TriageOperation {
   constructor(public newTitle: string) { }
   toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    core.info('✏️ Updating title from "' + issue.title + '" to "' + this.newTitle + '"');
+    core.info('  ✏️ Updating title from "' + issue.title + '" to "' + this.newTitle + '"');
     if (cfg.enabled) await client.updateTitle(issue.number, this.newTitle);
   }
 }
