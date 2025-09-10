@@ -72,10 +72,21 @@ For each item the action writes (in `./artifacts`):
 
 ```bash
 npm install
-npm run build   # produces dist/index.js via ncc
+npm run build   # on-demand bundle (not committed)
 ```
 
-The build uses `@vercel/ncc` to bundle dependencies into a single `dist` folder for the GitHub Action runtime.
+This action is now a composite action that builds just-in-time inside the workflow job. The `dist/` directory is ignored in git; consumers only need `action.yml` + source. If you change TypeScript code, push normally—no prepublish build step required.
+
+Example step usage (inputs optional):
+
+```yaml
+		- name: AutoTriage
+			uses: your-org/AutoTriage@v1
+			with:
+				enabled: 'true'
+			env:
+				GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+```
 
 ## License
 

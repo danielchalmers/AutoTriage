@@ -8,8 +8,7 @@
     "build": "npm run typecheck && ncc build src/index.ts -o dist -s --minify --license licenses.txt",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
-    "dev": "tsc -w",
-    "prepare": "npm run build"
+  "dev": "tsc -w"
   },
   "keywords": [
     "github-actions",
@@ -22,10 +21,9 @@
   "author": "Daniel Chalmers",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "files": [
-    "dist",
     "action.yml",
     "README.md"
   ],
