@@ -1,6 +1,6 @@
 import * as github from '@actions/github';
 
-type IssueLike = {
+export type IssueLike = {
   number: number;
   title: string;
   state: string;
@@ -20,106 +20,92 @@ type IssueLike = {
   pull_request?: unknown;
 };
 
-export function getOctokit(token: string): any {
-  return github.getOctokit(token);
+export class GitHubClient {
+  private octokit;
+  constructor(token: string, private owner: string, private repo: string) {
+    this.octokit = github.getOctokit(token);
+  }
+
+  async getIssue(issue_number: number): Promise<IssueLike> {
+    const { data } = await this.octokit.rest.issues.get({ owner: this.owner, repo: this.repo, issue_number });
+    return data as IssueLike;
+  }
+
+  async listOpenIssues(): Promise<IssueLike[]> {
+    const issues = await this.octokit.paginate(this.octokit.rest.issues.listForRepo, {
+      owner: this.owner,
+      repo: this.repo,
+      state: 'open',
+      sort: 'updated',
+      direction: 'desc',
+      per_page: 100,
+    });
+    return issues as IssueLike[];
+  }
+
+  async listRepoLabels(): Promise<string[]> {
+    const labels = await this.octokit.paginate(this.octokit.rest.issues.listLabelsForRepo, {
+      owner: this.owner,
+      repo: this.repo,
+      per_page: 100,
+    });
+    return (labels as any[])
+      .map((l: any) => (typeof l?.name === 'string' ? l.name : ''))
+      .filter((n: string) => n.length > 0);
+  }
+
+  async listTimelineEvents(issue_number: number, limit: number): Promise<any[]> {
+    const events = await this.octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
+      owner: this.owner,
+      repo: this.repo,
+      issue_number,
+      per_page: 100,
+    });
+
+    const sliced = (events as any[]).slice(-limit);
+    return sliced.map((event: any) => {
+      const base = { event: event.event, actor: event.actor?.login, timestamp: event.created_at };
+      switch (event.event) {
+        case 'commented':
+          return { ...base, body: typeof event.body === 'string' ? event.body.slice(0, 2000) : undefined };
+        case 'labeled':
+        case 'unlabeled':
+          return { ...base, label: { name: event.label?.name, color: event.label?.color } };
+        case 'renamed':
+          return { ...base, from: event.rename?.from, to: event.rename?.to };
+        default:
+          return base;
+      }
+    });
+  }
+
+  async addLabels(issue_number: number, labels: string[]): Promise<void> {
+    if (labels.length === 0) return;
+    await this.octokit.rest.issues.addLabels({ owner: this.owner, repo: this.repo, issue_number, labels });
+  }
+
+  async removeLabel(issue_number: number, name: string): Promise<void> {
+    await this.octokit.rest.issues.removeLabel({ owner: this.owner, repo: this.repo, issue_number, name });
+  }
+
+  async createComment(issue_number: number, body: string): Promise<void> {
+    await this.octokit.rest.issues.createComment({ owner: this.owner, repo: this.repo, issue_number, body });
+  }
+
+  async updateTitle(issue_number: number, title: string): Promise<void> {
+    await this.octokit.rest.issues.update({ owner: this.owner, repo: this.repo, issue_number, title });
+  }
+
+  async closeIssue(
+    issue_number: number,
+    reason: 'completed' | 'not_planned' | 'reopened' | undefined = 'not_planned'
+  ): Promise<void> {
+    await this.octokit.rest.issues.update({
+      owner: this.owner,
+      repo: this.repo,
+      issue_number,
+      state: 'closed',
+      state_reason: reason,
+    });
+  }
 }
-
-export async function getIssue(octokit: any, owner: string, repo: string, issue_number: number) {
-  const { data } = await octokit.rest.issues.get({ owner, repo, issue_number });
-  return data as IssueLike;
-}
-
-export async function listOpenIssues(octokit: any, owner: string, repo: string) {
-  const issues = await octokit.paginate(octokit.rest.issues.listForRepo, {
-    owner,
-    repo,
-    state: 'open',
-    sort: 'updated',
-    direction: 'desc',
-    per_page: 100,
-  });
-  return issues as IssueLike[];
-}
-
-export async function listRepoLabels(octokit: any, owner: string, repo: string): Promise<string[]> {
-  const labels = await octokit.paginate(octokit.rest.issues.listLabelsForRepo, {
-    owner,
-    repo,
-    per_page: 100,
-  });
-  return (labels as any[])
-    .map((l: any) => (typeof l?.name === 'string' ? l.name : ''))
-    .filter((n: string) => n.length > 0);
-}
-
-export async function listTimelineEvents(
-  octokit: any,
-  owner: string,
-  repo: string,
-  issue_number: number,
-  limit: number
-) {
-  const events = await octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
-    owner,
-    repo,
-    issue_number,
-    per_page: 100,
-  });
-
-  const sliced = (events as any[]).slice(-limit);
-  return sliced.map((event: any) => {
-    const base = { event: event.event, actor: event.actor?.login, timestamp: event.created_at };
-    switch (event.event) {
-      case 'commented':
-        return { ...base, body: typeof event.body === 'string' ? event.body.slice(0, 2000) : undefined };
-      case 'labeled':
-      case 'unlabeled':
-        return { ...base, label: { name: event.label?.name, color: event.label?.color } };
-      case 'renamed':
-        return { ...base, from: event.rename?.from, to: event.rename?.to };
-      default:
-        return base;
-    }
-  });
-}
-
-export async function addLabels(octokit: any, owner: string, repo: string, issue_number: number, labels: string[]) {
-  if (labels.length === 0) return;
-  await octokit.rest.issues.addLabels({ owner, repo, issue_number, labels });
-}
-
-export async function removeLabel(octokit: any, owner: string, repo: string, issue_number: number, name: string) {
-  await octokit.rest.issues.removeLabel({ owner, repo, issue_number, name });
-}
-
-export async function createComment(
-  octokit: any,
-  owner: string,
-  repo: string,
-  issue_number: number,
-  body: string
-) {
-  await octokit.rest.issues.createComment({ owner, repo, issue_number, body });
-}
-
-export async function updateTitle(
-  octokit: any,
-  owner: string,
-  repo: string,
-  issue_number: number,
-  title: string
-) {
-  await octokit.rest.issues.update({ owner, repo, issue_number, title });
-}
-
-export async function closeIssue(
-  octokit: any,
-  owner: string,
-  repo: string,
-  issue_number: number,
-  reason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | undefined = 'not_planned'
-) {
-  await octokit.rest.issues.update({ owner, repo, issue_number, state: 'closed', state_reason: reason });
-}
-
-export type { IssueLike };
