@@ -30,7 +30,8 @@ export async function buildPrompt(
   lastTriaged: string | null,
   previousReasoning: string,
   promptPath: string,
-  timelineEvents: any[]
+  timelineEvents: any[],
+  authUser?: Record<string, any>
 ) {
   const resolvedPath = path.isAbsolute(promptPath) ? promptPath : path.join(process.cwd(), promptPath);
   const basePrompt = fs.readFileSync(resolvedPath, 'utf8');
@@ -46,6 +47,7 @@ ${JSON.stringify(metadata, null, 2)}
 ${JSON.stringify(timelineEvents, null, 2)}
 
 === SECTION: TRIAGE CONTEXT ===
+Username of the bot performing this run: ${JSON.stringify({ login: authUser?.login || 'unknown' })}
 Last triaged: ${lastTriaged || 'never'}
 Previous reasoning: ${previousReasoning || 'none'}
 Current date: ${new Date().toISOString()}. Do all date logic by explicit comparison.

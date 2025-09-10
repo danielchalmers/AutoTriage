@@ -22,7 +22,8 @@ export async function generateAnalysis(
   lastTriaged: string | null,
   previousReasoning: string,
   model: string,
-  timelineEvents: any[]
+  timelineEvents: any[],
+  authUser: Record<string, any>
 ): Promise<AnalysisResult | null> {
   const prompt = await buildPrompt(
     issue,
@@ -30,7 +31,8 @@ export async function generateAnalysis(
     lastTriaged,
     previousReasoning,
     cfg.promptPath,
-    timelineEvents
+    timelineEvents,
+    authUser
   );
 
   saveArtifact(issue.number, `gemini-input-${model}.md`, prompt);

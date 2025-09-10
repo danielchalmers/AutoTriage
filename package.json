@@ -1,7 +1,7 @@
 {
   "name": "autotriage",
   "version": "0.1.0",
-  "description": "Triage GitHub issues with AI.",
+  "description": "Lean AI GitHub Action that labels, comments, edits titles, and optionally closes issues/PRs via a project prompt + Gemini.",
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
@@ -20,7 +20,7 @@
   "author": "Daniel Chalmers",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "files": [
     "dist",

@@ -37,7 +37,7 @@ export function getConfig(): Config {
   }
 
   const enabled = (core.getInput('enabled') || 'true').toLowerCase() === 'true';
-  const promptPath = core.getInput('prompt-path') || '.github/scripts/AutoTriage.prompt';
+  const promptPath = core.getInput('prompt-path') || '.github/AutoTriage.prompt';
   const dbPath = core.getInput('db-path') || undefined;
   const modelFast = core.getInput('model-fast') || 'gemini-2.5-flash';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';

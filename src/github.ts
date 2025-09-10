@@ -26,6 +26,11 @@ export class GitHubClient {
     this.octokit = github.getOctokit(token);
   }
 
+  async getAuthenticatedUser(): Promise<Record<string, any>> {
+    const { data } = await this.octokit.rest.users.getAuthenticated();
+    return data as Record<string, any>;
+  }
+
   async getIssue(issue_number: number): Promise<IssueLike> {
     const { data } = await this.octokit.rest.issues.get({ owner: this.owner, repo: this.repo, issue_number });
     return data as IssueLike;

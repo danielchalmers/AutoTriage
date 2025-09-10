@@ -40,7 +40,7 @@ jobs:
       - name: AutoTriage (batch)
         uses: danielchalmers/AutoTriage@main
         with:
-          prompt-path: .github/scripts/AutoTriage.prompt
+          prompt-path: .github/AutoTriage.prompt
           issue-numbers: ${{ github.event.inputs.issues }}
           db-path: triage-db.json
           enabled: ${{ github.event_name == 'workflow_dispatch' && inputs.enabled || true }}

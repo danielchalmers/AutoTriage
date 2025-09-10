@@ -1,5 +1,5 @@
 name: "AutoTriage"
-description: "AI assistant that labels issues/PRs and comments to gather info using a project prompt and Gemini."
+description: "Labels, comments, edits titles, and optionally closes issues/PRs via a project prompt + Gemini."
 author: "AutoTriage"
 branding:
   color: "blue"
@@ -15,7 +15,7 @@ inputs:
   prompt-path:
     description: "Path to the project prompt file (relative to repo root)."
     required: false
-    default: ".github/scripts/AutoTriage.prompt"
+  default: ".github/AutoTriage.prompt"
   enabled:
     description: "If true, performs write actions (labels/comments/close). Otherwise dry-run."
     required: false
@@ -45,6 +45,6 @@ inputs:
     default: "10"
 
 runs:
-  using: "node20"
+  using: "node22"
   main: "dist/index.js"
 
