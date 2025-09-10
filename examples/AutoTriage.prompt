@@ -1,6 +1,7 @@
 # GitHub Issue Analysis Policy Prompt
 
 ## General Guardrails
+- You are running as the GitHub Actions bot user: "github-actions[bot]".
 - Skip items created by Bot users.
 - Do not treat `danielchalmers` as a member for the sake of testing.
 - Do not edit or reverse member actions.

@@ -17,7 +17,6 @@ async function run(): Promise<void> {
     const db = loadDatabase(cfg.dbPath);
     const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
     const gemini = new GeminiClient(cfg.geminiApiKey);
-    const authUser = await gh.getAuthenticatedUser();
     const repoLabels = await gh.listRepoLabels();
     const targets = await listTargets(cfg, gh);
     let performedTotal = 0;
@@ -29,7 +28,7 @@ async function run(): Promise<void> {
         core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
         break;
       }
-      const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini, authUser);
+  const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
       performedTotal += performed;
       if (performedTotal >= cfg.maxOperations) {
         core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
@@ -63,8 +62,7 @@ async function processIssue(
   remainingOps: number,
   repoLabels: string[],
   gh: GitHubClient,
-  gemini: GeminiClient,
-  authUser: Record<string, any>
+  gemini: GeminiClient
 ): Promise<number> {
   const issue = await gh.getIssue(issueNumber);
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
@@ -82,8 +80,7 @@ async function processIssue(
     lastTriaged,
     previousReasoning,
     cfg.modelFast,
-    timelineEvents,
-    authUser
+    timelineEvents
   );
   let ops: TriageOperation[] = quickAnalysis
     ? planOperations(issue, quickAnalysis, metadata, repoLabels)
@@ -108,8 +105,7 @@ async function processIssue(
       lastTriaged,
       quickAnalysis?.reasoning || previousReasoning,
       cfg.modelPro,
-      timelineEvents,
-      authUser
+      timelineEvents
     );
     if (reviewAnalysis) {
       ops = planOperations(issue, reviewAnalysis, metadata, repoLabels);
