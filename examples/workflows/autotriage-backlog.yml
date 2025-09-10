@@ -55,4 +55,3 @@ jobs:
           path: |
             triage-db.json
             artifacts/
-
