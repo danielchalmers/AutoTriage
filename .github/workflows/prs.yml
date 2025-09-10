@@ -19,5 +19,4 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           prompt-path: examples/AutoTriage.prompt
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
