@@ -3,7 +3,8 @@ import { getConfig } from './env';
 import type { Config, TriageDb } from './storage';
 import { getPreviousReasoning, loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb } from './storage';
 import { generateAnalysis, AnalysisResult } from './analysis';
-import { getOctokit, getIssue, listRepoLabels, listOpenIssues, listTimelineEvents } from './github';
+import { GitHubClient } from './github';
+import { GeminiClient } from './gemini';
 import { buildMetadata } from './prompt';
 import { TriageOperation, planOperations } from './triage';
 
@@ -14,9 +15,10 @@ async function run(): Promise<void> {
     core.info(`📦 Repo: ${cfg.owner}/${cfg.repo}`);
 
     const db = loadDatabase(cfg.dbPath);
-    const octokit = getOctokit(cfg.token);
-    const repoLabels = await listRepoLabels(octokit, cfg.owner, cfg.repo);
-    const targets = await listTargets(cfg, octokit);
+    const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
+    const gemini = new GeminiClient(cfg.geminiApiKey);
+    const repoLabels = await gh.listRepoLabels();
+    const targets = await listTargets(cfg, gh);
     let performedTotal = 0;
 
     core.info(`▶️ Processing ${targets.length} item(s)`);
@@ -26,7 +28,7 @@ async function run(): Promise<void> {
         core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
         break;
       }
-      const performed = await processIssue(cfg, db, n, remaining, repoLabels, octokit);
+      const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
       performedTotal += performed;
       if (performedTotal >= cfg.maxOperations) {
         core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
@@ -59,18 +61,20 @@ async function processIssue(
   issueNumber: number,
   remainingOps: number,
   repoLabels: string[],
-  octokit: any
+  gh: GitHubClient,
+  gemini: GeminiClient
 ): Promise<number> {
-  const issue = await getIssue(octokit, cfg.owner, cfg.repo, issueNumber);
+  const issue = await gh.getIssue(issueNumber);
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: string | null = dbEntry?.lastTriaged || null;
   const previousReasoning: string = getPreviousReasoning(triageDb, issueNumber);
   const metadata = buildMetadata(issue);
-  const timelineEvents = await listTimelineEvents(octokit, cfg.owner, cfg.repo, issue.number, cfg.maxTimelineEvents);
+  const timelineEvents = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
   // Pass 1: fast model
   const quickAnalysis = await generateAnalysis(
     cfg,
+    gemini,
     issue,
     metadata,
     lastTriaged,
@@ -95,6 +99,7 @@ async function processIssue(
   if (!quickAnalysis || ops.length > 0) {
     reviewAnalysis = await generateAnalysis(
       cfg,
+      gemini,
       issue,
       metadata,
       lastTriaged,
@@ -128,7 +133,7 @@ async function processIssue(
       const toExecute = Math.min(ops.length, Math.max(0, remainingOps));
       for (let i = 0; i < toExecute; i++) {
         const op = ops[i]!;
-        await op.perform(octokit, cfg, issue);
+        await op.perform(gh, cfg, issue);
         performedCount++;
       }
       if (toExecute < ops.length) {
@@ -143,7 +148,7 @@ async function processIssue(
   return performedCount;
 }
 
-async function listTargets(cfg: Config, octokit: any): Promise<number[]> {
+async function listTargets(cfg: Config, gh: GitHubClient): Promise<number[]> {
   const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
   if (fromInput.length > 0) return fromInput;
 
@@ -153,7 +158,7 @@ async function listTargets(cfg: Config, octokit: any): Promise<number[]> {
   if (num) return [Number(num)];
 
   // Fallback to recent open items
-  const issues = await listOpenIssues(octokit, cfg.owner, cfg.repo);
+  const issues = await gh.listOpenIssues();
   return issues.map(i => i.number);
 }
 
