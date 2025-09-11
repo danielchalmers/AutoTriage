@@ -1,8 +1,8 @@
-name: AutoTriage (Issues)
+name: AutoTriage (Comments)
 
 on:
-  issues:
-    types: [opened, edited]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -10,11 +10,12 @@ permissions:
   pull-requests: write
 
 jobs:
-  triage_issue:
+  triage_comment:
+    if: ${{ github.event.issue.pull_request != null && github.event.sender.type != 'Bot' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: AutoTriage - triage issue
+      - name: AutoTriage - triage comment
         uses: danielchalmers/AutoTriage@main
         with:
           issue-number: ${{ github.event.issue.number }}

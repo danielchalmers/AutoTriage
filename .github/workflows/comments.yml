@@ -1,8 +1,8 @@
-name: AutoTriage (PRs)
+name: AutoTriage (Comments)
 
 on:
-  pull_request_target:
-    types: [opened, edited]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -10,14 +10,15 @@ permissions:
   pull-requests: write
 
 jobs:
-  triage_pr:
+  triage_comment:
+    if: ${{ github.event.issue.pull_request != null && github.event.sender.type != 'Bot' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Triage PR
+      - name: Triage comment
         uses: ./
         with:
-          issue-number: ${{ github.event.pull_request.number }}
+          issue-number: ${{ github.event.issue.number }}
           prompt-path: examples/AutoTriage.prompt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
