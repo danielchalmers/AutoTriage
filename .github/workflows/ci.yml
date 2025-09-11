@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 jobs:
   build:
@@ -28,3 +30,12 @@ jobs:
         run: |
           git status --porcelain
           git diff --exit-code --name-only
+      - name: Mock triage
+        uses: ./
+        with:
+          issue-number: 3
+          prompt-path: examples/AutoTriage.prompt
+          enabled: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
