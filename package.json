@@ -8,7 +8,9 @@
     "build": "npm run typecheck && ncc build src/index.ts -o dist -s --minify --license licenses.txt",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
-    "dev": "tsc -w"
+    "dev": "tsc -w",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "github-actions",
@@ -32,7 +34,8 @@
     "@vercel/ncc": "^0.38.1",
     "typescript": "^5.5.0",
   "rimraf": "^5.0.0",
-  "@types/node": "^20.11.0"
+  "@types/node": "^20.11.0",
+  "vitest": "^1.6.0"
   },
   "dependencies": {
     "@actions/core": "^1.10.0",
