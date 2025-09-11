@@ -18,7 +18,13 @@ class UpdateLabelsOp implements TriageOperation {
   }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.toAdd.length || this.toRemove.length) {
-      const labelLine = this.merged.length ? this.merged.join(', ') : 'none';
+      // Build log line showing: unchanged labels, +added labels, -removed labels.
+      // Example: 🏷️ Labels: docs, +bug, -enhancement
+      const unchanged = this.merged.filter(l => !this.toAdd.includes(l));
+      const added = this.toAdd.map(l => `+${l}`);
+      const removed = this.toRemove.map(l => `-${l}`);
+      const parts = [...unchanged, ...added, ...removed];
+      const labelLine = parts.length ? parts.join(', ') : 'none';
       core.info(`  🏷️ Labels: ${labelLine}`);
       if (cfg.enabled) {
         if (this.toAdd.length) await client.addLabels(issue.number, this.toAdd);
@@ -34,8 +40,8 @@ class CreateCommentOp implements TriageOperation {
   constructor(public body: string) { }
   toJSON() { return { kind: this.kind, body: this.body }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    const preview = this.body.replace(/\s+/g, ' ').slice(0, 120);
-    core.info(`  💬 Posting comment for #${issue.number}: ${preview}${this.body.length > 120 ? '…' : ''}`);
+    console.log(`  💬 Posting comment:`);
+    console.log(this.body.replace(/^/gm, '  > '));
     if (cfg.enabled) await client.createComment(issue.number, this.body);
   }
 }

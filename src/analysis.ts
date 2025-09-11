@@ -34,7 +34,7 @@ export async function generateAnalysis(
     lastTriaged,
     previousReasoning,
     cfg.promptPath,
-  timelineEvents
+    timelineEvents
   );
 
   saveArtifact(issue.number, `gemini-input-${model}.md`, prompt);
@@ -42,9 +42,6 @@ export async function generateAnalysis(
   try {
     const res = await gemini.generate(prompt, model, cfg.modelTemperature, issue.number);
     saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(res, null, 2));
-    core.info(`🤖 ${model} #${issue.number}:`);
-    core.info(`  💭 ${(res as any).summary ?? ''}`);
-    core.info(`  💭 ${(res as any).reasoning ?? ''}`);
     analysis = res;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

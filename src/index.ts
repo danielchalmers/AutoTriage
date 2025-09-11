@@ -28,7 +28,7 @@ async function run(): Promise<void> {
         core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
         break;
       }
-  const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
+      const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
       performedTotal += performed;
       if (performedTotal >= cfg.maxOperations) {
         core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
@@ -88,7 +88,7 @@ async function processIssue(
 
   // Fast pass produced no work: persist reasoning (so history grows) and skip expensive pass.
   if (quickAnalysis && ops.length === 0) {
-    core.info(`⏭️ #${issueNumber}: Quick stage found no operations; skipping review stage.`);
+    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
     // Persist triage metadata from quick analysis even when no actions are needed
     if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
     return 0;
@@ -119,6 +119,14 @@ async function processIssue(
     return 0;
   }
 
+  if (reviewAnalysis) {
+    core.info(`🤖 #${issueNumber}: ${reviewAnalysis.reasoning}`);
+  } else if (quickAnalysis) {
+    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
+  } else {
+    core.info(`⏭️ #${issueNumber}`);
+  }
+
   let performedCount = 0;
   if (ops.length > 0) {
     // Persist the concrete operation plan for later inspection / debugging.
@@ -141,8 +149,6 @@ async function processIssue(
         core.info(`⏳ Operation budget exhausted for #${issueNumber}. Executed ${toExecute}/${ops.length} planned ops.`);
       }
     }
-  } else {
-    core.info(`⏭️ #${issueNumber}: Review stage has no actions.`);
   }
 
   if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title);

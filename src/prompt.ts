@@ -68,7 +68,6 @@ Required fields (always include):
 - labels: array of strings (complete final label set for the issue)
 
 Reasoning history rules:
-- Include the provided 'Previous reasoning' verbatim at the start of the reasoning string; keep the log append-only (never truncate).
 - Append a compact first-person entry for this run (timestamp + analysis + actions) and briefly self-debate whether you agree with the prior reasoning, citing concrete evidence from the body or timeline.
 - If changing course, state the new evidence and why the prior view no longer holds; otherwise explain why it still holds.
 
