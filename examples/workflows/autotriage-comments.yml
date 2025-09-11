@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   triage_comment:
-    if: ${{ github.event.issue.pull_request != null && github.event.sender.type != 'Bot' }}
+    if: ${{ github.event.sender.type != 'Bot' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

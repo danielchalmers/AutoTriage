@@ -53,8 +53,9 @@
 - If there is still no activity 30 additional days after hitting the first inactivity threshold, set `state: not_planned`.
 - Skip closure if required timestamps are missing or ambiguous.
 
-## Reopening
+## State Rules
 - If any user explicitly requests the previously-closed issue be reopened and enough information has been provided, the bot should set `state: open`.
 - If there is not a valid reason to reopen the issue, post a comment explaining why it will not be reopened at the current time and what must be provided first.
+- Whenever you change the item state you must also post (or include, if already commenting for another reason) a concise comment that explicitly states the reason for the transition and cites the concrete trigger.
 
 <!-- End of project policy. The action injects the item body, metadata, timeline, and an output contract below. -->
