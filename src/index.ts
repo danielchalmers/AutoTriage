@@ -71,6 +71,27 @@ async function processIssue(
   const metadata = buildMetadata(issue);
   const timelineEvents = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
+  // Optimization: Skip analysis entirely if we have a prior triage entry AND
+  // neither the issue nor its (recent) timeline events have changed since that time.
+  // This avoids unnecessary model invocations for completely unchanged items.
+  if (lastTriaged) {
+    try {
+      const lastTriagedMs = Date.parse(lastTriaged);
+      const updatedMs = issue.updated_at ? Date.parse(issue.updated_at) : 0;
+      const hasIssueUpdate = updatedMs > lastTriagedMs; // issue body/title/state/labels/comments changed
+      const hasNewTimelineEvent = timelineEvents.some(ev => {
+        const ts = ev?.timestamp ? Date.parse(ev.timestamp) : 0;
+        return ts > lastTriagedMs;
+      });
+      if (!hasIssueUpdate && !hasNewTimelineEvent) {
+        core.info(`⏭️ #${issueNumber}: unchanged since last triage (${lastTriaged}); skipping analysis.`);
+        return 0;
+      }
+    } catch (e) {
+      // Non-fatal; fall through to normal processing if any parsing issues occur.
+    }
+  }
+
   // Pass 1: fast model
   const quickAnalysis = await generateAnalysis(
     cfg,
