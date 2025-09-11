@@ -4,7 +4,7 @@ import type { AnalysisResult } from "./analysis";
 import type { GitHubClient } from './github';
 
 export interface TriageOperation {
-  kind: 'labels' | 'comment' | 'title' | 'close';
+  kind: 'labels' | 'comment' | 'title' | 'state';
   toJSON(): any;
   perform(client: GitHubClient, cfg: Config, issue: any): Promise<void>;
 }
@@ -57,13 +57,19 @@ class UpdateTitleOp implements TriageOperation {
   }
 }
 
-// Close the issue if the model explicitly flags it (conservative default reason: not_planned).
-class CloseIssueOp implements TriageOperation {
-  kind: 'close' = 'close';
-  toJSON() { return { kind: this.kind }; }
+// Update the issue state (open, completed, not_planned) where completed/not_planned map to closed + reason.
+class UpdateStateOp implements TriageOperation {
+  kind: 'state' = 'state';
+  constructor(public state: 'open' | 'completed' | 'not_planned') {}
+  toJSON() { return { kind: this.kind, state: this.state }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    core.info('  🔒 Closing issue');
-    if (cfg.enabled) await client.closeIssue(issue.number, 'not_planned');
+    if (this.state === 'open') {
+      core.info('  🔓 Reopening issue');
+      if (cfg.enabled) await client.updateIssueState(issue.number, 'open');
+    } else {
+      core.info(`  🔒 Closing issue (reason: ${this.state})`);
+      if (cfg.enabled) await client.updateIssueState(issue.number, 'closed', this.state);
+    }
   }
 }
 
@@ -121,9 +127,18 @@ export function planOperations(
     ops.push(new UpdateTitleOp(analysis.newTitle));
   }
 
-  // Close
-  if (analysis.close === true) {
-    ops.push(new CloseIssueOp());
+  // State change (open|completed|not_planned). Only act if different from current state/reason.
+  if (analysis.state === 'open' || analysis.state === 'completed' || analysis.state === 'not_planned') {
+    const desired = analysis.state;
+    const currentState: 'open' | 'closed' = issue.state;
+    const currentReason: string | undefined = issue.state_reason; // may be undefined
+    if (desired === 'open') {
+      if (currentState !== 'open') ops.push(new UpdateStateOp('open'));
+    } else {
+      if (currentState !== 'closed' || currentReason !== desired) {
+        ops.push(new UpdateStateOp(desired));
+      }
+    }
   }
 
   return ops;

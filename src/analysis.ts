@@ -10,7 +10,7 @@ export type AnalysisResult = {
   reasoning: string;
   labels?: string[];
   comment?: string;
-  close?: boolean;
+  state?: 'open' | 'completed' | 'not_planned';
   newTitle?: string;
 };
 

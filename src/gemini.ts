@@ -20,7 +20,7 @@ export class GeminiClient {
             reasoning: { type: 'STRING' },
             comment: { type: 'STRING' },
             labels: { type: 'ARRAY', items: { type: 'STRING' } },
-            close: { type: 'BOOLEAN' },
+            state: { type: 'STRING', enum: ['open', 'completed', 'not_planned'] },
             newTitle: { type: 'STRING' },
           },
           required: ['summary', 'reasoning', 'labels'],

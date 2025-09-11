@@ -49,7 +49,11 @@
 
 ## Inactivity (Stale) Rules
 - If an open issue/PR has no timeline activity for 30+ days, post a short comment explaining that it is now considered stale.
-- If there is still no activity 30 additional days after hitting the first inactivity threshold, set `close: true`.
+- If there is still no activity 30 additional days after hitting the first inactivity threshold, set `state: not_planned`.
 - Skip closure if required timestamps are missing or ambiguous.
+
+## Reopening
+- If any user explicitly requests the previously-closed issue be reopened and enough information has been provided, the bot should set `state: open`.
+- If there is not a valid reason to reopen the issue, post a comment explaining why it will not be reopened at the current time and what must be provided first.
 
 <!-- End of project policy. The action injects the item body, metadata, timeline, and an output contract below. -->

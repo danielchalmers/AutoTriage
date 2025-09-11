@@ -1,6 +1,6 @@
 # AutoTriage
 
-AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes items, applies / removes labels, posts comments, suggests better titles, and can optionally close items. It is driven by a project-specific prompt plus two Gemini model passes (fast first, then a higher quality review only if needed). A lightweight JSON DB (optional) preserves cumulative reasoning so model decisions stay explainable and append-only.
+AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes items, applies / removes labels, posts comments, suggests better titles, and can optionally change issue state. It is driven by a project-specific prompt plus two Gemini model passes (fast first, then a higher quality review only if needed). A lightweight JSON DB (optional) preserves cumulative reasoning so model decisions stay explainable and append-only.
 
 ## Key Features
 
@@ -24,7 +24,7 @@ AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes item
 | `model-pro` | Gemini model for the second (review) pass. | `gemini-2.5-pro` |
 | `model-temperature` | Sampling temperature (0-2). Lower = more deterministic. | `1.0` |
 | `max-timeline-events` | Max most-recent timeline events included in prompt. | `50` |
-| `max-operations` | Cap on actions (label/comment/title/close) per run. | `10` |
+| `max-operations` | Cap on actions (label/comment/title/state) per run. | `10` |
 
 ## Required Secrets
 

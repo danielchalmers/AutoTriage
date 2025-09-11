@@ -108,4 +108,18 @@ export class GitHubClient {
       state_reason: reason,
     });
   }
+
+  async updateIssueState(
+    issue_number: number,
+    state: 'open' | 'closed',
+    reason?: 'completed' | 'not_planned'
+  ): Promise<void> {
+    await this.octokit.rest.issues.update({
+      owner: this.owner,
+      repo: this.repo,
+      issue_number,
+      state,
+      state_reason: state === 'closed' ? (reason ?? 'not_planned') : null,
+    });
+  }
 }

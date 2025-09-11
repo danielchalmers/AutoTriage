@@ -71,9 +71,9 @@ Reasoning history rules:
 - Append a compact first-person entry for this run (timestamp + analysis + actions) and briefly self-debate whether you agree with the prior reasoning, citing concrete evidence from the body or timeline.
 - If changing course, state the new evidence and why the prior view no longer holds; otherwise explain why it still holds.
 
-Optional fields (include only when conditions are met):
+Optional fields (include only when conditions are met and you are certain):
 - comment: string (Markdown-formatted comment to post on the issue)
-- close: boolean (set to true to close the issue)  
+- state: string (one of: "open" to reopen; "completed" to close with completed; "not_planned" to close as not planned)
 - newTitle: string (new title for the issue)
 `;
 
