@@ -114,9 +114,11 @@ async function processIssue(
       timelineEvents
     );
     ops = planOperations(issue, quickAnalysis, metadata, repoLabels);
-    // Fast pass produced no work -> skip without recording analysis.
+    // Persist quick analysis even when no operations are needed so unchanged issues aren't reprocessed.
     if (ops.length === 0) {
       core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
+      if (cfg.dbPath && cfg.enabled)
+        writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
       return 0;
     }
   } catch (err) {
