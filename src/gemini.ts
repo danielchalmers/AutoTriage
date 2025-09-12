@@ -6,7 +6,7 @@ interface GeminiResponse {
 }
 
 export class GeminiClient {
-  constructor(private apiKey: string, private fetchFn: typeof fetch = fetch) { }
+  constructor(private apiKey: string) { }
 
   async generate(prompt: string, model: string, temperature: string, issueNumber: number): Promise<AnalysisResult> {
     const payload = {
@@ -31,7 +31,7 @@ export class GeminiClient {
 
     let response: Response;
     try {
-      response = await this.fetchFn(
+      response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: 'POST',

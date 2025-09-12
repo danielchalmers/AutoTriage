@@ -19,6 +19,7 @@ async function run(): Promise<void> {
     const gemini = new GeminiClient(cfg.geminiApiKey);
     const repoLabels = await gh.listRepoLabels();
     const targets = await listTargets(cfg, gh);
+    const singleTarget = targets.length === 1;
     let performedTotal = 0;
 
     core.info(`▶️ Processing ${targets.length} item(s)`);
@@ -28,11 +29,17 @@ async function run(): Promise<void> {
         core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
         break;
       }
-      const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
-      performedTotal += performed;
-      if (performedTotal >= cfg.maxOperations) {
-        core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
-        break;
+      try {
+        const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
+        performedTotal += performed;
+        if (performedTotal >= cfg.maxOperations) {
+          core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
+          break;
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        core.warning(`⚠️ #${n}: ${message}`);
+        if (singleTarget) throw err;
       }
     }
 
@@ -93,60 +100,43 @@ async function processIssue(
   }
 
   // Pass 1: fast model
-  const quickAnalysis = await generateAnalysis(
-    cfg,
-    gemini,
-    issue,
-    metadata,
-    lastTriaged,
-    previousReasoning,
-    cfg.modelFast,
-    timelineEvents
-  );
-  let ops: TriageOperation[] = quickAnalysis
-    ? planOperations(issue, quickAnalysis, metadata, repoLabels)
-    : [];
-
-  // Fast pass produced no work: persist reasoning (so history grows) and skip expensive pass.
-  if (quickAnalysis && ops.length === 0) {
-    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
-    // Persist triage metadata from quick analysis even when no actions are needed
-    if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
-    return 0;
-  }
-
-  // Only escalate to the pro model if fast pass failed or wants to change something.
-  let reviewAnalysis: AnalysisResult | null = null;
-  if (!quickAnalysis || ops.length > 0) {
-    reviewAnalysis = await generateAnalysis(
+  let quickAnalysis: AnalysisResult | null = null;
+  let ops: TriageOperation[] = [];
+  try {
+    quickAnalysis = await generateAnalysis(
       cfg,
       gemini,
       issue,
       metadata,
       lastTriaged,
-      quickAnalysis?.reasoning || previousReasoning,
-      cfg.modelPro,
+      previousReasoning,
+      cfg.modelFast,
       timelineEvents
     );
-    if (reviewAnalysis) {
-      ops = planOperations(issue, reviewAnalysis, metadata, repoLabels);
-    } else {
-      ops = [];
+    ops = planOperations(issue, quickAnalysis, metadata, repoLabels);
+    // Fast pass produced no work -> skip without recording analysis.
+    if (ops.length === 0) {
+      core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
+      return 0;
     }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    core.info(`⚠️ #${issueNumber}: fast model failed: ${message}`);
   }
 
-  if (!reviewAnalysis) {
-    core.warning(`⚠️ Analysis failed for #${issueNumber}`);
-    return 0;
-  }
-
-  if (reviewAnalysis) {
-    core.info(`🤖 #${issueNumber}: ${reviewAnalysis.reasoning}`);
-  } else if (quickAnalysis) {
-    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
-  } else {
-    core.info(`⏭️ #${issueNumber}`);
-  }
+  // Escalate to the pro model whenever fast pass failed or wants work done.
+  const reviewAnalysis = await generateAnalysis(
+    cfg,
+    gemini,
+    issue,
+    metadata,
+    lastTriaged,
+    quickAnalysis?.reasoning || previousReasoning,
+    cfg.modelPro,
+    timelineEvents
+  );
+  ops = planOperations(issue, reviewAnalysis, metadata, repoLabels);
+  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.reasoning}`);
 
   let performedCount = 0;
   if (ops.length > 0) {

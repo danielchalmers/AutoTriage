@@ -1,4 +1,3 @@
-import * as core from '@actions/core';
 import { saveArtifact } from './storage';
 import { buildPrompt } from './prompt';
 import type { IssueLike } from './github';
@@ -16,7 +15,8 @@ export type AnalysisResult = {
 
 /**
  * Run a single model pass (fast or pro) returning the structured triage analysis.
- * Never throws for model logic errors; returns null if the model call or parse fails.
+ * Throws when the Gemini model invocation fails so callers can decide whether to
+ * propagate or swallow the error.
  */
 export async function generateAnalysis(
   cfg: Config,
@@ -27,7 +27,7 @@ export async function generateAnalysis(
   previousReasoning: string,
   model: string,
   timelineEvents: any[]
-): Promise<AnalysisResult | null> {
+): Promise<AnalysisResult> {
   const prompt = await buildPrompt(
     issue,
     metadata,
@@ -38,17 +38,8 @@ export async function generateAnalysis(
   );
 
   saveArtifact(issue.number, `gemini-input-${model}.md`, prompt);
-  let analysis: AnalysisResult | null = null;
-  try {
-    const res = await gemini.generate(prompt, model, cfg.modelTemperature, issue.number);
-    saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(res, null, 2));
-    analysis = res;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    core.warning(`⚠️ ${model} #${issue.number}: ${message}`);
-    analysis = null;
-  }
-
-  return analysis;
+  const res = await gemini.generate(prompt, model, cfg.modelTemperature, issue.number);
+  saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(res, null, 2));
+  return res;
 }
 
