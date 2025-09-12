@@ -47,23 +47,23 @@ export class GeminiClient {
       throw new Error(`NETWORK_ERROR: ${message}`);
     }
 
-    if (response.status === 429) throw new Error('QUOTA_EXCEEDED');
-    if (response.status === 500) throw new Error('SERVER_ERROR');
-    if (response.status === 503) throw new Error('MODEL_OVERLOADED');
-    if (!response.ok) throw new Error(`HTTP_${response.status}`);
+  if (response.status === 429) throw new Error('QUOTA_EXCEEDED');
+  if (response.status === 500) throw new Error('MODEL_INTERNAL_ERROR');
+  if (response.status === 503) throw new Error('MODEL_OVERLOADED');
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 
     const data = (await response.json()) as GeminiResponse;
     saveArtifact(issueNumber, `gemini-output-${model}.json`, JSON.stringify(data, null, 2));
 
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof raw !== 'string' || raw.trim().length === 0) {
-      throw new Error('INVALID_RESPONSE: empty');
+      throw new Error('INVALID_RESPONSE');
     }
 
     try {
       return JSON.parse(raw) as AnalysisResult;
     } catch {
-      throw new Error('INVALID_RESPONSE: parse_error');
+      throw new Error('INVALID_RESPONSE');
     }
   }
 }

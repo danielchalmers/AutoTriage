@@ -8,49 +8,60 @@ import { GeminiClient } from './gemini';
 import { buildMetadata } from './prompt';
 import { TriageOperation, planOperations } from './triage';
 
+function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
+
 async function run(): Promise<void> {
-  try {
-    const cfg = getConfig();
-    core.info(`⚙️ Enabled: ${cfg.enabled ? 'true' : 'false'} (dry-run if false)`);
-    core.info(`📦 Repo: ${cfg.owner}/${cfg.repo}`);
+  const cfg = getConfig();
+  core.info(`⚙️ Enabled: ${cfg.enabled ? 'true' : 'false'} (dry-run if false)`);
+  core.info(`📦 Repo: ${cfg.owner}/${cfg.repo}`);
 
-    const db = loadDatabase(cfg.dbPath);
-    const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
-    const gemini = new GeminiClient(cfg.geminiApiKey);
-    const repoLabels = await gh.listRepoLabels();
-    const targets = await listTargets(cfg, gh);
-    let performedTotal = 0;
+  const db = loadDatabase(cfg.dbPath);
+  const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
+  const gemini = new GeminiClient(cfg.geminiApiKey);
+  const repoLabels = await gh.listRepoLabels();
+  const targets = await listTargets(cfg, gh);
+  let performedTotal = 0;
 
-    core.info(`▶️ Processing ${targets.length} item(s)`);
-    for (const n of targets) {
-      const remaining = cfg.maxOperations - performedTotal;
-      if (remaining <= 0) {
-        core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
-        break;
-      }
+  core.info(`▶️ Processing ${targets.length} item(s)`);
+  for (const n of targets) {
+    const remaining = cfg.maxOperations - performedTotal;
+    if (remaining <= 0) {
+      core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
+      break;
+    }
+    try {
       const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
       performedTotal += performed;
-      if (performedTotal >= cfg.maxOperations) {
-        core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
-        break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'QUOTA_EXCEEDED') {
+        core.error(`❌ #${n}: Quota exceeded`);
+        throw err; // abort entire run
       }
+      if (msg === 'MODEL_INTERNAL_ERROR') {
+        core.warning(`⚠️ #${n}: Model internal error; waiting 30s then continuing`);
+        await sleep(30000);
+        continue;
+      }
+      if (msg === 'MODEL_OVERLOADED') {
+        core.warning(`⚠️ #${n}: Model overloaded; waiting 30s then continuing`);
+        await sleep(30000);
+        continue;
+      }
+      if (msg === 'INVALID_RESPONSE') {
+        // Malformed / empty output: skip silently with warning
+        core.warning(`⚠️ #${n}: Invalid response; skipping`);
+        continue;
+      }
+      throw err; // unknown error => abort
     }
-
-    saveDatabase(db, cfg.dbPath, cfg.enabled);
-  } catch (err: any) {
-    // Enrich failure output with HTTP + request metadata when available.
-    const status = err?.status || err?.response?.status;
-    const method = err?.request?.method;
-    const url = err?.request?.url;
-    const reqId = err?.response?.headers?.['x-github-request-id'];
-    if (status || method || url) {
-      if (status) core.error(`💥 HTTP ${status}`);
-      if (method && url) core.error(`💥 ${method} ${url}`);
-      if (reqId) core.error(`💥 x-github-request-id: ${reqId}`);
+    if (performedTotal >= cfg.maxOperations) {
+      core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
+      break;
     }
-    const message = err instanceof Error ? err.message : String(err);
-    core.setFailed(message);
   }
+
+  saveDatabase(db, cfg.dbPath, cfg.enabled);
 }
 
 run();
@@ -75,25 +86,21 @@ async function processIssue(
   // neither the issue nor its (recent) timeline events have changed since that time.
   // This avoids unnecessary model invocations for completely unchanged items.
   if (lastTriaged) {
-    try {
-      const lastTriagedMs = Date.parse(lastTriaged);
-      const updatedMs = issue.updated_at ? Date.parse(issue.updated_at) : 0;
-      const hasIssueUpdate = updatedMs > lastTriagedMs; // issue body/title/state/labels/comments changed
-      const hasNewTimelineEvent = timelineEvents.some(ev => {
-        const ts = ev?.timestamp ? Date.parse(ev.timestamp) : 0;
-        return ts > lastTriagedMs;
-      });
-      if (!hasIssueUpdate && !hasNewTimelineEvent) {
-        core.info(`⏭️ #${issueNumber}: unchanged since last triage (${lastTriaged}); skipping analysis.`);
-        return 0;
-      }
-    } catch (e) {
-      // Non-fatal; fall through to normal processing if any parsing issues occur.
+    const lastTriagedMs = Date.parse(lastTriaged);
+    const updatedMs = issue.updated_at ? Date.parse(issue.updated_at) : 0;
+    const hasIssueUpdate = updatedMs > lastTriagedMs;
+    const hasNewTimelineEvent = timelineEvents.some(ev => {
+      const ts = ev?.timestamp ? Date.parse(ev.timestamp) : 0;
+      return ts > lastTriagedMs;
+    });
+    if (!hasIssueUpdate && !hasNewTimelineEvent) {
+      core.info(`⏭️ #${issueNumber}: unchanged since last triage (${lastTriaged})`);
+      return 0;
     }
   }
 
   // Pass 1: fast model
-  const quickAnalysis = await generateAnalysis(
+  const quickAnalysis: AnalysisResult = await generateAnalysis(
     cfg,
     gemini,
     issue,
@@ -103,50 +110,29 @@ async function processIssue(
     cfg.modelFast,
     timelineEvents
   );
-  let ops: TriageOperation[] = quickAnalysis
-    ? planOperations(issue, quickAnalysis, metadata, repoLabels)
-    : [];
+
+  let ops: TriageOperation[] = planOperations(issue, quickAnalysis, metadata, repoLabels);
 
   // Fast pass produced no work: persist reasoning (so history grows) and skip expensive pass.
-  if (quickAnalysis && ops.length === 0) {
+  if (ops.length === 0) {
     core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
-    // Persist triage metadata from quick analysis even when no actions are needed
     if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
     return 0;
   }
 
-  // Only escalate to the pro model if fast pass failed or wants to change something.
-  let reviewAnalysis: AnalysisResult | null = null;
-  if (!quickAnalysis || ops.length > 0) {
-    reviewAnalysis = await generateAnalysis(
-      cfg,
-      gemini,
-      issue,
-      metadata,
-      lastTriaged,
-      quickAnalysis?.reasoning || previousReasoning,
-      cfg.modelPro,
-      timelineEvents
-    );
-    if (reviewAnalysis) {
-      ops = planOperations(issue, reviewAnalysis, metadata, repoLabels);
-    } else {
-      ops = [];
-    }
-  }
+  const reviewAnalysis: AnalysisResult = await generateAnalysis(
+    cfg,
+    gemini,
+    issue,
+    metadata,
+    lastTriaged,
+    quickAnalysis.reasoning || previousReasoning,
+    cfg.modelPro,
+    timelineEvents
+  );
 
-  if (!reviewAnalysis) {
-    core.warning(`⚠️ Analysis failed for #${issueNumber}`);
-    return 0;
-  }
-
-  if (reviewAnalysis) {
-    core.info(`🤖 #${issueNumber}: ${reviewAnalysis.reasoning}`);
-  } else if (quickAnalysis) {
-    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
-  } else {
-    core.info(`⏭️ #${issueNumber}`);
-  }
+  ops = planOperations(issue, reviewAnalysis, metadata, repoLabels);
+  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.reasoning}`);
 
   let performedCount = 0;
   if (ops.length > 0) {
