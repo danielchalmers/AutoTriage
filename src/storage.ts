@@ -80,10 +80,24 @@ export type Config = {
   issueNumber?: number;
   issueNumbers?: number[];
   promptPath: string;
+  readmePath: string;
   dbPath?: string;
   modelFast: string;
   modelPro: string;
   maxTimelineEvents: number;
   maxOperations: number;
 };
+
+export function loadReadme(readmePath?: string): string {
+  if (!readmePath) return '';
+  try {
+    const resolved = path.isAbsolute(readmePath) ? readmePath : path.join(process.cwd(), readmePath);
+    if (!fs.existsSync(resolved)) return '';
+    return fs.readFileSync(resolved, 'utf8');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`Warning: failed to read README at '${readmePath}': ${message}`);
+    return '';
+  }
+}
 

@@ -16,6 +16,10 @@ inputs:
     description: "Repo-relative path to the prompt template that governs triage behavior."
     required: false
     default: ".github/AutoTriage.prompt"
+  readme-path:
+    description: "Path to the README file to include in the prompt context."
+    required: false
+    default: "README.md"
   enabled:
     description: "true = apply changes; false = dry-run (log planned operations only)."
     required: false

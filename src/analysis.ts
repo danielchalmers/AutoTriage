@@ -29,6 +29,7 @@ export async function generateAnalysis(
     lastTriaged,
     previousReasoning,
     cfg.promptPath,
+    cfg.readmePath,
     timelineEvents
   );
 

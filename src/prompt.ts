@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { IssueLike } from './github';
-import { saveArtifact } from './storage';
+import { saveArtifact, loadReadme } from './storage';
 
 export function buildMetadata(issue: IssueLike) {
   return {
@@ -30,6 +30,7 @@ export async function buildPrompt(
   lastTriaged: string | null,
   previousReasoning: string,
   promptPath: string,
+  readmePath: string,
   timelineEvents: any[]
 ) {
   const resolvedPath = path.isAbsolute(promptPath) ? promptPath : path.join(process.cwd(), promptPath);
@@ -49,6 +50,9 @@ ${JSON.stringify(timelineEvents, null, 2)}
 Last triaged: ${lastTriaged || 'never'}
 Previous reasoning: ${previousReasoning || 'none'}
 Current date: ${new Date().toISOString()}
+
+=== SECTION: PROJECT CONTEXT ===
+${loadReadme(readmePath)}
 
 === SECTION: OUTPUT FORMAT ===
 Core rules:

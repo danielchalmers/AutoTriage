@@ -14,13 +14,6 @@
 - Use neutral language: "For anyone investigating this...".
 - End comments with "\n\n---\n*I'm an [AI assistant](https://github.com/danielchalmers/AutoTriage) — If I missed something or made a mistake, please let me know in a reply!*" unless otherwise directed.
 
-## Repository Context Placeholder
-<!-- Define context such as:
-- Repo description
-- Repo link
-- Set up guide
-- Code of Conduct
--->
 
 ## Label Application Principles
 - Only apply labels that are strongly relevant to the core issue — do not apply for minor, incidental, or fleeting mentions.
