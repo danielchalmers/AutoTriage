@@ -33,7 +33,7 @@ export async function generateAnalysis(
     timelineEvents
   );
 
-  saveArtifact(issue.number, `gemini-input-${model}.md`, prompt);
+  saveArtifact(issue.number, `input-${model}.md`, prompt);
   const result = await gemini.generate(prompt, model, cfg.modelTemperature, issue.number);
   saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(result, null, 2));
   return result;

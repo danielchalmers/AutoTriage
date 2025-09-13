@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { IssueLike } from './github';
-import { saveArtifact, loadReadme } from './storage';
+import { loadReadme } from './storage';
 
 export function buildMetadata(issue: IssueLike) {
   return {
@@ -47,9 +47,9 @@ ${JSON.stringify(metadata, null, 2)}
 ${JSON.stringify(timelineEvents, null, 2)}
 
 === SECTION: TRIAGE CONTEXT ===
+Current date: ${new Date().toISOString()}
 Last triaged: ${lastTriaged || 'never'}
 Previous reasoning: ${previousReasoning || 'none'}
-Current date: ${new Date().toISOString()}
 
 === SECTION: PROJECT CONTEXT ===
 ${loadReadme(readmePath)}
@@ -82,7 +82,5 @@ Optional fields (include only when conditions are met and you are certain):
 - state: string (one of: "open" to reopen; "completed" to close with completed; "not_planned" to close as not planned)
 - newTitle: string (new title for the issue)
 `;
-
-  saveArtifact(issue.number, 'gemini-input.md', promptString);
   return promptString;
 }

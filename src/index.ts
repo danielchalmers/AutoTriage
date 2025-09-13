@@ -34,26 +34,13 @@ async function run(): Promise<void> {
       performedTotal += performed;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg === 'QUOTA_EXCEEDED') {
-        core.error(`❌ #${n}: Quota exceeded`);
-        throw err; // abort entire run
-      }
-      if (msg === 'MODEL_INTERNAL_ERROR') {
-        core.warning(`⚠️ #${n}: Model internal error; waiting 30s then continuing`);
+      if (msg === 'MODEL_INTERNAL_ERROR' || msg === 'MODEL_OVERLOADED' || msg === 'INVALID_RESPONSE') {
+        core.warning(`⚠️ #${n}: ${msg}; waiting 30s.`);
         await sleep(30000);
         continue;
       }
-      if (msg === 'MODEL_OVERLOADED') {
-        core.warning(`⚠️ #${n}: Model overloaded; waiting 30s then continuing`);
-        await sleep(30000);
-        continue;
-      }
-      if (msg === 'INVALID_RESPONSE') {
-        // Malformed / empty output: skip silently with warning
-        core.warning(`⚠️ #${n}: Invalid response; skipping`);
-        continue;
-      }
-      throw err; // unknown error => abort
+      core.error(`❌ #${n}: ${msg}`);
+      throw err;
     }
     if (performedTotal >= cfg.maxOperations) {
       core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);

@@ -6,7 +6,7 @@ interface GeminiResponse {
 }
 
 export class GeminiClient {
-  constructor(private apiKey: string, private fetchFn: typeof fetch = fetch) { }
+  constructor(private apiKey: string) { }
 
   async generate(prompt: string, model: string, temperature: string, issueNumber: number): Promise<AnalysisResult> {
     const payload = {
@@ -31,7 +31,7 @@ export class GeminiClient {
 
     let response: Response;
     try {
-      response = await this.fetchFn(
+      response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: 'POST',
@@ -47,13 +47,13 @@ export class GeminiClient {
       throw new Error(`NETWORK_ERROR: ${message}`);
     }
 
-  if (response.status === 429) throw new Error('QUOTA_EXCEEDED');
-  if (response.status === 500) throw new Error('MODEL_INTERNAL_ERROR');
-  if (response.status === 503) throw new Error('MODEL_OVERLOADED');
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    if (response.status === 429) throw new Error('QUOTA_EXCEEDED');
+    if (response.status === 500) throw new Error('MODEL_INTERNAL_ERROR');
+    if (response.status === 503) throw new Error('MODEL_OVERLOADED');
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
 
     const data = (await response.json()) as GeminiResponse;
-    saveArtifact(issueNumber, `gemini-output-${model}.json`, JSON.stringify(data, null, 2));
+    saveArtifact(issueNumber, `output-${model}.json`, JSON.stringify(data, null, 2));
 
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof raw !== 'string' || raw.trim().length === 0) {
