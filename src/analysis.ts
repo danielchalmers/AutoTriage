@@ -23,7 +23,7 @@ export async function generateAnalysis(
   model: string,
   timelineEvents: any[]
 ): Promise<AnalysisResult> {
-  const prompt = await buildPrompt(
+  const { systemPrompt, userPrompt } = await buildPrompt(
     issue,
     metadata,
     lastTriaged,
@@ -33,8 +33,9 @@ export async function generateAnalysis(
     timelineEvents
   );
 
-  saveArtifact(issue.number, `input-${model}.md`, prompt);
-  const result = await gemini.generate(prompt, model, cfg.modelTemperature, issue.number);
+  saveArtifact(issue.number, `input-system.md`, systemPrompt);
+  saveArtifact(issue.number, `input-user-${model}.md`, userPrompt);
+  const result = await gemini.generate(systemPrompt, userPrompt, model, cfg.modelTemperature, issue.number);
   saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(result, null, 2));
   return result;
 }

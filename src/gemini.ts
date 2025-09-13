@@ -8,9 +8,10 @@ interface GeminiResponse {
 export class GeminiClient {
   constructor(private apiKey: string) { }
 
-  async generate(prompt: string, model: string, temperature: string, issueNumber: number): Promise<AnalysisResult> {
+  async generate(systemPrompt: string, userPrompt: string, model: string, temperature: string, issueNumber: number): Promise<AnalysisResult> {
     const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: {
