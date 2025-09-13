@@ -101,3 +101,15 @@ export function loadReadme(readmePath?: string): string {
   }
 }
 
+export function loadPrompt(promptPath: string): string {
+  try {
+    // If a prompt path is provided, try to load it
+    const resolvedPath = path.isAbsolute(promptPath) ? promptPath : path.join(process.cwd(), promptPath);
+    return fs.readFileSync(resolvedPath, 'utf8');
+  } catch (error) {
+    // If custom prompt file doesn't exist, fall through to bundled default
+    const bundledPath = path.join(__dirname, 'AutoTriage.prompt');
+    return fs.readFileSync(bundledPath, 'utf8');
+  }
+}
+

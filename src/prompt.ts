@@ -1,7 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import type { IssueLike } from './github';
-import { loadReadme } from './storage';
+import { loadReadme, loadPrompt } from './storage';
 
 export function buildMetadata(issue: IssueLike) {
   return {
@@ -33,8 +31,7 @@ export async function buildPrompt(
   readmePath: string,
   timelineEvents: any[]
 ) {
-  const resolvedPath = path.isAbsolute(promptPath) ? promptPath : path.join(process.cwd(), promptPath);
-  const basePrompt = fs.readFileSync(resolvedPath, 'utf8');
+  const basePrompt = loadPrompt(promptPath);
   const systemPrompt = `
 === SECTION: ASSISTANT BEHAVIOR ===
 ${basePrompt}

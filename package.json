@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
-    "build": "npm run typecheck && rimraf dist && ncc build src/index.ts -o dist --minify --license licenses.txt",
+    "build": "npm run typecheck && rimraf dist && ncc build src/index.ts -o dist --minify --license licenses.txt && npm run copy-assets",
+    "copy-assets": "copy examples\\AutoTriage.prompt dist\\AutoTriage.prompt",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
     "dev": "tsc -w",
@@ -27,7 +28,8 @@
   },
   "files": [
     "action.yml",
-    "README.md"
+    "README.md",
+    "dist/"
   ],
   "sideEffects": false,
   "devDependencies": {
