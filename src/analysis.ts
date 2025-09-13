@@ -21,7 +21,8 @@ export async function generateAnalysis(
   lastTriaged: string | null,
   previousReasoning: string,
   model: string,
-  timelineEvents: any[]
+  timelineEvents: any[],
+  repoLabels?: Array<{ name: string; description?: string | null }>
 ): Promise<AnalysisResult> {
   const { systemPrompt, userPrompt } = await buildPrompt(
     issue,
@@ -30,7 +31,8 @@ export async function generateAnalysis(
     previousReasoning,
     cfg.promptPath,
     cfg.readmePath,
-    timelineEvents
+    timelineEvents,
+    repoLabels
   );
 
   saveArtifact(issue.number, `input-system.md`, systemPrompt);

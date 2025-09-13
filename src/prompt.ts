@@ -29,12 +29,19 @@ export async function buildPrompt(
   previousReasoning: string,
   promptPath: string,
   readmePath: string,
-  timelineEvents: any[]
+  timelineEvents: any[],
+  repoLabels?: Array<{ name: string; description?: string | null }>
 ) {
   const basePrompt = loadPrompt(promptPath);
   const systemPrompt = `
 === SECTION: ASSISTANT BEHAVIOR ===
 ${basePrompt}
+
+=== SECTION: REPO LABELS (JSON) ===
+Core rules:
+- Only use the labels from this list; Never invent new labels or modify existing ones.
+
+${JSON.stringify(repoLabels, null, 2)}
 
 === SECTION: OUTPUT FORMAT ===
 Core rules:

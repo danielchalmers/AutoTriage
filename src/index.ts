@@ -58,7 +58,7 @@ async function processIssue(
   triageDb: TriageDb,
   issueNumber: number,
   remainingOps: number,
-  repoLabels: string[],
+  repoLabels: Array<{ name: string; description?: string | null }>,
   gh: GitHubClient,
   gemini: GeminiClient
 ): Promise<number> {
@@ -95,10 +95,11 @@ async function processIssue(
     lastTriaged,
     previousReasoning,
     cfg.modelFast,
-    timelineEvents
+    timelineEvents,
+    repoLabels
   );
 
-  let ops: TriageOperation[] = planOperations(issue, quickAnalysis, metadata, repoLabels);
+  let ops: TriageOperation[] = planOperations(issue, quickAnalysis, metadata, repoLabels.map(l => l.name));
 
   // Fast pass produced no work: persist reasoning (so history grows) and skip expensive pass.
   if (ops.length === 0) {
@@ -115,10 +116,11 @@ async function processIssue(
     lastTriaged,
     quickAnalysis.reasoning || previousReasoning,
     cfg.modelPro,
-    timelineEvents
+    timelineEvents,
+    repoLabels
   );
 
-  ops = planOperations(issue, reviewAnalysis, metadata, repoLabels);
+  ops = planOperations(issue, reviewAnalysis, metadata, repoLabels.map(l => l.name));
   core.info(`🤖 #${issueNumber}: ${reviewAnalysis.reasoning}`);
 
   let performedCount = 0;

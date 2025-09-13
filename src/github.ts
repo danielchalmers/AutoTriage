@@ -43,15 +43,22 @@ export class GitHubClient {
     return issues as IssueLike[];
   }
 
-  async listRepoLabels(): Promise<string[]> {
+  async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {
     const labels = await this.octokit.paginate(this.octokit.rest.issues.listLabelsForRepo, {
       owner: this.owner,
       repo: this.repo,
       per_page: 100,
     });
     return (labels as any[])
-      .map((l: any) => (typeof l?.name === 'string' ? l.name : ''))
-      .filter((n: string) => n.length > 0);
+      .map((l: any) => {
+        const name: string | undefined = typeof l?.name === 'string' ? l.name : undefined;
+        if (!name) return null;
+        return {
+          name,
+          description: typeof l?.description === 'string' && l.description.trim().length > 0 ? l.description : null,
+        } as { name: string; description: string | null };
+      })
+      .filter((l: any): l is { name: string; description: string | null } => !!l);
   }
 
   async listTimelineEvents(issue_number: number, limit: number): Promise<any[]> {
