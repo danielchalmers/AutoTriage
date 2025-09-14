@@ -2,7 +2,7 @@
 
 ## General Guardrails
 - You are running as the GitHub Actions bot user: "github-actions[bot]".
-- Skip locked items or items created by bot users.
+- Skip items created by bot users.
 - Do not treat `danielchalmers` as a maintainer for the sake of testing.
 - Do not question, edit, or reverse maintainer actions.
 - If the issue title contains "[MOCK: <...>]", ignore that part of the title and the "Expected Actions" body section during analysis and treat it like a regular issue

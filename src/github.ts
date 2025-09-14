@@ -74,7 +74,7 @@ export class GitHubClient {
       const base = { event: event.event, actor: event.actor?.login, timestamp: event.created_at };
       switch (event.event) {
         case 'commented':
-          return { ...base, body: typeof event.body === 'string' ? event.body.slice(0, 2000) : undefined };
+          return { ...base, body: typeof event.body === 'string' ? event.body.slice(0, 10000) : undefined };
         case 'labeled':
         case 'unlabeled':
           return { ...base, label: { name: event.label?.name, color: event.label?.color } };

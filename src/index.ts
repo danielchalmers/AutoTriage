@@ -18,16 +18,18 @@ async function run(): Promise<void> {
   const repoLabels = await gh.listRepoLabels();
   const targets = await listTargets(cfg, gh);
   let performedTotal = 0;
-  
+
   core.info(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
-  core.info(`📊 Loaded ${cfg.dbPath} with ${Object.keys(db).length} entries`);
   core.info(`▶️ Processing ${targets.length} item(s) from ${cfg.owner}/${cfg.repo}`);
+
   for (const n of targets) {
     const remaining = cfg.maxOperations - performedTotal;
+
     if (remaining <= 0) {
       core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
       break;
     }
+
     try {
       const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
       performedTotal += performed;
@@ -41,13 +43,14 @@ async function run(): Promise<void> {
       core.error(`❌ #${n}: ${msg}`);
       throw err;
     }
+
     if (performedTotal >= cfg.maxOperations) {
       core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
       break;
     }
-  }
 
-  saveDatabase(db, cfg.dbPath, cfg.enabled);
+    saveDatabase(db, cfg.dbPath, cfg.enabled);
+  }
 }
 
 run();
@@ -100,10 +103,10 @@ async function processIssue(
 
   let ops: TriageOperation[] = planOperations(issue, quickAnalysis, metadata, repoLabels.map(l => l.name));
 
-  // Fast pass produced no work: persist reasoning (so history grows) and skip expensive pass.
+  // Fast pass produced no work: persist reasoning and skip expensive pass.
   if (ops.length === 0) {
     core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
-    if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
+    writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
     return 0;
   }
 
@@ -113,7 +116,7 @@ async function processIssue(
     issue,
     metadata,
     lastTriaged,
-    quickAnalysis.reasoning || previousReasoning,
+    quickAnalysis.reasoning,
     cfg.modelPro,
     timelineEvents,
     repoLabels
@@ -147,7 +150,7 @@ async function processIssue(
     }
   }
 
-  if (cfg.dbPath && cfg.enabled) writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title);
+  writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title);
   return performedCount;
 }
 

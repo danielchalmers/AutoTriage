@@ -40,7 +40,7 @@ export function getConfig(): Config {
   const enabled = (core.getInput('enabled') || 'true').toLowerCase() === 'true';
   const promptPath = core.getInput('prompt-path') || '.github/AutoTriage.prompt';
   const readmePath = core.getInput('readme-path');
-  const dbPath = core.getInput('db-path') || undefined;
+  const dbPath = core.getInput('db-path') || 'triage-db.json';
   const modelFast = core.getInput('model-fast') || 'gemini-2.5-flash';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
   const modelTemperature = core.getInput('model-temperature') || '1.0';
