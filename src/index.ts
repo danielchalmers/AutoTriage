@@ -12,17 +12,16 @@ function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
 
 async function run(): Promise<void> {
   const cfg = getConfig();
-  core.info(`⚙️ Enabled: ${cfg.enabled ? 'true' : 'false'} (dry-run if false)`);
-  core.info(`📦 Repo: ${cfg.owner}/${cfg.repo}`);
-
   const db = loadDatabase(cfg.dbPath);
   const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
   const gemini = new GeminiClient(cfg.geminiApiKey);
   const repoLabels = await gh.listRepoLabels();
   const targets = await listTargets(cfg, gh);
   let performedTotal = 0;
-
-  core.info(`▶️ Processing ${targets.length} item(s)`);
+  
+  core.info(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
+  core.info(`📊 Loaded ${cfg.dbPath} with ${Object.keys(db).length} entries`);
+  core.info(`▶️ Processing ${targets.length} item(s) from ${cfg.owner}/${cfg.repo}`);
   for (const n of targets) {
     const remaining = cfg.maxOperations - performedTotal;
     if (remaining <= 0) {
@@ -121,7 +120,8 @@ async function processIssue(
   );
 
   ops = planOperations(issue, reviewAnalysis, metadata, repoLabels.map(l => l.name));
-  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.reasoning}`);
+  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary}`);
+  core.info(`  💭 ${reviewAnalysis.reasoning}`);
 
   let performedCount = 0;
   if (ops.length > 0) {
