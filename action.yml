@@ -43,8 +43,8 @@ inputs:
     description: "Maximum most-recent timeline events included in the prompt context."
     required: false
     default: "50"
-  max-operations:
-    description: "Global cap on how many actions (label/comment/title/close) may execute this run."
+  max-triages:
+    description: "Global cap on how many targets receive a full (pro model) triage pass this run."
     required: false
     default: "10"
 

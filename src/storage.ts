@@ -84,7 +84,7 @@ export type Config = {
   modelFast: string;
   modelPro: string;
   maxTimelineEvents: number;
-  maxOperations: number;
+  maxTriages: number;
 };
 
 export function loadReadme(readmePath?: string): string {
@@ -111,4 +111,3 @@ export function loadPrompt(promptPath: string): string {
     return fs.readFileSync(bundledPath, 'utf8');
   }
 }
-

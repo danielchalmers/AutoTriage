@@ -17,22 +17,22 @@ async function run(): Promise<void> {
   const gemini = new GeminiClient(cfg.geminiApiKey);
   const repoLabels = await gh.listRepoLabels();
   const targets = await listTargets(cfg, gh);
-  let performedTotal = 0;
+  let triagesPerformed = 0;
 
   core.info(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
   core.info(`▶️ Processing ${targets.length} item(s) from ${cfg.owner}/${cfg.repo}`);
 
   for (const n of targets) {
-    const remaining = cfg.maxOperations - performedTotal;
+    const remaining = cfg.maxTriages - triagesPerformed;
 
     if (remaining <= 0) {
-      core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
+      core.info(`⏳ Max triages (${cfg.maxTriages}) reached; exiting early.`);
       break;
     }
 
     try {
-      const performed = await processIssue(cfg, db, n, remaining, repoLabels, gh, gemini);
-      performedTotal += performed;
+      const triageUsed = await processIssue(cfg, db, n, repoLabels, gh, gemini);
+      if (triageUsed) triagesPerformed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === 'MODEL_INTERNAL_ERROR' || msg === 'MODEL_OVERLOADED' || msg === 'INVALID_RESPONSE') {
@@ -44,8 +44,8 @@ async function run(): Promise<void> {
       throw err;
     }
 
-    if (performedTotal >= cfg.maxOperations) {
-      core.info(`⏳ Max operations (${cfg.maxOperations}) reached; exiting early.`);
+    if (triagesPerformed >= cfg.maxTriages) {
+      core.info(`⏳ Max triages (${cfg.maxTriages}) reached; exiting early.`);
       break;
     }
 
@@ -59,11 +59,10 @@ async function processIssue(
   cfg: Config,
   triageDb: TriageDb,
   issueNumber: number,
-  remainingOps: number,
   repoLabels: Array<{ name: string; description?: string | null }>,
   gh: GitHubClient,
   gemini: GeminiClient
-): Promise<number> {
+): Promise<boolean> {
   const issue = await gh.getIssue(issueNumber);
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: string | null = dbEntry?.lastTriaged || null;
@@ -84,7 +83,7 @@ async function processIssue(
     });
     if (!hasIssueUpdate && !hasNewTimelineEvent) {
       core.info(`⏭️ #${issueNumber}: unchanged since last triage (${lastTriaged})`);
-      return 0;
+      return false;
     }
   }
 
@@ -107,7 +106,7 @@ async function processIssue(
   if (ops.length === 0) {
     core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
     writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
-    return 0;
+    return false;
   }
 
   const reviewAnalysis: AnalysisResult = await generateAnalysis(
@@ -126,7 +125,6 @@ async function processIssue(
   core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary}`);
   core.info(`  💭 ${reviewAnalysis.reasoning}`);
 
-  let performedCount = 0;
   if (ops.length > 0) {
     // Persist the concrete operation plan for later inspection / debugging.
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
@@ -136,22 +134,16 @@ async function processIssue(
         const emoji = op.kind === 'labels' ? '🏷️' : op.kind === 'comment' ? '💬' : op.kind === 'title' ? '✏️' : op.kind === 'state' ? '�' : '•';
         core.info(`🧪 [dry-run] Would: ${emoji} ${op.kind}`);
       }
-      return 0;
     } else {
-      const toExecute = Math.min(ops.length, Math.max(0, remainingOps));
-      for (let i = 0; i < toExecute; i++) {
-        const op = ops[i]!;
+      for (const op of ops) {
         await op.perform(gh, cfg, issue);
-        performedCount++;
-      }
-      if (toExecute < ops.length) {
-        core.info(`⏳ Operation budget exhausted for #${issueNumber}. Executed ${toExecute}/${ops.length} planned ops.`);
       }
     }
   }
 
   writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title);
-  return performedCount;
+  // Pro review executed, so consume one triage slot.
+  return true;
 }
 
 async function listTargets(cfg: Config, gh: GitHubClient): Promise<number[]> {
@@ -167,4 +159,3 @@ async function listTargets(cfg: Config, gh: GitHubClient): Promise<number[]> {
   const issues = await gh.listOpenIssues();
   return issues.map(i => i.number);
 }
-
