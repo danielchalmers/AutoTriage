@@ -33,7 +33,7 @@ jobs:
       - name: Mock triage
         uses: ./
         with:
-          issue-number: 3
+          issue-number: "3 6 7"
           prompt-path: examples/AutoTriage.prompt
           enabled: false
         env:

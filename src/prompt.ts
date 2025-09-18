@@ -69,6 +69,8 @@ ACTION & SAFETY RULES:
 - If conflicting instructions exist, take no action.
 - If conditions for an action are ambiguous, incomplete, or not precisely satisfied, take no action.
 - Do not override prior actions unless new context (edits, new comments, updated timeline events) has appeared since the last run.
+- Analyze and provide reasoning, but do not perform actions for:
+  - Issues that are locked.
 
 EVALUATION RULES:
 - Do all date logic via explicit date comparisons (no heuristics or assumptions).
