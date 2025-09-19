@@ -41,22 +41,40 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
   }
 }
 
-// Return prior reasoning log (older field alias supported for forward compatibility).
-export function getPreviousReasoning(db: TriageDb, issueNumber: number): string {
-  const entry = db[String(issueNumber)] as any;
-  return (entry?.reasoning || entry?.reason || '') as string;
+export type ParsedDbEntry = {
+  lastTriaged: Date | null;
+  previousReasoning: string;
+  reactions?: number;
+  summary?: string;
+};
+
+export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
+  const raw = db[String(issueNumber)] as (TriageDb[string] & { reason?: string }) | undefined;
+  const lastTriaged: Date | null = raw?.lastTriaged ? new Date(raw.lastTriaged) : null;
+  const previousReasoning: string = (raw?.reasoning ?? raw?.reason ?? '') as string;
+  const reactions: number | undefined = typeof raw?.reactions === 'number' ? raw.reactions : undefined;
+  const summary: string | undefined = typeof raw?.summary === 'string' ? raw.summary : undefined;
+  const result: ParsedDbEntry = {
+    lastTriaged,
+    previousReasoning,
+    ...(reactions !== undefined ? { reactions } : {}),
+    ...(summary !== undefined ? { summary } : {}),
+  };
+  return result;
 }
 
 export function writeAnalysisToDb(
   db: TriageDb,
   issueNumber: number,
   analysis: AnalysisResult,
-  fallbackTitle: string
+  fallbackTitle: string,
+  currentReactions?: number
 ): void {
   db[issueNumber] = {
     lastTriaged: new Date().toISOString(),
     reasoning: analysis.reasoning || 'no reasoning',
     summary: analysis.summary || (fallbackTitle || 'no summary'),
+    reactions: typeof currentReactions === 'number' ? currentReactions : (db[issueNumber]?.reactions),
   } as any;
 }
 
@@ -67,6 +85,8 @@ export type TriageDb = Record<string, {
   // Canonical issue summary for duplicate detection / clustering
   summary: string;
   labels?: string[];
+  // Snapshot of total reactions count at last triage time
+  reactions?: number;
 }>;
 
 export type Config = {

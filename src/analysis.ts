@@ -1,6 +1,6 @@
 import { saveArtifact } from './storage';
 import { buildPrompt } from './prompt';
-import type { IssueMetadata } from './github';
+import type { Issue } from './github';
 import type { Config } from './storage';
 import type { GeminiClient } from './gemini';
 
@@ -16,8 +16,8 @@ export type AnalysisResult = {
 export async function generateAnalysis(
   cfg: Config,
   gemini: GeminiClient,
-  issue: IssueMetadata,
-  lastTriaged: string | null,
+  issue: Issue,
+  lastTriaged: Date | null,
   previousReasoning: string,
   model: string,
   timelineEvents: any[],

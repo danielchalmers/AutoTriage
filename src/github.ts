@@ -1,6 +1,6 @@
 import * as github from '@actions/github';
 
-export type IssueMetadata = {
+export type Issue = {
   title: string;
   state: string;
   type: string;
@@ -26,7 +26,7 @@ export class GitHubClient {
     this.octokit = github.getOctokit(token);
   }
 
-  private buildMetadata(rawIssue: any): IssueMetadata {
+  private buildMetadata(rawIssue: any): Issue {
     return {
       title: rawIssue.title,
       state: rawIssue.state,
@@ -48,12 +48,12 @@ export class GitHubClient {
     };
   }
 
-  async getIssue(issue_number: number): Promise<IssueMetadata> {
+  async getIssue(issue_number: number): Promise<Issue> {
     const { data } = await this.octokit.rest.issues.get({ owner: this.owner, repo: this.repo, issue_number });
     return this.buildMetadata(data);
   }
 
-  async listOpenIssues(): Promise<IssueMetadata[]> {
+  async listOpenIssues(): Promise<Issue[]> {
     const issues = await this.octokit.paginate(this.octokit.rest.issues.listForRepo, {
       owner: this.owner,
       repo: this.repo,
@@ -150,5 +150,49 @@ export class GitHubClient {
       state,
       state_reason: state === 'closed' ? (reason ?? 'not_planned') : null,
     });
+  }
+
+  lastUpdated(
+    issue: Issue,
+    timelineEvents: Array<{ timestamp?: string }>,
+    previousReactions?: number
+  ): number {
+    const parseTs = (s?: string): number => {
+      if (!s) return 0;
+      const v = Date.parse(s);
+      return Number.isFinite(v) ? v : 0;
+    };
+
+    const issueUpdatedMs = parseTs(issue.updated_at);
+    const latestEventMs = (timelineEvents || []).reduce((max, ev) => {
+      const ts = parseTs(ev?.timestamp);
+      return ts > max ? ts : max;
+    }, 0);
+
+    let latest = issueUpdatedMs > latestEventMs ? issueUpdatedMs : latestEventMs;
+
+    // If the total reactions count changed since last triage, consider that an update.
+    if (typeof previousReactions === 'number' && typeof issue.reactions === 'number') {
+      if (issue.reactions !== previousReactions) {
+        // Use issue.updated_at if present; otherwise treat as "now" to force update.
+        const fallbackNow = Date.now();
+        const reactionUpdateMs = issueUpdatedMs || fallbackNow;
+        if (reactionUpdateMs > latest) latest = reactionUpdateMs;
+      }
+    }
+
+    return latest;
+  }
+
+  hasUpdated(
+    issue: Issue,
+    timelineEvents: Array<{ timestamp?: string }>,
+    lastTriaged: Date | null,
+    previousReactions?: number
+  ): boolean {
+    if (!lastTriaged) return true; // No prior triage => treat as updated.
+    const latestUpdateMs = this.lastUpdated(issue, timelineEvents, previousReactions);
+    const hasChangeSinceTriage = latestUpdateMs > lastTriaged.getTime();
+    return hasChangeSinceTriage;
   }
 }

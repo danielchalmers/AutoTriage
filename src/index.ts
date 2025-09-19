@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import type { Config, TriageDb } from './storage';
-import { getPreviousReasoning, loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb } from './storage';
+import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
 import { generateAnalysis, AnalysisResult } from './analysis';
 import { GitHubClient } from './github';
 import { GeminiClient } from './gemini';
@@ -63,26 +63,12 @@ async function processIssue(
   gemini: GeminiClient
 ): Promise<boolean> {
   const issue = await gh.getIssue(issueNumber);
-  const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
-  const lastTriaged: string | null = dbEntry?.lastTriaged || null;
-  const previousReasoning: string = getPreviousReasoning(triageDb, issueNumber);
+  const dbEntry = parseDbEntry(triageDb, issueNumber);
   const timelineEvents = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
-  // Optimization: Skip analysis entirely if we have a prior triage entry AND
-  // neither the issue nor its (recent) timeline events have changed since that time.
-  // This avoids unnecessary model invocations for completely unchanged items.
-  if (lastTriaged) {
-    const lastTriagedMs = Date.parse(lastTriaged);
-    const updatedMs = issue.updated_at ? Date.parse(issue.updated_at) : 0;
-    const hasIssueUpdate = updatedMs > lastTriagedMs;
-    const hasNewTimelineEvent = timelineEvents.some(ev => {
-      const ts = ev?.timestamp ? Date.parse(ev.timestamp) : 0;
-      return ts > lastTriagedMs;
-    });
-    if (!hasIssueUpdate && !hasNewTimelineEvent) {
-      core.info(`⏭️ #${issueNumber}: unchanged since last triage (${lastTriaged})`);
-      return false;
-    }
+  // Has the issue or its timeline changed since we last triaged it?
+  if (!gh.hasUpdated(issue, timelineEvents, dbEntry.lastTriaged, dbEntry.reactions)) {
+    return false;
   }
 
   // Pass 1: fast model
@@ -90,8 +76,8 @@ async function processIssue(
     cfg,
     gemini,
     issue,
-    lastTriaged,
-    previousReasoning,
+    dbEntry.lastTriaged,
+    dbEntry.previousReasoning,
     cfg.modelFast,
     timelineEvents,
     repoLabels
@@ -102,7 +88,7 @@ async function processIssue(
   // Fast pass produced no work: persist reasoning and skip expensive pass.
   if (ops.length === 0) {
     core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
-    writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title);
+    writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title, issue.reactions);
     return false;
   }
 
@@ -110,7 +96,7 @@ async function processIssue(
     cfg,
     gemini,
     issue,
-    lastTriaged,
+    dbEntry.lastTriaged,
     quickAnalysis.reasoning,
     cfg.modelPro,
     timelineEvents,
@@ -137,7 +123,7 @@ async function processIssue(
     }
   }
 
-  writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title);
+  writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title, issue.reactions);
   // Pro review executed, so consume one triage slot.
   return true;
 }

@@ -60,7 +60,7 @@ class UpdateTitleOp implements TriageOperation {
 // Update the issue state (open, completed, not_planned) where completed/not_planned map to closed + reason.
 class UpdateStateOp implements TriageOperation {
   kind: 'state' = 'state';
-  constructor(public state: 'open' | 'completed' | 'not_planned') {}
+  constructor(public state: 'open' | 'completed' | 'not_planned') { }
   toJSON() { return { kind: this.kind, state: this.state }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.state === 'open') {
