@@ -1,6 +1,6 @@
 import { saveArtifact } from './storage';
 import { buildPrompt } from './prompt';
-import type { IssueLike } from './github';
+import type { IssueMetadata } from './github';
 import type { Config } from './storage';
 import type { GeminiClient } from './gemini';
 
@@ -16,8 +16,7 @@ export type AnalysisResult = {
 export async function generateAnalysis(
   cfg: Config,
   gemini: GeminiClient,
-  issue: IssueLike,
-  metadata: any,
+  issue: IssueMetadata,
   lastTriaged: string | null,
   previousReasoning: string,
   model: string,
@@ -26,7 +25,6 @@ export async function generateAnalysis(
 ): Promise<AnalysisResult> {
   const { systemPrompt, userPrompt } = await buildPrompt(
     issue,
-    metadata,
     lastTriaged,
     previousReasoning,
     cfg.promptPath,

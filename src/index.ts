@@ -5,7 +5,6 @@ import { getPreviousReasoning, loadDatabase, saveArtifact, saveDatabase, writeAn
 import { generateAnalysis, AnalysisResult } from './analysis';
 import { GitHubClient } from './github';
 import { GeminiClient } from './gemini';
-import { buildMetadata } from './prompt';
 import { TriageOperation, planOperations } from './triage';
 
 function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
@@ -67,7 +66,6 @@ async function processIssue(
   const dbEntry = triageDb[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: string | null = dbEntry?.lastTriaged || null;
   const previousReasoning: string = getPreviousReasoning(triageDb, issueNumber);
-  const metadata = buildMetadata(issue);
   const timelineEvents = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
   // Optimization: Skip analysis entirely if we have a prior triage entry AND
@@ -92,7 +90,6 @@ async function processIssue(
     cfg,
     gemini,
     issue,
-    metadata,
     lastTriaged,
     previousReasoning,
     cfg.modelFast,
@@ -100,7 +97,7 @@ async function processIssue(
     repoLabels
   );
 
-  let ops: TriageOperation[] = planOperations(issue, quickAnalysis, metadata, repoLabels.map(l => l.name));
+  let ops: TriageOperation[] = planOperations(issue, quickAnalysis, issue, repoLabels.map(l => l.name));
 
   // Fast pass produced no work: persist reasoning and skip expensive pass.
   if (ops.length === 0) {
@@ -113,7 +110,6 @@ async function processIssue(
     cfg,
     gemini,
     issue,
-    metadata,
     lastTriaged,
     quickAnalysis.reasoning,
     cfg.modelPro,
@@ -121,7 +117,7 @@ async function processIssue(
     repoLabels
   );
 
-  ops = planOperations(issue, reviewAnalysis, metadata, repoLabels.map(l => l.name));
+  ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name));
   core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary}`);
   core.info(`  💭 ${reviewAnalysis.reasoning}`);
 

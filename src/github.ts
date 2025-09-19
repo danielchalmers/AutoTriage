@@ -1,23 +1,23 @@
 import * as github from '@actions/github';
 
-export type IssueLike = {
-  number: number;
+export type IssueMetadata = {
   title: string;
   state: string;
-  body?: string | null;
-  user?: { login?: string; type?: string };
-  draft?: boolean;
-  locked?: boolean;
-  milestone?: { title?: string } | null;
+  type: string;
+  number: number;
+  author: string;
+  user_type: string;
+  draft: boolean;
+  locked: boolean;
+  milestone: string | null;
   created_at?: string;
   updated_at?: string;
   closed_at?: string | null;
-  comments?: number;
-  reactions?: { total_count?: number };
-  labels?: Array<{ name?: string } | string>;
-  assignees?: Array<{ login?: string }>;
-  assignee?: { login?: string } | null;
-  pull_request?: unknown;
+  comments: number;
+  reactions: number;
+  labels: string[];
+  assignees: string[];
+  body?: string | null;
 };
 
 export class GitHubClient {
@@ -26,12 +26,34 @@ export class GitHubClient {
     this.octokit = github.getOctokit(token);
   }
 
-  async getIssue(issue_number: number): Promise<IssueLike> {
-    const { data } = await this.octokit.rest.issues.get({ owner: this.owner, repo: this.repo, issue_number });
-    return data as IssueLike;
+  private buildMetadata(rawIssue: any): IssueMetadata {
+    return {
+      title: rawIssue.title,
+      state: rawIssue.state,
+      type: rawIssue.pull_request ? 'pull request' : 'issue',
+      number: rawIssue.number,
+      author: rawIssue.user?.login || 'unknown',
+      user_type: rawIssue.user?.type || 'unknown',
+      draft: !!rawIssue.draft,
+      locked: !!rawIssue.locked,
+      milestone: rawIssue.milestone?.title || null,
+      created_at: rawIssue.created_at,
+      updated_at: rawIssue.updated_at,
+      closed_at: rawIssue.closed_at || null,
+      comments: rawIssue.comments || 0,
+      reactions: rawIssue.reactions?.total_count || 0,
+      labels: (rawIssue.labels || []).map((l: any) => typeof l === 'string' ? l : (l.name || '')),
+      assignees: Array.isArray(rawIssue.assignees) ? rawIssue.assignees.map((a: any) => a.login || '') : (rawIssue.assignee ? [rawIssue.assignee.login || ''] : []),
+      body: rawIssue.body,
+    };
   }
 
-  async listOpenIssues(): Promise<IssueLike[]> {
+  async getIssue(issue_number: number): Promise<IssueMetadata> {
+    const { data } = await this.octokit.rest.issues.get({ owner: this.owner, repo: this.repo, issue_number });
+    return this.buildMetadata(data);
+  }
+
+  async listOpenIssues(): Promise<IssueMetadata[]> {
     const issues = await this.octokit.paginate(this.octokit.rest.issues.listForRepo, {
       owner: this.owner,
       repo: this.repo,
@@ -40,7 +62,7 @@ export class GitHubClient {
       direction: 'desc',
       per_page: 100,
     });
-    return issues as IssueLike[];
+    return issues.map(issue => this.buildMetadata(issue));
   }
 
   async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {
