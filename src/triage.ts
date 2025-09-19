@@ -41,7 +41,8 @@ class CreateCommentOp implements TriageOperation {
   toJSON() { return { kind: this.kind, body: this.body }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     console.log(`  💬 Posting comment:`);
-    console.log(this.body.replace(/^/gm, '  > '));
+    const preview = this.body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '  > ');
+    console.log(preview);
     if (cfg.enabled) await client.createComment(issue.number, this.body);
   }
 }

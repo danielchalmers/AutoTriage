@@ -112,14 +112,9 @@ async function processIssue(
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
     if (!cfg.enabled) {
       core.info(`🧪 [dry-run] Skipping ${ops.length} operation(s) for #${issueNumber}.`);
-      for (const op of ops) {
-        const emoji = op.kind === 'labels' ? '🏷️' : op.kind === 'comment' ? '💬' : op.kind === 'title' ? '✏️' : op.kind === 'state' ? '�' : '•';
-        core.info(`🧪 [dry-run] Would: ${emoji} ${op.kind}`);
-      }
-    } else {
-      for (const op of ops) {
-        await op.perform(gh, cfg, issue);
-      }
+    }
+    for (const op of ops) {
+      await op.perform(gh, cfg, issue);
     }
   }
 
