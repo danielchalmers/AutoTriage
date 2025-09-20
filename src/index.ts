@@ -3,7 +3,7 @@ import { getConfig } from './env';
 import type { Config, TriageDb } from './storage';
 import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
 import { generateAnalysis, AnalysisResult } from './analysis';
-import { GitHubClient } from './github';
+import { GitHubClient, TimelineEvent } from './github';
 import { GeminiClient } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 
@@ -15,7 +15,7 @@ async function run(): Promise<void> {
   const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
   const gemini = new GeminiClient(cfg.geminiApiKey);
   const repoLabels = await gh.listRepoLabels();
-  const targets = await listTargets(cfg, gh);
+  const { targets, autoDiscoverIssues } = await listTargets(cfg, gh);
   let triagesPerformed = 0;
 
   core.info(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
@@ -30,7 +30,7 @@ async function run(): Promise<void> {
     }
 
     try {
-      const triageUsed = await processIssue(cfg, db, n, repoLabels, gh, gemini);
+      const triageUsed = await processIssue(cfg, db, n, repoLabels, gh, gemini, autoDiscoverIssues);
       if (triageUsed) triagesPerformed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -60,15 +60,19 @@ async function processIssue(
   issueNumber: number,
   repoLabels: Array<{ name: string; description?: string | null }>,
   gh: GitHubClient,
-  gemini: GeminiClient
+  gemini: GeminiClient,
+  autoDiscoverIssues: boolean
 ): Promise<boolean> {
   const issue = await gh.getIssue(issueNumber);
   const dbEntry = parseDbEntry(triageDb, issueNumber);
-  const timelineEvents = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
+  const timelineEvents: TimelineEvent[] = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
-  // Has the issue or its timeline changed since we last triaged it?
-  if (!gh.hasUpdated(issue, timelineEvents, dbEntry.lastTriaged, dbEntry.reactions)) {
-    return false;
+  // Only use the hasUpdated filter in auto-discovery mode (when no issues are specified explicitly).
+  if (autoDiscoverIssues) {
+    // In auto-discovery, skip items that haven't changed since last triage.
+    if (!gh.hasUpdated(issue, timelineEvents, dbEntry.lastTriaged, dbEntry.reactions)) {
+      return false;
+    }
   }
 
   // Pass 1: fast model
@@ -123,16 +127,16 @@ async function processIssue(
   return true;
 }
 
-async function listTargets(cfg: Config, gh: GitHubClient): Promise<number[]> {
+async function listTargets(cfg: Config, gh: GitHubClient): Promise<{ targets: number[], autoDiscoverIssues: boolean }> {
   const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
-  if (fromInput.length > 0) return fromInput;
+  if (fromInput.length > 0) return { targets: fromInput, autoDiscoverIssues: false };
 
   // Event payload single target (issue or PR) takes priority over fallback listing.
   const payload: any = (await import('@actions/github')).context.payload;
   const num = payload?.issue?.number || payload?.pull_request?.number;
-  if (num) return [Number(num)];
+  if (num) return { targets: [Number(num)], autoDiscoverIssues: false };
 
   // Fallback: process all open issues/PRs (ordered recent first) when nothing explicit given.
   const issues = await gh.listOpenIssues();
-  return issues.map(i => i.number);
+  return { targets: issues.map(i => i.number), autoDiscoverIssues: true };
 }

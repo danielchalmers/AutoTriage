@@ -7,6 +7,7 @@ export type Issue = {
   number: number;
   author: string;
   user_type: string;
+  author_association?: string;
   draft: boolean;
   locked: boolean;
   milestone: string | null;
@@ -18,6 +19,25 @@ export type Issue = {
   labels: string[];
   assignees: string[];
   body?: string | null;
+};
+
+export type TimelineEvent = {
+  event: string;
+  actor?: string;
+  actor_association?: string;
+  timestamp?: string;
+  label?: { name?: string | null; color?: string | null };
+  body?: string;
+  from?: string;
+  to?: string;
+  assignee?: string;
+  requested_reviewer?: string;
+  commit_id?: string;
+  state?: string;
+  state_reason?: string;
+  merged?: boolean;
+  milestone?: string | null;
+  project?: string | null;
 };
 
 export class GitHubClient {
@@ -34,6 +54,7 @@ export class GitHubClient {
       number: rawIssue.number,
       author: rawIssue.user?.login || 'unknown',
       user_type: rawIssue.user?.type || 'unknown',
+      author_association: rawIssue.author_association,
       draft: !!rawIssue.draft,
       locked: !!rawIssue.locked,
       milestone: rawIssue.milestone?.title || null,
@@ -83,7 +104,7 @@ export class GitHubClient {
       .filter((l: any): l is { name: string; description: string | null } => !!l);
   }
 
-  async listTimelineEvents(issue_number: number, limit: number): Promise<any[]> {
+  async listTimelineEvents(issue_number: number, limit: number): Promise<TimelineEvent[]> {
     const events = await this.octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
       owner: this.owner,
       repo: this.repo,
@@ -93,7 +114,12 @@ export class GitHubClient {
 
     const sliced = (events as any[]).slice(-limit);
     return sliced.map((event: any) => {
-      const base = { event: event.event, actor: event.actor?.login, timestamp: event.created_at };
+      const base: TimelineEvent = {
+        event: event.event,
+        actor: event.actor?.login,
+        actor_association: event.actor?.author_association || event.author_association,
+        timestamp: event.created_at,
+      };
       switch (event.event) {
         case 'commented':
           return { ...base, body: typeof event.body === 'string' ? event.body.slice(0, 10000) : undefined };
@@ -102,6 +128,24 @@ export class GitHubClient {
           return { ...base, label: { name: event.label?.name, color: event.label?.color } };
         case 'renamed':
           return { ...base, from: event.rename?.from, to: event.rename?.to };
+        case 'assigned':
+        case 'unassigned':
+          return { ...base, assignee: event.assignee?.login };
+        case 'milestoned':
+        case 'demilestoned':
+          return { ...base, milestone: event.milestone?.title ?? null };
+        case 'review_requested':
+        case 'review_request_removed':
+          return { ...base, requested_reviewer: event.requested_reviewer?.login || event.requested_team?.name };
+        case 'closed':
+          return { ...base, state: 'closed', state_reason: event.state_reason, commit_id: event.commit_id };
+        case 'reopened':
+          return { ...base, state: 'open' };
+        case 'merged':
+          return { ...base, merged: true, commit_id: event.commit_id };
+        case 'referenced':
+        case 'cross-referenced':
+          return { ...base, commit_id: event.commit_id };
         default:
           return base;
       }
@@ -154,7 +198,7 @@ export class GitHubClient {
 
   lastUpdated(
     issue: Issue,
-    timelineEvents: Array<{ timestamp?: string }>,
+    timelineEvents: Array<TimelineEvent>,
     previousReactions?: number
   ): number {
     const parseTs = (s?: string): number => {
@@ -186,7 +230,7 @@ export class GitHubClient {
 
   hasUpdated(
     issue: Issue,
-    timelineEvents: Array<{ timestamp?: string }>,
+    timelineEvents: Array<TimelineEvent>,
     lastTriaged: Date | null,
     previousReactions?: number
   ): boolean {

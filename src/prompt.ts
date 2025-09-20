@@ -1,4 +1,4 @@
-import type { Issue } from './github';
+import type { Issue, TimelineEvent } from './github';
 import { loadReadme, loadPrompt } from './storage';
 
 export async function buildPrompt(
@@ -7,7 +7,7 @@ export async function buildPrompt(
   previousReasoning: string,
   promptPath: string,
   readmePath: string,
-  timelineEvents: any[],
+  timelineEvents: TimelineEvent[],
   repoLabels?: Array<{ name: string; description?: string | null }>
 ) {
   const basePrompt = loadPrompt(promptPath);
