@@ -63,9 +63,8 @@ async function processIssue(
   const dbEntry = parseDbEntry(triageDb, issueNumber);
   const timelineEvents: TimelineEvent[] = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
-  // Only use the hasUpdated filter in auto-discovery mode (when no issues are specified explicitly).
   if (autoDiscoverIssues) {
-    // In auto-discovery, skip items that haven't changed since last triage.
+    // Skip items that haven't changed since last triage.
     if (!gh.hasUpdated(issue, timelineEvents, dbEntry.lastTriaged, dbEntry.reactions)) {
       return false;
     }

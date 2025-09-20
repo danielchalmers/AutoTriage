@@ -65,10 +65,10 @@ class UpdateStateOp implements TriageOperation {
   toJSON() { return { kind: this.kind, state: this.state }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.state === 'open') {
-      core.info('  🔓 Reopening issue');
+      core.info('  🔄 Reopening issue');
       if (cfg.enabled) await client.updateIssueState(issue.number, 'open');
     } else {
-      core.info(`  🔒 Closing issue (reason: ${this.state})`);
+      core.info(`  🔄 Closing issue as ${this.state}`);
       if (cfg.enabled) await client.updateIssueState(issue.number, 'closed', this.state);
     }
   }
