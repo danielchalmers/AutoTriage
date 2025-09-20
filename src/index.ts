@@ -17,7 +17,7 @@ async function run(): Promise<void> {
   let triagesPerformed = 0;
 
   core.info(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
-  core.info(`▶️ Processing ${targets.length} item(s) from ${cfg.owner}/${cfg.repo}`);
+  core.info(`▶️ Processing ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (${autoDiscoverIssues ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
 
   for (const n of targets) {
     const remaining = cfg.maxTriages - triagesPerformed;
@@ -87,7 +87,7 @@ async function processIssue(
 
   // Fast pass produced no work: persist reasoning and skip expensive pass.
   if (ops.length === 0) {
-    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.reasoning}`);
+    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.summary} 💭 ${quickAnalysis.reasoning}`);
     writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title, issue.reactions);
     return false;
   }
@@ -104,15 +104,10 @@ async function processIssue(
   );
 
   ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name));
-  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary}`);
-  core.info(`  💭 ${reviewAnalysis.reasoning}`);
+  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary} 💭 ${reviewAnalysis.reasoning}`);
 
   if (ops.length > 0) {
-    // Persist the concrete operation plan for later inspection / debugging.
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
-    if (!cfg.enabled) {
-      core.info(`🧪 [dry-run] Skipping ${ops.length} operation(s) for #${issueNumber}.`);
-    }
     for (const op of ops) {
       await op.perform(gh, cfg, issue);
     }
