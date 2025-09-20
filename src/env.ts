@@ -45,7 +45,7 @@ export function getConfig(): Config {
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
   const modelTemperature = core.getInput('model-temperature') || '1.0';
   const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
-  const maxTriages = Number(core.getInput('max-triages') || '10');
+  const maxTriages = Number(core.getInput('max-triages') || '20');
   const singleIssue = core.getInput('issue-number');
   const multiIssues = core.getInput('issue-numbers');
   const issueNumber = singleIssue ? Number(singleIssue) : undefined;
@@ -66,6 +66,6 @@ export function getConfig(): Config {
     modelFast,
     modelPro,
     maxTimelineEvents: Number.isFinite(maxTimelineEvents) ? maxTimelineEvents : 50,
-    maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 10,
+    maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 20,
   } as Config;
 }

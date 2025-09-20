@@ -24,7 +24,7 @@ AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes item
 | `model-pro` | Gemini model for the second (review) pass. | `gemini-2.5-pro` |
 | `model-temperature` | Sampling temperature (0-2). Lower = more deterministic. | `1.0` |
 | `max-timeline-events` | Max most-recent timeline events included in prompt. | `50` |
-| `max-triages` | Cap on targets receiving the full (pro model) triage pass each run. | `10` |
+| `max-triages` | Cap on targets receiving the full (pro model) triage pass each run. Leave blank to remove the hard cap (will run until safeguards trigger). | `20` |
 
 ## Required Secrets
 
@@ -53,7 +53,12 @@ To triage specific items manually (e.g. via a workflow_dispatch input or a one-o
 
 ## Dry-Run Mode
 
-Set `enabled: "false"` to log planned operations with a `[dry-run]` prefix. No labels, comments, titles, or closures are changed, and the `max-triages` budget still applies so remaining targets are skipped once the cap is reached.
+Set `enabled: "false"` to log planned operations with a `[dry-run]` prefix. No labels, comments, titles, or closures are changed, and the `max-triages` budget still applies when set so remaining targets are skipped once the cap is reached.
+
+## Safeguards
+
+* Consecutive failures: If three issues fail analysis in a row (e.g., transient model/API errors), the run will stop early instead of continuing to skip and retry further items.
+* Unlimited auto-discover mode: If you omit `max-triages` (empty value) and the action is running in auto-discovery mode, it will process items without a hard cap until the consecutive-failures safeguard triggers.
 
 ## Reasoning History
 

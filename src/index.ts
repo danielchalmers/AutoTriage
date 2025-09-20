@@ -13,26 +13,32 @@ async function run(): Promise<void> {
   const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
   const gemini = new GeminiClient(cfg.geminiApiKey);
   const repoLabels = await gh.listRepoLabels();
-  const { targets, autoDiscoverIssues } = await listTargets(cfg, gh);
+  const { targets, autoDiscover } = await listTargets(cfg, gh);
   let triagesPerformed = 0;
+  let consecutiveFailures = 0;
 
   core.info(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
-  core.info(`▶️ Processing ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (${autoDiscoverIssues ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
+  core.info(`▶️ Processing ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
 
   for (const n of targets) {
     const remaining = cfg.maxTriages - triagesPerformed;
-
     if (remaining <= 0) {
       core.info(`⏳ Max triages (${cfg.maxTriages}) reached; exiting early.`);
       break;
     }
 
     try {
-      const triageUsed = await processIssue(cfg, db, n, repoLabels, gh, gemini, autoDiscoverIssues);
+      const triageUsed = await processIssue(cfg, db, n, repoLabels, gh, gemini, autoDiscover);
       if (triageUsed) triagesPerformed++;
+      consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
         core.warning(`⚠️ #${n}: ${err.message}; skipping.`);
+        consecutiveFailures++;
+        if (consecutiveFailures >= 3) {
+          core.warning(`🛑 Encountered ${consecutiveFailures} consecutive analysis failures; stopping further processing.`);
+          break;
+        }
         continue;
       }
       // Re-throw non-Gemini errors to stop processing
@@ -57,13 +63,13 @@ async function processIssue(
   repoLabels: Array<{ name: string; description?: string | null }>,
   gh: GitHubClient,
   gemini: GeminiClient,
-  autoDiscoverIssues: boolean
+  autoDiscover: boolean
 ): Promise<boolean> {
   const issue = await gh.getIssue(issueNumber);
   const dbEntry = parseDbEntry(triageDb, issueNumber);
   const timelineEvents: TimelineEvent[] = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
-  if (autoDiscoverIssues) {
+  if (autoDiscover) {
     // Skip items that haven't changed since last triage.
     if (!gh.hasUpdated(issue, timelineEvents, dbEntry.lastTriaged, dbEntry.reactions)) {
       return false;
@@ -117,16 +123,16 @@ async function processIssue(
   return true;
 }
 
-async function listTargets(cfg: Config, gh: GitHubClient): Promise<{ targets: number[], autoDiscoverIssues: boolean }> {
+async function listTargets(cfg: Config, gh: GitHubClient): Promise<{ targets: number[], autoDiscover: boolean }> {
   const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
-  if (fromInput.length > 0) return { targets: fromInput, autoDiscoverIssues: false };
+  if (fromInput.length > 0) return { targets: fromInput, autoDiscover: false };
 
   // Event payload single target (issue or PR) takes priority over fallback listing.
   const payload: any = (await import('@actions/github')).context.payload;
   const num = payload?.issue?.number || payload?.pull_request?.number;
-  if (num) return { targets: [Number(num)], autoDiscoverIssues: false };
+  if (num) return { targets: [Number(num)], autoDiscover: false };
 
   // Fallback: process all open issues/PRs (ordered recent first) when nothing explicit given.
   const issues = await gh.listOpenIssues();
-  return { targets: issues.map(i => i.number), autoDiscoverIssues: true };
+  return { targets: issues.map(i => i.number), autoDiscover: true };
 }

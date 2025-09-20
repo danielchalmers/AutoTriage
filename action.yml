@@ -46,7 +46,7 @@ inputs:
   max-triages:
     description: "Global cap on how many targets receive a full (pro model) triage pass this run."
     required: false
-    default: "10"
+    default: "20"
 
 runs:
   using: "node24"
