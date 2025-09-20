@@ -63,8 +63,9 @@ If `db-path` is provided and `enabled` is true, each run appends to the reasonin
 
 For each item the action writes (in `./artifacts`):
 
-* `ISSUEID-gemini-input-<model>.md` - exact prompt sent to the model.
-* `ISSUEID-gemini-output-<model>.json` - raw Gemini response.
+* `ISSUEID-input-system.md` - system prompt content.
+* `ISSUEID-input-user-<model>.md` - user prompt content for the given model.
+* `ISSUEID-output-<model>.json` - raw Gemini response from the SDK.
 * `ISSUEID-analysis-<model>.json` - parsed structured analysis.
 * `ISSUEID-operations.json` - final planned ops.
 

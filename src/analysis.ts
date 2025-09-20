@@ -2,7 +2,7 @@ import { saveArtifact } from './storage';
 import { buildPrompt } from './prompt';
 import type { Issue, TimelineEvent } from './github';
 import type { Config } from './storage';
-import type { GeminiClient } from './gemini';
+import { GeminiClient } from './gemini';
 
 export type AnalysisResult = {
   summary: string;
@@ -35,41 +35,30 @@ export async function generateAnalysis(
 
   saveArtifact(issue.number, `input-system.md`, systemPrompt);
   saveArtifact(issue.number, `input-user-${model}.md`, userPrompt);
-  const payload = {
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          summary: { type: 'STRING' },
-          reasoning: { type: 'STRING' },
-          comment: { type: 'STRING' },
-          labels: { type: 'ARRAY', items: { type: 'STRING' } },
-          state: { type: 'STRING', enum: ['open', 'completed', 'not_planned'] },
-          newTitle: { type: 'STRING' },
-        },
-        required: ['summary', 'reasoning', 'labels'],
-      },
-      temperature: cfg.modelTemperature,
+
+  const schema = {
+    type: 'OBJECT',
+    properties: {
+      summary: { type: 'STRING' },
+      reasoning: { type: 'STRING' },
+      comment: { type: 'STRING' },
+      labels: { type: 'ARRAY', items: { type: 'STRING' } },
+      state: { type: 'STRING', enum: ['open', 'completed', 'not_planned'] },
+      newTitle: { type: 'STRING' },
     },
-  };
+    required: ['summary', 'reasoning', 'labels'],
+  } as const;
 
-  const rawResponse = await gemini.generateContent(model, payload);
-  saveArtifact(issue.number, `output-${model}.json`, JSON.stringify(rawResponse, null, 2));
-
-  const text = rawResponse?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (typeof text !== 'string' || text.trim().length === 0) {
-    throw new Error('INVALID_RESPONSE');
-  }
-  let parsed: AnalysisResult;
-  try {
-    parsed = JSON.parse(text) as AnalysisResult;
-  } catch {
-    throw new Error('INVALID_RESPONSE');
-  }
-  saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(parsed, null, 2));
-  return parsed;
+  const result = await gemini.generateJson<AnalysisResult>(
+    model,
+    systemPrompt,
+    userPrompt,
+    schema,
+    cfg.modelTemperature,
+    2,
+    15000
+  );
+  saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(result, null, 2));
+  return result;
 }
 

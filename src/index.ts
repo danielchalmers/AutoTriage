@@ -4,10 +4,8 @@ import type { Config, TriageDb } from './storage';
 import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
 import { generateAnalysis, AnalysisResult } from './analysis';
 import { GitHubClient, TimelineEvent } from './github';
-import { GeminiClient } from './gemini';
+import { GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
-
-function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
 
 async function run(): Promise<void> {
   const cfg = getConfig();
@@ -33,13 +31,11 @@ async function run(): Promise<void> {
       const triageUsed = await processIssue(cfg, db, n, repoLabels, gh, gemini, autoDiscoverIssues);
       if (triageUsed) triagesPerformed++;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg === 'MODEL_INTERNAL_ERROR' || msg === 'MODEL_OVERLOADED' || msg === 'INVALID_RESPONSE') {
-        core.warning(`⚠️ #${n}: ${msg}; waiting 30s.`);
-        await sleep(30000);
+      if (err instanceof GeminiResponseError) {
+        core.warning(`⚠️ #${n}: ${err.message}; skipping.`);
         continue;
       }
-      core.error(`❌ #${n}: ${msg}`);
+      // Re-throw non-Gemini errors to stop processing
       throw err;
     }
 
