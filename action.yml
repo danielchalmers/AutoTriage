@@ -38,7 +38,7 @@ inputs:
   model-temperature:
     description: "Sampling temperature (0-2). Lower = deterministic; higher = more exploratory."
     required: false
-    default: "1.0"
+    default: "0.3"
   max-timeline-events:
     description: "Maximum most-recent timeline events included in the prompt context."
     required: false
