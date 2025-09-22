@@ -87,8 +87,8 @@ STRICT JSON RULES:
 - Omit any field not explicitly listed below.
 
 Required fields (always include):
-- summary: string (single line, stable description of the core problem; include key symptoms, affected area, minimal repro hints, and environment/version if available; avoid volatile details like timestamps, usernames, or links unless essential)
-- reasoning: string (single line, first-person, future simple tense, thought process for this run. Cite from body, metadata, or timeline for each inference or action. If changing course from prior reasoning, explicitly state why, citing concrete evidence)
+- summary: string (one-line description of the issue, with details, effort, and discussion to provide enough context to identify duplicates.)
+- reasoning: string (one-line, first-person, future simple tense, thought process for this run. Cite from body, metadata, or timeline for each inference or action. If changing course from prior reasoning, explicitly state why, citing concrete evidence)
 - labels: array of strings (complete final label set for the issue)
 
 Optional fields (include only when conditions are met and you are certain):
