@@ -18,7 +18,7 @@ async function run(): Promise<void> {
   let consecutiveFailures = 0;
 
   core.info(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
-  core.info(`▶️ Processing ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
+  core.info(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
 
   for (const n of targets) {
     const remaining = cfg.maxTriages - triagesPerformed;
