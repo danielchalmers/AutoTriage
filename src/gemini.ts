@@ -99,6 +99,7 @@ export class GeminiClient {
     userPrompt: string,
     schema: unknown,
     temperature?: string | number,
+    thinkingBudget?: number,
     maxRetries: number = 2,
     initialBackoffMs: number = 15000
   ): Promise<T> {
@@ -109,6 +110,9 @@ export class GeminiClient {
         responseMimeType: 'application/json',
         responseSchema: schema as any,
         temperature: temperature as any,
+      },
+      thinkingConfig: {
+        thinkingBudget: thinkingBudget ?? -1,
       },
     };
 

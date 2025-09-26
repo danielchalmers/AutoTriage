@@ -96,6 +96,7 @@ export type Config = {
   geminiApiKey: string;
   modelTemperature: string;
   enabled: boolean;
+  thinkingBudget: number;
   issueNumber?: number;
   issueNumbers?: number[];
   promptPath: string;

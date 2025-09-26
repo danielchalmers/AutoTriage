@@ -41,9 +41,10 @@ export function getConfig(): Config {
   const promptPath = core.getInput('prompt-path') || '.github/AutoTriage.prompt';
   const readmePath = core.getInput('readme-path');
   const dbPath = core.getInput('db-path') || 'triage-db.json';
-  const modelFast = core.getInput('model-fast') || 'gemini-2.5-flash';
+  const modelFast = core.getInput('model-fast') || 'gemini-2.5-flash-lite';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
   const modelTemperature = core.getInput('model-temperature') || '1.0';
+  const thinkingBudget = -1;
   const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
   const maxTriages = Number(core.getInput('max-triages') || '20');
   const singleIssue = core.getInput('issue-number');
@@ -58,6 +59,8 @@ export function getConfig(): Config {
     geminiApiKey,
     modelTemperature,
     enabled,
+    thinkingBudget,
+
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
     promptPath,

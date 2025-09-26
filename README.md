@@ -20,7 +20,7 @@ AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes item
 | `prompt-path` | Repo-relative path to the prompt template. | `.github/AutoTriage.prompt` |
 | `enabled` | `true` = apply changes, `false` = dry-run only. | `true` |
 | `db-path` | Optional JSON file storing per-issue summary + reasoning history. | - |
-| `model-fast` | Gemini model for the first (fast) pass. | `gemini-2.5-flash` |
+| `model-fast` | Gemini model for the first (fast) pass. | `gemini-2.5-flash-lite` |
 | `model-pro` | Gemini model for the second (review) pass. | `gemini-2.5-pro` |
 | `model-temperature` | Sampling temperature (0-2). Lower = more deterministic. | `1.0` |
 | `max-timeline-events` | Max most-recent timeline events included in prompt. | `50` |

@@ -54,6 +54,7 @@ export async function generateAnalysis(
     userPrompt,
     schema,
     cfg.modelTemperature,
+    cfg.thinkingBudget,
     2,
     15000
   );
