@@ -110,9 +110,9 @@ export class GeminiClient {
         responseMimeType: 'application/json',
         responseSchema: schema as any,
         temperature: temperature as any,
-      },
-      thinkingConfig: {
-        thinkingBudget: thinkingBudget ?? -1,
+        thinkingConfig: {
+          thinkingBudget: thinkingBudget ?? -1, // -1 = dynamic
+        },
       },
     };
 

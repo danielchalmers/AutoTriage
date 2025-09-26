@@ -33,10 +33,10 @@ async function run(): Promise<void> {
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
-        core.warning(`⚠️ #${n}: ${err.message}`);
+        core.warning(`#${n}: ${err.message}`);
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {
-          core.warning(`🛑 Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
+          core.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
           break;
         }
         continue;
