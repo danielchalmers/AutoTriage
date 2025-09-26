@@ -109,7 +109,7 @@ async function processIssue(
   );
 
   ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name));
-  core.notice(`🤖 #${issueNumber}: ${reviewAnalysis.summary} 💭 ${reviewAnalysis.reasoning}`);
+  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary} 💭 ${reviewAnalysis.reasoning}`);
 
   if (ops.length > 0) {
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
