@@ -23,7 +23,7 @@ async function run(): Promise<void> {
   for (const n of targets) {
     const remaining = cfg.maxTriages - triagesPerformed;
     if (remaining <= 0) {
-      core.info(`⏳ Max triages (${cfg.maxTriages}) reached; exiting early.`);
+      core.info(`⏳ Max triages (${cfg.maxTriages}) reached`);
       break;
     }
 
@@ -33,10 +33,10 @@ async function run(): Promise<void> {
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
-        core.warning(`⚠️ #${n}: ${err.message}; skipping.`);
+        core.warning(`⚠️ #${n}: ${err.message}`);
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {
-          core.warning(`🛑 Encountered ${consecutiveFailures} consecutive analysis failures; stopping further processing.`);
+          core.warning(`🛑 Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
           break;
         }
         continue;
@@ -46,7 +46,7 @@ async function run(): Promise<void> {
     }
 
     if (triagesPerformed >= cfg.maxTriages) {
-      core.info(`⏳ Max triages (${cfg.maxTriages}) reached; exiting early.`);
+      core.info(`⏳ Max triages (${cfg.maxTriages}) reached`);
       break;
     }
 

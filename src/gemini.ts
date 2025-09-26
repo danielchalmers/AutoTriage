@@ -51,7 +51,7 @@ export class GeminiClient {
     }
 
     // Exhausted
-    const msg = 'Gemini failed to return a response';
+    const msg = `Gemini failed to generate a response: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
     throw new GeminiResponseError(msg);
   }
 
