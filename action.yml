@@ -30,7 +30,7 @@ inputs:
   model-fast:
     description: "Gemini model name for the first (fast / inexpensive) analysis pass."
     required: false
-    default: "gemini-2.5-flash-lite"
+    default: "gemini-flash-lite-latest"
   model-pro:
     description: "Gemini model name for the second (higher quality) pass if needed."
     required: false
