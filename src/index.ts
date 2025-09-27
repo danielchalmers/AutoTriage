@@ -68,6 +68,7 @@ async function processIssue(
   const issue = await gh.getIssue(issueNumber);
   const dbEntry = parseDbEntry(triageDb, issueNumber);
   const timelineEvents: TimelineEvent[] = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
+  saveArtifact(issue.number, 'timeline.json', JSON.stringify(timelineEvents, null, 2));
 
   if (autoDiscover) {
     // Skip items that haven't changed since last triage.
