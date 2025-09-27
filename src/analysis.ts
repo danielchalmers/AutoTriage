@@ -102,13 +102,13 @@ ${JSON.stringify(repoLabels, null, 2)}
 === SECTION: ISSUE METADATA (JSON) ===
 ${JSON.stringify(issue, null, 2)}
 
-=== SECTION: BODY OF ISSUE (MARKDOWN) ===
+=== SECTION: ISSUE BODY (MARKDOWN) ===
 ${issue.body || ''}
 
-=== SECTION: ISSUE TIMELINE (JSON) ===
+=== SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(timelineEvents, null, 2)}
 
-=== SECTION: PROJECT CONTEXT (MARKDOWN) ===
+=== SECTION: PROJECT README (MARKDOWN) ===
 ${loadReadme(readmePath)}
 `;
   return { systemPrompt, userPrompt };
