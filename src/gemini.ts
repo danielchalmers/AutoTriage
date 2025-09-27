@@ -50,9 +50,7 @@ export class GeminiClient {
       await this.sleep(backoff);
     }
 
-    // Exhausted
-    const msg = `Gemini failed to generate a response: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
-    throw new GeminiResponseError(msg);
+    throw new GeminiResponseError(lastError instanceof Error ? lastError.message : String(lastError));
   }
 
   // Keep but private: pulls text out of SDK response shape
