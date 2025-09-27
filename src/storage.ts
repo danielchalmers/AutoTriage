@@ -43,7 +43,7 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
 
 export type ParsedDbEntry = {
   lastTriaged: Date | null;
-  previousReasoning: string;
+  lastReasoning: string;
   reactions?: number;
   summary?: string;
 };
@@ -51,12 +51,12 @@ export type ParsedDbEntry = {
 export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
   const raw = db[String(issueNumber)] as (TriageDb[string] & { reason?: string }) | undefined;
   const lastTriaged: Date | null = raw?.lastTriaged ? new Date(raw.lastTriaged) : null;
-  const previousReasoning: string = (raw?.reasoning ?? raw?.reason ?? '') as string;
+  const lastReasoning: string = (raw?.reasoning ?? raw?.reason ?? '') as string;
   const reactions: number | undefined = typeof raw?.reactions === 'number' ? raw.reactions : undefined;
   const summary: string | undefined = typeof raw?.summary === 'string' ? raw.summary : undefined;
   const result: ParsedDbEntry = {
     lastTriaged,
-    previousReasoning,
+    lastReasoning,
     ...(reactions !== undefined ? { reactions } : {}),
     ...(summary !== undefined ? { summary } : {}),
   };

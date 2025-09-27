@@ -2,7 +2,7 @@ import * as core from '@actions/core';
 import { getConfig } from './env';
 import type { Config, TriageDb } from './storage';
 import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
-import { generateAnalysis, AnalysisResult } from './analysis';
+import { generateAnalysis, AnalysisResult, buildPrompt } from './analysis';
 import { GitHubClient, TimelineEvent } from './github';
 import { GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -76,16 +76,23 @@ async function processIssue(
     }
   }
 
+  // Prepare prompts once per issue
+  const { systemPrompt, userPrompt } = await buildPrompt(
+    issue,
+    cfg.promptPath,
+    cfg.readmePath,
+    timelineEvents,
+    repoLabels
+  );
+
   // Pass 1: fast model
   const quickAnalysis: AnalysisResult = await generateAnalysis(
     cfg,
     gemini,
     issue,
-    dbEntry.lastTriaged,
-    dbEntry.previousReasoning,
     cfg.modelFast,
-    timelineEvents,
-    repoLabels
+    systemPrompt,
+    userPrompt
   );
 
   let ops: TriageOperation[] = planOperations(issue, quickAnalysis, issue, repoLabels.map(l => l.name));
@@ -101,11 +108,9 @@ async function processIssue(
     cfg,
     gemini,
     issue,
-    dbEntry.lastTriaged,
-    quickAnalysis.reasoning,
     cfg.modelPro,
-    timelineEvents,
-    repoLabels
+    systemPrompt,
+    userPrompt
   );
 
   ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name));
