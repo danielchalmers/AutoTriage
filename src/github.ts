@@ -104,7 +104,7 @@ export class GitHubClient {
       .filter((l: any): l is { name: string; description: string | null } => !!l);
   }
 
-  async listTimelineEvents(issue_number: number, limit: number): Promise<TimelineEvent[]> {
+  async listTimelineEvents(issue_number: number, limit: number): Promise<{ raw: any[]; filtered: TimelineEvent[] }> {
     const events = await this.octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
       owner: this.owner,
       repo: this.repo,
@@ -147,7 +147,10 @@ export class GitHubClient {
           return null;
       }
     });
-    return mapped.filter((ev): ev is TimelineEvent => ev !== null);
+    return {
+      raw: events,
+      filtered: mapped.filter((ev): ev is TimelineEvent => ev !== null),
+    };
   }
 
   async addLabels(issue_number: number, labels: string[]): Promise<void> {

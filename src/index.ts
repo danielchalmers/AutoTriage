@@ -3,7 +3,7 @@ import { getConfig } from './env';
 import type { Config, TriageDb } from './storage';
 import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
 import { generateAnalysis, AnalysisResult, buildPrompt } from './analysis';
-import { GitHubClient, TimelineEvent } from './github';
+import { GitHubClient } from './github';
 import { GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 
@@ -67,8 +67,8 @@ async function processIssue(
 ): Promise<boolean> {
   const issue = await gh.getIssue(issueNumber);
   const dbEntry = parseDbEntry(triageDb, issueNumber);
-  const timelineEvents: TimelineEvent[] = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
-  saveArtifact(issue.number, 'timeline.json', JSON.stringify(timelineEvents, null, 2));
+  const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
+  saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
   if (autoDiscover) {
     // Skip items that haven't changed since last triage.
