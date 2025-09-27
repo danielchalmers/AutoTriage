@@ -22,10 +22,14 @@ export type Issue = {
 };
 
 export type TimelineEvent = {
+  id?: number;
+  url?: string;
   event: string;
   actor?: string;
   actor_association?: string;
-  timestamp?: string;
+  created_at?: string;
+  updated_at?: string;
+  submitted_at?: string;
   label?: { name?: string | null; color?: string | null };
   body?: string;
   from?: string;
@@ -33,6 +37,10 @@ export type TimelineEvent = {
   assignee?: string;
   requested_reviewer?: string;
   commit_id?: string;
+  commit_url?: string;
+  sha?: string;
+  author?: string;
+  message?: string;
   state?: string;
   state_reason?: string;
   merged?: boolean;
@@ -115,36 +123,50 @@ export class GitHubClient {
     const sliced = (events as any[]).slice(-limit);
     const mapped = sliced.map<TimelineEvent | null>((event: any) => {
       const base: TimelineEvent = {
+        id: event.id,
+        url: event.url,
         event: event.event,
         actor: event.actor?.login,
         actor_association: event.actor?.author_association || event.author_association,
-        timestamp: event.created_at,
+        created_at: event.created_at,
+        updated_at: event.updated_at,
+        //commit_id: event.commit_id,
+        //commit_url: event.commit_url,
       };
       switch (event.event) {
+        case 'committed':
+          return { ...base, sha: event.sha, author: event.author?.login, message: event.message };
         case 'commented':
-          return { ...base, body: typeof event.body === 'string' ? event.body.slice(0, 10000) : undefined };
+          return { ...base, body: event.body };
         case 'labeled':
         case 'unlabeled':
-          return { ...base, label: { name: event.label?.name, color: event.label?.color } };
+          return { ...base, label: event.label };
         case 'renamed':
           return { ...base, from: event.rename?.from, to: event.rename?.to };
         case 'assigned':
         case 'unassigned':
-          return { ...base, assignee: event.assignee?.login };
+          return { ...base, assignee: event.assignee?.login, assigner: event.assigner?.login };
         case 'milestoned':
         case 'demilestoned':
           return { ...base, milestone: event.milestone?.title ?? null };
+        case 'review_dismissed':
         case 'review_requested':
         case 'review_request_removed':
           return { ...base, requested_reviewer: event.requested_reviewer?.login || event.requested_team?.name };
         case 'closed':
-          return { ...base, state: 'closed', state_reason: event.state_reason, commit_id: event.commit_id };
+          return { ...base, state: 'closed', state_reason: event.state_reason };
         case 'reopened':
           return { ...base, state: 'open' };
         case 'merged':
-          return { ...base, merged: true, commit_id: event.commit_id };
-        default:
+          return { ...base, merged: true };
+        case 'reviewed':
+          return { ...base, submitted_at: event.submitted_at, state: event.state, body: event.body };
+        case 'mentioned':
+        case 'subscribed':
+        case 'unsubscribed':
           return null;
+        default:
+          return base;
       }
     });
     return {
@@ -210,7 +232,7 @@ export class GitHubClient {
 
     const issueUpdatedMs = parseTs(issue.updated_at);
     const latestEventMs = (timelineEvents || []).reduce((max, ev) => {
-      const ts = parseTs(ev?.timestamp);
+      const ts = parseTs(ev?.created_at);
       return ts > max ? ts : max;
     }, 0);
 
