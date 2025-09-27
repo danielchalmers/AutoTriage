@@ -22,7 +22,7 @@ AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes item
 | `db-path` | Optional JSON file storing per-issue summary + reasoning history. | - |
 | `model-fast` | Gemini model for the first (fast) pass. | `gemini-flash-lite-latest` |
 | `model-pro` | Gemini model for the second (review) pass. | `gemini-2.5-pro` |
-| `model-temperature` | Sampling temperature (0-2). Lower = more deterministic. | `1.0` |
+| `model-temperature` | Sampling temperature (0-2). Lower = more deterministic. | `0.0` |
 | `max-timeline-events` | Max most-recent timeline events included in prompt. | `50` |
 | `max-triages` | Cap on targets receiving the full (pro model) triage pass each run. Leave blank to remove the hard cap (will run until safeguards trigger). | `20` |
 
