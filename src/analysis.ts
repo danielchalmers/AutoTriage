@@ -20,9 +20,6 @@ export async function generateAnalysis(
   systemPrompt: string,
   userPrompt: string
 ): Promise<AnalysisResult> {
-  saveArtifact(issue.number, `input-system.md`, systemPrompt);
-  saveArtifact(issue.number, `input-user-${model}.md`, userPrompt);
-
   const schema = {
     type: 'OBJECT',
     properties: {

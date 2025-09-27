@@ -86,6 +86,9 @@ async function processIssue(
     repoLabels
   );
 
+  saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
+  saveArtifact(issue.number, `prompt-user.md`, userPrompt);
+
   // Pass 1: fast model
   const quickAnalysis: AnalysisResult = await generateAnalysis(
     cfg,
