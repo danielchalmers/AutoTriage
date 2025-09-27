@@ -30,7 +30,7 @@ export type TimelineEvent = {
   created_at?: string;
   updated_at?: string;
   submitted_at?: string;
-  label?: { name?: string | null; color?: string | null };
+  label?: { name?: string | null };
   body?: string;
   from?: string;
   to?: string;
@@ -140,7 +140,7 @@ export class GitHubClient {
           return { ...base, body: event.body };
         case 'labeled':
         case 'unlabeled':
-          return { ...base, label: event.label };
+          return { ...base, label: { name: event.label?.name } };
         case 'renamed':
           return { ...base, from: event.rename?.from, to: event.rename?.to };
         case 'assigned':
