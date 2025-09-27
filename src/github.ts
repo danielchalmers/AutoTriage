@@ -113,7 +113,7 @@ export class GitHubClient {
     });
 
     const sliced = (events as any[]).slice(-limit);
-    return sliced.map((event: any) => {
+    const mapped = sliced.map<TimelineEvent | null>((event: any) => {
       const base: TimelineEvent = {
         event: event.event,
         actor: event.actor?.login,
@@ -143,13 +143,11 @@ export class GitHubClient {
           return { ...base, state: 'open' };
         case 'merged':
           return { ...base, merged: true, commit_id: event.commit_id };
-        case 'referenced':
-        case 'cross-referenced':
-          return { ...base, commit_id: event.commit_id };
         default:
-          return base;
+          return null;
       }
     });
+    return mapped.filter((ev): ev is TimelineEvent => ev !== null);
   }
 
   async addLabels(issue_number: number, labels: string[]): Promise<void> {
