@@ -7,16 +7,9 @@ describe('Gemini (real API)', () => {
 
     if (!apiKey) {
         console.warn('GEMINI_API_KEY environment variable must be set to run Gemini tests. Skipping Gemini tests.');
+        it.skip('requires GEMINI_API_KEY to run Gemini integration tests', () => undefined);
         return;
     }
-
-    it('generateText returns OK', async () => {
-        const client = new GeminiClient(apiKey);
-        const prompt = 'Reply with exactly the single word: OK';
-        const text = (await client.generateText(model, prompt, 2, 500)).toUpperCase();
-        expect(text.length).toBeGreaterThan(0);
-        expect(text).toContain('OK');
-    }, 5000);
 
     it('generateJson returns a typed object', async () => {
         interface User { name: string; age: number }

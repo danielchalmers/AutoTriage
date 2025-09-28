@@ -41,7 +41,7 @@ export async function generateAnalysis(
     cfg.modelTemperature,
     cfg.thinkingBudget,
     2,
-    15000
+    5000
   );
   saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(result, null, 2));
   return result;
