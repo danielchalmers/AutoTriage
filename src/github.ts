@@ -120,8 +120,7 @@ export class GitHubClient {
       per_page: 100,
     });
 
-    const sliced = (events as any[]).slice(-limit);
-    const mapped = sliced.map<TimelineEvent | null>((event: any) => {
+    const mapped = (events as any[]).map<TimelineEvent | null>((event: any) => {
       const base: TimelineEvent = {
         id: event.id,
         url: event.url,
@@ -171,7 +170,7 @@ export class GitHubClient {
     });
     return {
       raw: events,
-      filtered: mapped.filter((ev): ev is TimelineEvent => ev !== null),
+      filtered: mapped.filter((ev): ev is TimelineEvent => ev !== null).slice(-limit),
     };
   }
 
