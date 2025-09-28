@@ -44,7 +44,8 @@ export async function generateAnalysis(
 
   const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
   saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(data, null, 2));
-  saveArtifact(issue.number, `analysis-${model}-thoughts.txt`, thoughts.join('\n'));
+  saveArtifact(issue.number, `analysis-${model}-thoughts.txt`, thoughts.join(''));
+  console.log(thoughts.join('  💭 '));
   return data;
 }
 export async function buildPrompt(

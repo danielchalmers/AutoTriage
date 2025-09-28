@@ -104,7 +104,7 @@ async function processIssue(
 
   // Fast pass produced no work: skip expensive pass.
   if (ops.length === 0) {
-    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.summary} 💭 ${quickAnalysis.reasoning}`);
+    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.summary}`);
     writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title, issue.reactions);
     return false;
   }
@@ -120,7 +120,7 @@ async function processIssue(
   );
 
   ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name));
-  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary} 💭 ${reviewAnalysis.reasoning}`);
+  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary}`);
 
   if (ops.length > 0) {
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));

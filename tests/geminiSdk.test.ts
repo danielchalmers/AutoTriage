@@ -27,6 +27,6 @@ describe('Gemini (real API)', () => {
         const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0, -1);
         const response = await client.generateJson<User>(payload, 2, 500);
         expect(response.data).toEqual({ name: 'Alice', age: 30 });
-        expect(Array.isArray(response.thoughts)).toBe(true);
+        expect(typeof response.thoughts).toBe('string');
     }, 5000);
 });
