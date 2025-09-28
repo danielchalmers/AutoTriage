@@ -18,8 +18,8 @@ export async function generateAnalysis(
   modelTemperature: number,
   thinkingBudget: number,
   systemPrompt: string,
-  userPrompt: string
-): Promise<AnalysisResult> {
+  userPrompt: string,
+): Promise<{ data: AnalysisResult; thoughts: string }> {
   const schema = {
     type: 'OBJECT',
     properties: {
@@ -43,11 +43,11 @@ export async function generateAnalysis(
   );
 
   const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
-  saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(data, null, 2));
-  saveArtifact(issue.number, `analysis-${model}-thoughts.txt`, thoughts.join(''));
-  console.log(thoughts.join('  💭 '));
-  return data;
+  saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
+  saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
+  return { data, thoughts };
 }
+
 export async function buildPrompt(
   issue: Issue,
   promptPath: string,

@@ -90,7 +90,7 @@ async function processIssue(
   saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
   // Pass 1: fast model
-  const quickAnalysis: AnalysisResult = await generateAnalysis(
+  const { data: quickAnalysis, thoughts: quickThoughts } = await generateAnalysis(
     gemini,
     issue,
     cfg.modelFast,
@@ -104,12 +104,11 @@ async function processIssue(
 
   // Fast pass produced no work: skip expensive pass.
   if (ops.length === 0) {
-    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.summary}`);
     writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title, issue.reactions);
     return false;
   }
 
-  const reviewAnalysis: AnalysisResult = await generateAnalysis(
+  const { data: reviewAnalysis, thoughts: reviewThoughts } = await generateAnalysis(
     gemini,
     issue,
     cfg.modelPro,
@@ -120,7 +119,8 @@ async function processIssue(
   );
 
   ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name));
-  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary}`);
+  core.info(`🤖 #${issueNumber}:`);
+  core.info(reviewThoughts.replace(/^/gm, '  💭 '));
 
   if (ops.length > 0) {
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));

@@ -49,25 +49,22 @@ export class GeminiClient {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string[] }> {
-    const jsonText = typeof response.text === 'string' ? response.text.trim() : '';
-
+  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string }> {
+    const jsonText = response.text;
     if (!jsonText) {
-      throw new GeminiResponseError('Empty response.text in JSON mode');
+      throw new GeminiResponseError('Gemini responded with empty text');
     }
 
-    const top = Array.isArray(response.candidates) ? response.candidates[0] : undefined;
-    const parts = (top?.content?.parts ?? []) as Array<any>;
     const thoughts: string[] = [];
-    for (const p of parts) {
-      if (p && typeof p === 'object' && p.thought && typeof p.text === 'string') {
+    for (const p of response.candidates?.[0]?.content?.parts ?? []) {
+      if (p.thought && typeof p.text === 'string') {
         thoughts.push(p.text);
       }
     }
 
     try {
       const data = JSON.parse(jsonText) as T;
-      return { data, thoughts };
+      return { data, thoughts: thoughts.join('\n') };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
@@ -77,7 +74,7 @@ export class GeminiClient {
     payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
-  ): Promise<{ data: T; thoughts: string[] }> {
+  ): Promise<{ data: T; thoughts: string }> {
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;
