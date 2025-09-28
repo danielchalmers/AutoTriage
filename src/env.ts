@@ -41,7 +41,7 @@ export function getConfig(): Config {
   const promptPath = core.getInput('prompt-path') || '.github/AutoTriage.prompt';
   const readmePath = core.getInput('readme-path');
   const dbPath = core.getInput('db-path') || 'triage-db.json';
-  const modelFast = core.getInput('model-fast') || 'gemini-flash-lite-latest';
+  const modelFast = core.getInput('model-fast') || 'gemini-flash-latest';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
   const modelTemperature = core.getInput('model-temperature') || '0.0';
   const thinkingBudget = -1;
