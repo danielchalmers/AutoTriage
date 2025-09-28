@@ -29,8 +29,9 @@ async function run(): Promise<void> {
     }
 
     try {
-      await core.group(`🤖 #${n}`, async () => {
-        const triageUsed = await processIssue(n, repoLabels, autoDiscover);
+      const issue = await gh.getIssue(n);
+      await core.group(`🤖 #${n} ${issue.title}`, async () => {
+        const triageUsed = await processIssue(issue, repoLabels, autoDiscover);
         if (triageUsed) triagesPerformed++;
       });
       consecutiveFailures = 0; // reset on success path
@@ -60,12 +61,11 @@ async function run(): Promise<void> {
 run();
 
 async function processIssue(
-  issueNumber: number,
+  issue: Issue,
   repoLabels: Array<{ name: string; description?: string | null }>,
   autoDiscover: boolean
 ): Promise<boolean> {
-  const issue = await gh.getIssue(issueNumber);
-  const dbEntry = parseDbEntry(db, issueNumber);
+  const dbEntry = parseDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
   saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
