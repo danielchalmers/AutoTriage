@@ -7,6 +7,8 @@ import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 import chalk from 'chalk';
 
+chalk.level = 3;
+
 const cfg = getConfig();
 const db = loadDatabase(cfg.dbPath);
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);

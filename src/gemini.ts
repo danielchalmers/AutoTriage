@@ -64,7 +64,12 @@ export class GeminiClient {
 
     try {
       const data = JSON.parse(jsonText) as T;
-      return { data, thoughts: thoughts.join('\n') };
+      const collapsedThoughts = thoughts
+        .join('\n')
+        .replace(/(\r?\n\s*){2,}/g, '\n')
+        .trim();
+
+      return { data, thoughts: collapsedThoughts };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
