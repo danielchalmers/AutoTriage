@@ -24,7 +24,7 @@ describe('Gemini (real API)', () => {
         } as const;
         const systemPrompt = 'You are a data generator that outputs only JSON matching the provided schema.';
         const userPrompt = 'Return exactly this JSON object: {"name":"Alice","age":30}';
-        const payload = buildJsonPayload(model, systemPrompt, userPrompt, schema, 0, -1);
+        const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0, -1);
         const result = await client.generateJson<User>(payload, 2, 500);
         expect(result).toEqual({ name: 'Alice', age: 30 });
     }, 5000);

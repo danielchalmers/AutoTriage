@@ -91,17 +91,18 @@ async function processIssue(
 
   // Pass 1: fast model
   const quickAnalysis: AnalysisResult = await generateAnalysis(
-    cfg,
     gemini,
     issue,
     cfg.modelFast,
+    cfg.modelTemperature,
+    cfg.thinkingBudget,
     systemPrompt,
     userPrompt
   );
 
   let ops: TriageOperation[] = planOperations(issue, quickAnalysis, issue, repoLabels.map(l => l.name));
 
-  // Fast pass produced no work: persist reasoning and skip expensive pass.
+  // Fast pass produced no work: skip expensive pass.
   if (ops.length === 0) {
     core.info(`⏭️ #${issueNumber}: ${quickAnalysis.summary} 💭 ${quickAnalysis.reasoning}`);
     writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title, issue.reactions);
@@ -109,10 +110,11 @@ async function processIssue(
   }
 
   const reviewAnalysis: AnalysisResult = await generateAnalysis(
-    cfg,
     gemini,
     issue,
     cfg.modelPro,
+    cfg.modelTemperature,
+    cfg.thinkingBudget,
     systemPrompt,
     userPrompt
   );
@@ -128,8 +130,7 @@ async function processIssue(
   }
 
   writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title, issue.reactions);
-  // Pro review executed, so consume one triage slot.
-  return true;
+  return true; // Pro review executed, so consume one triage slot.
 }
 
 async function listTargets(cfg: Config, gh: GitHubClient): Promise<{ targets: number[], autoDiscover: boolean }> {

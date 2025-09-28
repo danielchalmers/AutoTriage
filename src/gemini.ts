@@ -1,24 +1,20 @@
 import { GoogleGenAI, type GenerateContentParameters } from '@google/genai';
 
 export function buildJsonPayload(
-  model: string,
   systemPrompt: string,
   userPrompt: string,
   schema: unknown,
-  temperature?: number,
+  model: string,
+  temperature: number,
   thinkingBudget?: number
 ): GenerateContentParameters {
   const config: NonNullable<GenerateContentParameters['config']> = {
     systemInstruction: systemPrompt,
     responseMimeType: 'application/json',
     responseSchema: schema as any,
+    temperature: temperature,
+    thinkingConfig: { thinkingBudget: thinkingBudget ?? -1 }
   };
-
-  if (temperature !== undefined && Number.isFinite(temperature)) {
-    config.temperature = temperature;
-  }
-
-  config.thinkingConfig = { thinkingBudget: thinkingBudget ?? -1 };
 
   return {
     model,

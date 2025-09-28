@@ -80,12 +80,9 @@ export function writeAnalysisToDb(
 
 export type TriageDb = Record<string, {
   lastTriaged: string;
-  // Full cumulative reasoning history (append-only log)
   reasoning: string;
-  // Canonical issue summary for duplicate detection / clustering
   summary: string;
   labels?: string[];
-  // Snapshot of total reactions count at last triage time
   reactions?: number;
 }>;
 
