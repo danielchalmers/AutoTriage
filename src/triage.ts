@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import type { Config } from "./storage";
 import type { AnalysisResult } from "./analysis";
 import type { GitHubClient } from './github';
+import chalk from 'chalk';
 
 export interface TriageOperation {
   kind: 'labels' | 'comment' | 'title' | 'state';
@@ -21,11 +22,13 @@ class UpdateLabelsOp implements TriageOperation {
       // Build log line showing: unchanged labels, +added labels, -removed labels.
       // Example: 🏷️ Labels: docs, +bug, -enhancement
       const unchanged = this.merged.filter(l => !this.toAdd.includes(l));
-      const added = this.toAdd.map(l => `+${l}`);
-      const removed = this.toRemove.map(l => `-${l}`);
-      const parts = [...unchanged, ...added, ...removed];
-      const labelLine = parts.length ? parts.join(', ') : 'none';
-      core.info(`🏷️ Labels: ${labelLine}`);
+      const tintedUnchanged = unchanged.map(label => chalk.dim(label));
+      const tintedAdded = this.toAdd.map(label => chalk.green(`+${label}`));
+      const tintedRemoved = this.toRemove.map(label => chalk.red(`-${label}`));
+      const parts = [...tintedUnchanged, ...tintedAdded, ...tintedRemoved];
+      const heading = chalk.cyan('🏷️ Labels');
+      const labelLine = parts.length ? parts.join(', ') : chalk.yellow('none');
+      core.info(`${heading}: ${labelLine}`);
       if (cfg.enabled) {
         if (this.toAdd.length) await client.addLabels(issue.number, this.toAdd);
         for (const name of this.toRemove) await client.removeLabel(issue.number, name);
@@ -40,8 +43,9 @@ class CreateCommentOp implements TriageOperation {
   constructor(public body: string) { }
   toJSON() { return { kind: this.kind, body: this.body }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
+    console.log(`💬 Posting comment:`);
     const preview = this.body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
-    core.info("\x1b[90m" + preview + "\x1b[0m");
+    core.info(chalk.cyan(preview));
     if (cfg.enabled) await client.createComment(issue.number, this.body);
   }
 }

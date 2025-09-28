@@ -5,6 +5,7 @@ import { AnalysisResult, buildPrompt, AnalysisResultSchema } from './analysis';
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
+import chalk from 'chalk';
 
 const cfg = getConfig();
 const db = loadDatabase(cfg.dbPath);
@@ -140,9 +141,9 @@ export async function generateAnalysis(
     thinkingBudget
   );
 
-  core.info(`💭 Thinking with ${model}...`);
+  core.info(chalk.blue(`💭 Thinking with ${model}...`));
   const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
-  core.info("\x1b[35m" + thoughts + "\x1b[0m");
+  core.info(chalk.magenta(thoughts));
   saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
   saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
 
