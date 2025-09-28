@@ -32,10 +32,8 @@ async function run(): Promise<void> {
 
     try {
       const issue = await gh.getIssue(n);
-      await core.group(`🤖 #${n} ${issue.title}`, async () => {
-        const triageUsed = await processIssue(issue, repoLabels, autoDiscover);
-        if (triageUsed) triagesPerformed++;
-      });
+      const triageUsed = await processIssue(issue, repoLabels, autoDiscover);
+      if (triageUsed) triagesPerformed++;
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
@@ -69,7 +67,6 @@ async function processIssue(
 ): Promise<boolean> {
   const dbEntry = parseDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
-  saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
   if (autoDiscover) {
     // Skip items that haven't changed since last triage.
@@ -77,52 +74,57 @@ async function processIssue(
       return false;
     }
   }
-  const { systemPrompt, userPrompt } = await buildPrompt(
-    issue,
-    cfg.promptPath,
-    cfg.readmePath,
-    timelineEvents,
-    repoLabels,
-    dbEntry.lastThoughts
-  );
+  return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
+    saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
-  saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
-  saveArtifact(issue.number, `prompt-user.md`, userPrompt);
+    const { systemPrompt, userPrompt } = await buildPrompt(
+      issue,
+      cfg.promptPath,
+      cfg.readmePath,
+      timelineEvents,
+      repoLabels,
+      dbEntry.lastThoughts
+    );
 
-  // Pass 1: fast model
-  const { ops: quickOps } = await generateAnalysis(
-    issue,
-    cfg.modelFast,
-    cfg.modelTemperature,
-    cfg.thinkingBudget,
-    systemPrompt,
-    userPrompt,
-    repoLabels
-  );
+    saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
+    saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
-  // Fast pass produced no work: skip expensive pass.
-  if (quickOps.length === 0) {
-    return false;
-  }
+    // Pass 1: fast model
+    const { ops: quickOps } = await generateAnalysis(
+      issue,
+      cfg.modelFast,
+      cfg.modelTemperature,
+      cfg.thinkingBudget,
+      systemPrompt,
+      userPrompt,
+      repoLabels
+    );
 
-  // Full analysis pass: pro model
-  const { ops: reviewOps } = await generateAnalysis(
-    issue,
-    cfg.modelPro,
-    cfg.modelTemperature,
-    cfg.thinkingBudget,
-    systemPrompt,
-    userPrompt,
-    repoLabels
-  );
-
-  if (reviewOps.length > 0) {
-    for (const op of reviewOps) {
-      await op.perform(gh, cfg, issue);
+    // Fast pass produced no work: skip expensive pass.
+    if (quickOps.length === 0) {
+      console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
+      return false;
     }
-  }
 
-  return true;
+    // Full analysis pass: pro model
+    const { ops: reviewOps } = await generateAnalysis(
+      issue,
+      cfg.modelPro,
+      cfg.modelTemperature,
+      cfg.thinkingBudget,
+      systemPrompt,
+      userPrompt,
+      repoLabels
+    );
+
+    if (reviewOps.length > 0) {
+      for (const op of reviewOps) {
+        await op.perform(gh, cfg, issue);
+      }
+    }
+
+    return true;
+  });
 }
 
 export async function generateAnalysis(
