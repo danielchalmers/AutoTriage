@@ -1,4 +1,3 @@
-import * as core from '@actions/core';
 import type { Config } from "./storage";
 import type { AnalysisResult } from "./analysis";
 import type { GitHubClient } from './github';
@@ -28,7 +27,7 @@ class UpdateLabelsOp implements TriageOperation {
       const parts = [...tintedUnchanged, ...tintedAdded, ...tintedRemoved];
       const heading = chalk.cyan('🏷️ Labels');
       const labelLine = parts.length ? parts.join(', ') : chalk.yellow('none');
-      core.info(`${heading}: ${labelLine}`);
+      console.log(`${heading}: ${labelLine}`);
       if (cfg.enabled) {
         if (this.toAdd.length) await client.addLabels(issue.number, this.toAdd);
         for (const name of this.toRemove) await client.removeLabel(issue.number, name);
@@ -45,7 +44,7 @@ class CreateCommentOp implements TriageOperation {
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     console.log(`💬 Posting comment:`);
     const preview = this.body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
-    core.info(chalk.cyan(preview));
+    console.log(chalk.cyan(preview));
     if (cfg.enabled) await client.createComment(issue.number, this.body);
   }
 }
@@ -56,7 +55,7 @@ class UpdateTitleOp implements TriageOperation {
   constructor(public newTitle: string) { }
   toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    core.info('✏️ Updating title from "' + issue.title + '" to "' + this.newTitle + '"');
+    console.log('✏️ Updating title from "' + issue.title + '" to "' + this.newTitle + '"');
     if (cfg.enabled) await client.updateTitle(issue.number, this.newTitle);
   }
 }
@@ -68,10 +67,10 @@ class UpdateStateOp implements TriageOperation {
   toJSON() { return { kind: this.kind, state: this.state }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.state === 'open') {
-      core.info('🔄 Reopening issue');
+      console.log('🔄 Reopening issue');
       if (cfg.enabled) await client.updateIssueState(issue.number, 'open');
     } else {
-      core.info(`🔄 Closing issue as ${this.state}`);
+      console.log(`🔄 Closing issue as ${this.state}`);
       if (cfg.enabled) await client.updateIssueState(issue.number, 'closed', this.state);
     }
   }

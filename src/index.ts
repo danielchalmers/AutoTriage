@@ -18,13 +18,13 @@ async function run(): Promise<void> {
   let triagesPerformed = 0;
   let consecutiveFailures = 0;
 
-  core.info(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
-  core.info(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
+  console.log(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
+  console.log(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
 
   for (const n of targets) {
     const remaining = cfg.maxTriages - triagesPerformed;
     if (remaining <= 0) {
-      core.info(`⏳ Max triages (${cfg.maxTriages}) reached`);
+      console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
       break;
     }
 
@@ -36,10 +36,10 @@ async function run(): Promise<void> {
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
-        core.warning(`#${n}: ${err.message}`);
+        console.warn(`#${n}: ${err.message}`);
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {
-          core.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
+          console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
           break;
         }
         continue;
@@ -49,7 +49,7 @@ async function run(): Promise<void> {
     }
 
     if (triagesPerformed >= cfg.maxTriages) {
-      core.info(`⏳ Max triages (${cfg.maxTriages}) reached`);
+      console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
       break;
     }
 
@@ -141,9 +141,9 @@ export async function generateAnalysis(
     thinkingBudget
   );
 
-  core.info(chalk.blue(`💭 Thinking with ${model}...`));
+  console.log(chalk.blue(`💭 Thinking with ${model}...`));
   const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
-  core.info(chalk.magenta(thoughts));
+  console.log(chalk.magenta(thoughts));
   saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
   saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
 
