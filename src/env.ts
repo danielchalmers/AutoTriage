@@ -43,7 +43,11 @@ export function getConfig(): Config {
   const dbPath = core.getInput('db-path');
   const modelFast = core.getInput('model-fast') || 'gemini-flash-latest';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
-  const modelTemperature = core.getInput('model-temperature') || '0.0';
+  const temperatureInput = core.getInput('model-temperature');
+  const parsedTemperature = Number(
+    temperatureInput === undefined || temperatureInput === '' ? '0' : temperatureInput
+  );
+  const modelTemperature = Number.isFinite(parsedTemperature) ? parsedTemperature : 0;
   const thinkingBudget = -1;
   const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
   const maxTriages = Number(core.getInput('max-triages') || '20');

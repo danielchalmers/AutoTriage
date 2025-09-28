@@ -1,5 +1,37 @@
 import { GoogleGenAI, type GenerateContentParameters } from '@google/genai';
 
+export function buildJsonPayload(
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  schema: unknown,
+  temperature?: number,
+  thinkingBudget?: number
+): GenerateContentParameters {
+  const config: NonNullable<GenerateContentParameters['config']> = {
+    systemInstruction: systemPrompt,
+    responseMimeType: 'application/json',
+    responseSchema: schema as any,
+  };
+
+  if (temperature !== undefined && Number.isFinite(temperature)) {
+    config.temperature = temperature;
+  }
+
+  config.thinkingConfig = { thinkingBudget: thinkingBudget ?? -1 };
+
+  return {
+    model,
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: userPrompt }],
+      },
+    ],
+    config,
+  };
+}
+
 export class GeminiResponseError extends Error {
   constructor(message: string) {
     super(message);
@@ -17,41 +49,6 @@ export class GeminiClient {
   // Simple delay helper for backoff
   private sleep(ms: number) {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
-  }
-
-  private buildJsonPayload(
-    model: string,
-    systemPrompt: string,
-    userPrompt: string,
-    schema: unknown,
-    temperature?: string | number,
-    thinkingBudget?: number
-  ): GenerateContentParameters {
-    const normalizedTemperature =
-      typeof temperature === 'string' ? Number(temperature) : temperature;
-
-    const config: NonNullable<GenerateContentParameters['config']> = {
-      systemInstruction: systemPrompt,
-      responseMimeType: 'application/json',
-      responseSchema: schema as any,
-    };
-
-    if (normalizedTemperature !== undefined && !Number.isNaN(normalizedTemperature)) {
-      config.temperature = normalizedTemperature;
-    }
-
-    config.thinkingConfig = { thinkingBudget: thinkingBudget ?? -1 };
-
-    return {
-      model,
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: userPrompt }],
-        },
-      ],
-      config,
-    };
   }
 
   private async generateAndParseJson<T>(payload: GenerateContentParameters): Promise<T> {
@@ -95,24 +92,10 @@ export class GeminiClient {
 
   // Set up JSON schema + enforce JSON output with retry handling
   async generateJson<T = unknown>(
-    model: string,
-    systemPrompt: string,
-    userPrompt: string,
-    schema: unknown,
-    temperature?: string | number,
-    thinkingBudget?: number,
+    payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
   ): Promise<T> {
-    const payload = this.buildJsonPayload(
-      model,
-      systemPrompt,
-      userPrompt,
-      schema,
-      temperature,
-      thinkingBudget
-    );
-
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;

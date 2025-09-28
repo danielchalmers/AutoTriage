@@ -94,7 +94,7 @@ export type Config = {
   repo: string;
   token: string;
   geminiApiKey: string;
-  modelTemperature: string;
+  modelTemperature: number;
   enabled: boolean;
   thinkingBudget: number;
   issueNumber?: number;

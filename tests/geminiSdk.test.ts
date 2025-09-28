@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GeminiClient } from '../src/gemini';
+import { GeminiClient, buildJsonPayload } from '../src/gemini';
 
 describe('Gemini (real API)', () => {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -24,7 +24,8 @@ describe('Gemini (real API)', () => {
         } as const;
         const systemPrompt = 'You are a data generator that outputs only JSON matching the provided schema.';
         const userPrompt = 'Return exactly this JSON object: {"name":"Alice","age":30}';
-        const result = await client.generateJson<User>(model, systemPrompt, userPrompt, schema, '0', -1, 2, 500);
+        const payload = buildJsonPayload(model, systemPrompt, userPrompt, schema, 0, -1);
+        const result = await client.generateJson<User>(payload, 2, 500);
         expect(result).toEqual({ name: 'Alice', age: 30 });
     }, 5000);
 });

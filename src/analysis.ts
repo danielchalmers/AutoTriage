@@ -1,7 +1,7 @@
 import { loadPrompt, loadReadme, saveArtifact } from './storage';
 import type { Issue, TimelineEvent } from './github';
 import type { Config } from './storage';
-import { GeminiClient } from './gemini';
+import { GeminiClient, buildJsonPayload } from './gemini';
 
 export type AnalysisResult = {
   summary: string;
@@ -33,16 +33,16 @@ export async function generateAnalysis(
     required: ['summary', 'reasoning', 'labels'],
   } as const;
 
-  const result = await gemini.generateJson<AnalysisResult>(
+  const payload = buildJsonPayload(
     model,
     systemPrompt,
     userPrompt,
     schema,
     cfg.modelTemperature,
-    cfg.thinkingBudget,
-    2,
-    5000
+    cfg.thinkingBudget
   );
+
+  const result = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
   saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(result, null, 2));
   return result;
 }
