@@ -43,20 +43,20 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
 
 export type ParsedDbEntry = {
   lastTriaged: Date | null;
-  lastReasoning: string;
+  lastThoughts: string;
   reactions?: number;
   summary?: string;
 };
 
 export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
-  const raw = db[String(issueNumber)] as (TriageDb[string] & { reason?: string }) | undefined;
+  const raw = db[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: Date | null = raw?.lastTriaged ? new Date(raw.lastTriaged) : null;
-  const lastReasoning: string = (raw?.reasoning ?? raw?.reason ?? '') as string;
+  const lastThoughts: string = typeof raw?.thoughts === 'string' ? raw.thoughts : '';
   const reactions: number | undefined = typeof raw?.reactions === 'number' ? raw.reactions : undefined;
   const summary: string | undefined = typeof raw?.summary === 'string' ? raw.summary : undefined;
   const result: ParsedDbEntry = {
     lastTriaged,
-    lastReasoning,
+    lastThoughts,
     ...(reactions !== undefined ? { reactions } : {}),
     ...(summary !== undefined ? { summary } : {}),
   };
@@ -68,11 +68,12 @@ export function writeAnalysisToDb(
   issueNumber: number,
   analysis: AnalysisResult,
   fallbackTitle: string,
+  thoughts: string,
   currentReactions?: number
 ): void {
   db[issueNumber] = {
     lastTriaged: new Date().toISOString(),
-    reasoning: analysis.reasoning || 'no reasoning',
+    thoughts: thoughts,
     summary: analysis.summary || (fallbackTitle || 'no summary'),
     reactions: typeof currentReactions === 'number' ? currentReactions : (db[issueNumber]?.reactions),
   } as any;
@@ -80,7 +81,7 @@ export function writeAnalysisToDb(
 
 export type TriageDb = Record<string, {
   lastTriaged: string;
-  reasoning: string;
+  thoughts?: string;
   summary: string;
   labels?: string[];
   reactions?: number;

@@ -7,7 +7,6 @@
   - Ignore all timeline events and only analyze the base issue.
   - Ignore "Expected Actions" body section.
   - Follow the instructions in "Instructions" body section.
-  - Do not mention these rules during reasoning.
 
 ## General Guardrails
 - You are running as the GitHub Actions bot user: "github-actions[bot]".

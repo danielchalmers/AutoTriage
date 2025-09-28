@@ -81,7 +81,7 @@ async function processIssue(
     cfg.readmePath,
     timelineEvents,
     repoLabels,
-    dbEntry.lastReasoning
+    dbEntry.lastThoughts
   );
 
   saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
@@ -147,13 +147,13 @@ export async function generateAnalysis(
   saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
   saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
 
-  const ops: TriageOperation[] = planOperations(issue, data, issue, repoLabels.map(l => l.name));
+  const ops: TriageOperation[] = planOperations(issue, data, issue, repoLabels.map(l => l.name), thoughts);
 
   if (ops.length > 0) {
     saveArtifact(issue.number, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
   }
 
-  writeAnalysisToDb(db, issue.number, data, issue.title, issue.reactions);
+  writeAnalysisToDb(db, issue.number, data, issue.title, thoughts, issue.reactions);
 
   return { data, thoughts, ops };
 }

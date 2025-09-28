@@ -36,7 +36,7 @@ class UpdateLabelsOp implements TriageOperation {
   }
 }
 
-// Post a model-suggested comment (includes hidden reasoning log for traceability).
+// Post a model-suggested comment (includes hidden thoughts log for traceability).
 class CreateCommentOp implements TriageOperation {
   kind: 'comment' = 'comment';
   constructor(public body: string) { }
@@ -107,7 +107,8 @@ export function planOperations(
   issue: any,
   analysis: AnalysisResult,
   metadata: any,
-  repoLabels?: string[]
+  repoLabels?: string[],
+  thoughts?: string
 ): TriageOperation[] {
   const ops: TriageOperation[] = [];
 
@@ -121,7 +122,9 @@ export function planOperations(
 
   // Comment
   if (typeof analysis.comment === 'string' && analysis.comment.trim().length > 0) {
-    const body = `${analysis.comment}\n\n<!-- ${analysis.reasoning || 'No reasoning provided'} -->`;
+    const thoughtLog = (thoughts ?? '').trim();
+    const hiddenBlock = thoughtLog.length ? thoughtLog : 'No thoughts provided';
+    const body = `${analysis.comment}\n\n<!--\n${hiddenBlock}\n-->`;
     ops.push(new CreateCommentOp(body));
   }
 
