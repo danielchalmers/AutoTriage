@@ -2,7 +2,7 @@ import { loadPrompt, loadReadme, saveArtifact } from './storage';
 import type { Issue, TimelineEvent } from './github';
 import { GeminiClient, buildJsonPayload } from './gemini';
 
-export type TriageAssessment = {
+export type AnalysisResult = {
   summary: string;
   labels?: string[];
   comment?: string;
@@ -10,8 +10,8 @@ export type TriageAssessment = {
   newTitle?: string;
 };
 
-export type GeminiDeliberation = {
-  assessment: TriageAssessment;
+export type AnalysisResultAndThoughts = {
+  assessment: AnalysisResult;
   thoughts: string[];
 };
 
@@ -23,7 +23,7 @@ export async function generateAnalysis(
   thinkingBudget: number,
   systemPrompt: string,
   userPrompt: string
-): Promise<GeminiDeliberation> {
+): Promise<AnalysisResultAndThoughts> {
   const schema = {
     type: 'OBJECT',
     properties: {
@@ -45,8 +45,8 @@ export async function generateAnalysis(
     thinkingBudget
   );
 
-  const response = await gemini.generateJson<TriageAssessment>(payload, 2, 5000);
-  const artifact: GeminiDeliberation = {
+  const response = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  const artifact: AnalysisResultAndThoughts = {
     assessment: response.result,
     thoughts: response.thoughts,
   };

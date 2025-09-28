@@ -1,4 +1,30 @@
-import { GoogleGenAI, type GenerateContentParameters } from '@google/genai';
+// @ts-ignore: Google Gemini SDK ships without TypeScript declarations
+import { GoogleGenAI } from '@google/genai';
+
+type GenerateContentPayload = {
+  model: string;
+  contents: Array<{
+    role: string;
+    parts: Array<{
+      text?: string;
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  }>;
+  config?: {
+    systemInstruction?: string;
+    responseMimeType?: string;
+    responseSchema?: unknown;
+    temperature?: number;
+    thinkingConfig?: {
+      thinkingBudget?: number;
+      includeThoughts?: boolean;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
 
 export function buildJsonPayload(
   systemPrompt: string,
@@ -7,8 +33,8 @@ export function buildJsonPayload(
   model: string,
   temperature: number,
   thinkingBudget?: number
-): GenerateContentParameters {
-  const config: NonNullable<GenerateContentParameters['config']> = {
+): GenerateContentPayload {
+  const config: NonNullable<GenerateContentPayload['config']> = {
     systemInstruction: systemPrompt,
     responseMimeType: 'application/json',
     responseSchema: schema as any,
@@ -50,7 +76,7 @@ export class GeminiClient {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async generateAndParseJson<T>(payload: GenerateContentParameters): Promise<{ result: T; thoughts: string[] }> {
+  private async generateAndParseJson<T>(payload: GenerateContentPayload): Promise<{ result: T; thoughts: string[] }> {
     const response = await this.client.models.generateContent(payload);
 
     const candidates = Array.isArray((response as any)?.candidates)
@@ -107,7 +133,7 @@ export class GeminiClient {
 
   // Set up JSON schema + enforce JSON output with retry handling
   async generateJson<T = unknown>(
-    payload: GenerateContentParameters,
+    payload: GenerateContentPayload,
     maxRetries: number,
     initialBackoffMs: number
   ): Promise<{ result: T; thoughts: string[] }> {

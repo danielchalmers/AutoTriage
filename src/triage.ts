@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
-import type { Config } from "./storage";
-import type { TriageAssessment } from "./analysis";
+import type { Config } from './storage';
+import type { AnalysisResult } from './analysis';
 import type { GitHubClient } from './github';
 
 export interface TriageOperation {
@@ -103,7 +103,7 @@ function filterLabels(labels: string[] | undefined, repoLabels: string[] | undef
  */
 export function planOperations(
   issue: any,
-  analysis: TriageAssessment,
+  analysis: AnalysisResult,
   metadata: any,
   repoLabels?: string[],
   options?: { thoughtSummaries?: string[] }
@@ -123,9 +123,10 @@ export function planOperations(
     const thoughtSummaries = Array.isArray(options?.thoughtSummaries)
       ? options.thoughtSummaries.map(t => t.trim()).filter(Boolean)
       : [];
-    const hiddenThoughts = thoughtSummaries.join('\n');
-    const fallbackThought = hiddenThoughts.length > 0 ? hiddenThoughts : 'No Gemini thoughts provided';
-    const body = `${analysis.comment}\n\n<!-- ${fallbackThought} -->`;
+    const hiddenThoughts = thoughtSummaries.length > 0
+      ? `\n\n<!-- ${thoughtSummaries.join('\n')} -->`
+      : '';
+    const body = `${analysis.comment}${hiddenThoughts}`;
     ops.push(new CreateCommentOp(body));
   }
 

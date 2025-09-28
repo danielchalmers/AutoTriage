@@ -2,7 +2,7 @@ import * as core from '@actions/core';
 import { getConfig } from './env';
 import type { Config, TriageDb } from './storage';
 import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
-import { generateAnalysis, TriageAssessment, GeminiDeliberation, buildPrompt } from './analysis';
+import { generateAnalysis, AnalysisResult, AnalysisResultAndThoughts, buildPrompt } from './analysis';
 import { GitHubClient } from './github';
 import { GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -91,7 +91,7 @@ async function processIssue(
   saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
   // Pass 1: fast model
-  const quickResponse: GeminiDeliberation = await generateAnalysis(
+  const quickResponse: AnalysisResultAndThoughts = await generateAnalysis(
     gemini,
     issue,
     cfg.modelFast,
@@ -101,7 +101,7 @@ async function processIssue(
     userPrompt
   );
 
-  const quickAnalysis: TriageAssessment = quickResponse.assessment;
+  const quickAnalysis: AnalysisResult = quickResponse.assessment;
   const quickThoughts = quickResponse.thoughts;
 
   let ops: TriageOperation[] = planOperations(issue, quickAnalysis, issue, repoLabels.map(l => l.name), {
@@ -110,12 +110,11 @@ async function processIssue(
 
   // Fast pass produced no work: skip expensive pass.
   if (ops.length === 0) {
-    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.summary} 💭 ${formatThoughtLog(quickThoughts)}`);
     writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, quickThoughts, issue.title, issue.reactions);
     return false;
   }
 
-  const reviewResponse: GeminiDeliberation = await generateAnalysis(
+  const reviewResponse: AnalysisResultAndThoughts = await generateAnalysis(
     gemini,
     issue,
     cfg.modelPro,
@@ -125,7 +124,7 @@ async function processIssue(
     userPrompt
   );
 
-  const reviewAnalysis: TriageAssessment = reviewResponse.assessment;
+  const reviewAnalysis: AnalysisResult = reviewResponse.assessment;
   const reviewThoughts = reviewResponse.thoughts;
 
   ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name), {
@@ -148,11 +147,8 @@ function formatThoughtLog(thoughts: string[]): string {
   if (!Array.isArray(thoughts) || thoughts.length === 0) {
     return 'No thoughts provided';
   }
-  const first = thoughts.find(t => t.trim().length > 0);
-  if (!first) return 'No thoughts provided';
-  const truncated = first.length > 180 ? `${first.slice(0, 177)}…` : first;
-  const extraCount = thoughts.length - 1;
-  return extraCount > 0 ? `${truncated} (+${extraCount} more)` : truncated;
+  const normalized = thoughts.map(t => t.trim()).filter(Boolean);
+  return normalized.length > 0 ? normalized.join(' | ') : 'No thoughts provided';
 }
 
 async function listTargets(cfg: Config, gh: GitHubClient): Promise<{ targets: number[], autoDiscover: boolean }> {

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { TriageAssessment } from "./analysis";
+import type { AnalysisResult } from './analysis';
 
 // Best-effort write; failures are non-fatal and only logged to stderr.
 export function saveArtifact(issueNumber: number, name: string, contents = ''): void {
@@ -49,7 +49,7 @@ export type ParsedDbEntry = {
 };
 
 export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
-  const raw = db[String(issueNumber)] as (TriageDb[string] & { reason?: string }) | undefined;
+  const raw = db[String(issueNumber)] as TriageDb[string] | undefined;
   const lastTriaged: Date | null = raw?.lastTriaged ? new Date(raw.lastTriaged) : null;
   const reactions: number | undefined = typeof raw?.reactions === 'number' ? raw.reactions : undefined;
   const summary: string | undefined = typeof raw?.summary === 'string' ? raw.summary : undefined;
@@ -70,11 +70,6 @@ export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
     }
   }
 
-  const legacyReasoning = raw?.reasoning ?? raw?.reason;
-  if (typeof legacyReasoning === 'string' && legacyReasoning.trim().length > 0) {
-    thoughtLog.push(legacyReasoning.trim());
-  }
-
   const result: ParsedDbEntry = {
     lastTriaged,
     thoughtLog,
@@ -87,12 +82,13 @@ export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
 export function writeAnalysisToDb(
   db: TriageDb,
   issueNumber: number,
-  analysis: TriageAssessment,
+  analysis: AnalysisResult,
   thoughts: string[],
   fallbackTitle: string,
   currentReactions?: number
 ): void {
-  const existing = db[issueNumber] ?? {};
+  const key = String(issueNumber);
+  const existing = db[key] ?? {};
   const priorThoughts = Array.isArray((existing as any).thoughtLog)
     ? ((existing as any).thoughtLog as unknown[])
         .filter((entry): entry is string => typeof entry === 'string')
@@ -102,9 +98,9 @@ export function writeAnalysisToDb(
   const normalizedThoughts = Array.isArray(thoughts)
     ? thoughts.map(t => t.trim()).filter(t => t.length > 0)
     : [];
-  const combinedThoughts = [...priorThoughts, ...normalizedThoughts].slice(-50);
+  const combinedThoughts = [...priorThoughts, ...normalizedThoughts];
 
-  db[issueNumber] = {
+  db[key] = {
     ...existing,
     lastTriaged: new Date().toISOString(),
     summary: analysis.summary || (fallbackTitle || 'no summary'),
@@ -117,8 +113,6 @@ export type TriageDb = Record<string, {
   lastTriaged: string;
   summary: string;
   thoughtLog?: string[];
-  reasoning?: string;
-  reason?: string;
   labels?: string[];
   reactions?: number;
 }>;
