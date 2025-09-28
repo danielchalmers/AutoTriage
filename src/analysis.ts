@@ -42,9 +42,10 @@ export async function generateAnalysis(
     thinkingBudget
   );
 
-  const result = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
-  saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(result, null, 2));
-  return result;
+  const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(data, null, 2));
+  saveArtifact(issue.number, `analysis-${model}-thoughts.txt`, thoughts.join('\n'));
+  return data;
 }
 export async function buildPrompt(
   issue: Issue,

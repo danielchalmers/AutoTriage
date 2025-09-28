@@ -1,4 +1,4 @@
-import { GoogleGenAI, type GenerateContentParameters } from '@google/genai';
+import { GenerateContentResponse, GoogleGenAI, type GenerateContentParameters } from '@google/genai';
 
 export function buildJsonPayload(
   systemPrompt: string,
@@ -13,7 +13,10 @@ export function buildJsonPayload(
     responseMimeType: 'application/json',
     responseSchema: schema as any,
     temperature: temperature,
-    thinkingConfig: { thinkingBudget: thinkingBudget ?? -1 }
+    thinkingConfig: {
+      includeThoughts: true,
+      thinkingBudget: thinkingBudget ?? -1
+    }
   };
 
   return {
@@ -42,63 +45,47 @@ export class GeminiClient {
     this.client = new GoogleGenAI({ apiKey });
   }
 
-  // Simple delay helper for backoff
   private sleep(ms: number) {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async generateAndParseJson<T>(payload: GenerateContentParameters): Promise<T> {
-    const response = await this.client.models.generateContent(payload);
+  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string[] }> {
+    const jsonText = typeof response.text === 'string' ? response.text.trim() : '';
 
-    const textFromGetter = typeof response.text === 'string' ? response.text : undefined;
+    if (!jsonText) {
+      throw new GeminiResponseError('Empty response.text in JSON mode');
+    }
 
-    let text = textFromGetter;
-
-    if (!text || text.trim().length === 0) {
-      const candidates = response.candidates;
-      if (!Array.isArray(candidates) || candidates.length === 0) {
-        throw new GeminiResponseError('Unable to extract text from Gemini response');
-      }
-
-      const parts = candidates[0]?.content?.parts;
-      if (!Array.isArray(parts) || parts.length === 0) {
-        throw new GeminiResponseError('Unable to extract text from Gemini response');
-      }
-
-      text = parts
-        .map(part => {
-          if (typeof part === 'string') return part;
-          if (part && typeof part.text === 'string') return part.text;
-          return '';
-        })
-        .filter(Boolean)
-        .join('');
-
-      if (!text || text.trim().length === 0) {
-        throw new GeminiResponseError('Gemini returned an empty response');
+    const top = Array.isArray(response.candidates) ? response.candidates[0] : undefined;
+    const parts = (top?.content?.parts ?? []) as Array<any>;
+    const thoughts: string[] = [];
+    for (const p of parts) {
+      if (p && typeof p === 'object' && p.thought && typeof p.text === 'string') {
+        thoughts.push(p.text);
       }
     }
 
     try {
-      return JSON.parse(text) as T;
+      const data = JSON.parse(jsonText) as T;
+      return { data, thoughts };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
   }
 
-  // Set up JSON schema + enforce JSON output with retry handling
   async generateJson<T = unknown>(
     payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
-  ): Promise<T> {
+  ): Promise<{ data: T; thoughts: string[] }> {
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;
 
     while (attempt < totalAttempts) {
       try {
-        return await this.generateAndParseJson<T>(payload);
+        const response = await this.client.models.generateContent(payload);
+        return await this.parseJson<T>(response);
       } catch (err) {
         lastError = err;
       }
