@@ -28,8 +28,10 @@ async function run(): Promise<void> {
     }
 
     try {
-      const triageUsed = await processIssue(n, repoLabels, autoDiscover);
-      if (triageUsed) triagesPerformed++;
+      await core.group(`🤖 #${n}`, async () => {
+        const triageUsed = await processIssue(n, repoLabels, autoDiscover);
+        if (triageUsed) triagesPerformed++;
+      });
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
@@ -101,7 +103,7 @@ async function processIssue(
   }
 
   // Full analysis pass: pro model
-  const { thoughts: reviewThoughts, ops: reviewOps } = await generateAnalysis(
+  const { ops: reviewOps } = await generateAnalysis(
     issue,
     cfg.modelPro,
     cfg.modelTemperature,
@@ -110,9 +112,6 @@ async function processIssue(
     userPrompt,
     repoLabels
   );
-
-  core.info(`🤖 #${issueNumber}:`);
-  core.info(reviewThoughts.replace(/^/gm, '  💭 '));
 
   if (reviewOps.length > 0) {
     for (const op of reviewOps) {
@@ -141,7 +140,9 @@ export async function generateAnalysis(
     thinkingBudget
   );
 
+  core.info(`Generating analysis using ${model}...`);
   const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  core.info(thoughts.replace(/^/gm, '  💭 '));
   saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
   saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
 
