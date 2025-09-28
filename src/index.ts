@@ -140,9 +140,9 @@ export async function generateAnalysis(
     thinkingBudget
   );
 
-  core.info(`Generating analysis using ${model}...`);
+  core.info(`💭 Thinking with ${model}...`);
   const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
-  core.info(thoughts.replace(/^/gm, '  💭 '));
+  core.info("\x1b[35m" + thoughts + "\x1b[0m");
   saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
   saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
 
