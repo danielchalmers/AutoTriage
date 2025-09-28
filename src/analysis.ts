@@ -42,10 +42,9 @@ export async function generateAnalysis(
   );
 
   const response = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
-  const normalizedThoughts = normalizeThoughts(response.thoughts);
   const result: AnalysisResult = {
     ...response.result,
-    thoughts: normalizedThoughts,
+    thoughts: response.thoughts,
   };
   saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(result, null, 2));
   return result;
@@ -59,13 +58,7 @@ export async function buildPrompt(
   priorThoughts?: string
 ) {
   const basePrompt = loadPrompt(promptPath);
-  const trimmedThoughts = typeof priorThoughts === 'string'
-    ? priorThoughts
-        .split('\n')
-        .map(t => t.trim())
-        .filter(Boolean)
-        .join('\n')
-    : '';
+  const thoughtLog = typeof priorThoughts === 'string' ? priorThoughts : '';
   const systemPrompt = `
 === SECTION: OUTPUT FORMAT ===
 JSON OUTPUT CONTRACT:
@@ -108,7 +101,7 @@ ${JSON.stringify(repoLabels, null, 2)}
 `;
   const userPrompt = `
 === SECTION: PRIOR GEMINI THOUGHTS (TEXT) ===
-${trimmedThoughts}
+${thoughtLog}
 
 === SECTION: ISSUE METADATA (JSON) ===
 ${JSON.stringify(issue, null, 2)}
@@ -120,15 +113,4 @@ ${JSON.stringify(timelineEvents, null, 2)}
 ${loadReadme(readmePath)}
 `;
   return { systemPrompt, userPrompt };
-}
-
-function normalizeThoughts(thoughts: string | undefined): string {
-  if (typeof thoughts !== 'string' || thoughts.trim().length === 0) {
-    return '';
-  }
-  return thoughts
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .join('\n');
 }

@@ -1,7 +1,7 @@
 // @ts-ignore: Google Gemini SDK ships without TypeScript declarations
 import { GoogleGenAI } from '@google/genai';
 
-type GenerateContentPayload = {
+export type GenerateContentParameters = {
   model: string;
   contents: Array<{
     role: string;
@@ -33,8 +33,8 @@ export function buildJsonPayload(
   model: string,
   temperature: number,
   thinkingBudget?: number
-): GenerateContentPayload {
-  const config: NonNullable<GenerateContentPayload['config']> = {
+): GenerateContentParameters {
+  const config: NonNullable<GenerateContentParameters['config']> = {
     systemInstruction: systemPrompt,
     responseMimeType: 'application/json',
     responseSchema: schema as any,
@@ -76,7 +76,7 @@ export class GeminiClient {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async generateAndParseJson<T>(payload: GenerateContentPayload): Promise<{ result: T; thoughts: string }> {
+  private async generateAndParseJson<T>(payload: GenerateContentParameters): Promise<{ result: T; thoughts: string }> {
     const response = await this.client.models.generateContent(payload);
 
     const candidates = Array.isArray((response as any)?.candidates)
@@ -87,18 +87,13 @@ export class GeminiClient {
       Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []
     );
 
-    const thoughtLines: string[] = [];
-    const seen = new Set<string>();
+    const thoughtParts: string[] = [];
     for (const part of parts) {
-      if (part && typeof part.text === 'string' && (part.thought === true || part.thought === 'true')) {
-        const trimmed = part.text.trim();
-        if (trimmed.length > 0 && !seen.has(trimmed)) {
-          seen.add(trimmed);
-          thoughtLines.push(trimmed);
-        }
+      if (part && typeof part.text === 'string' && part.thought) {
+        thoughtParts.push(part.text);
       }
     }
-    const thoughts = thoughtLines.join('\n');
+    const thoughts = thoughtParts.join('\n');
 
     let text: string | undefined;
 
@@ -135,7 +130,7 @@ export class GeminiClient {
 
   // Set up JSON schema + enforce JSON output with retry handling
   async generateJson<T = unknown>(
-    payload: GenerateContentPayload,
+    payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
   ): Promise<{ result: T; thoughts: string }> {

@@ -130,7 +130,11 @@ async function processIssue(
   ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name), {
     thoughts: reviewThoughts,
   });
-  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary} 💭 ${formatThoughtLog(reviewThoughts)}`);
+  if (reviewThoughts && reviewThoughts.length > 0) {
+    core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary} 💭 ${reviewThoughts}`);
+  } else {
+    core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary}`);
+  }
 
   if (ops.length > 0) {
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
@@ -141,17 +145,6 @@ async function processIssue(
 
   writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, reviewThoughts, issue.title, issue.reactions);
   return true; // Pro review executed, so consume one triage slot.
-}
-
-function formatThoughtLog(thoughts: string | undefined): string {
-  if (typeof thoughts !== 'string') {
-    return 'No thoughts provided';
-  }
-  const normalized = thoughts
-    .split('\n')
-    .map(t => t.trim())
-    .filter(Boolean);
-  return normalized.length > 0 ? normalized.join(' | ') : 'No thoughts provided';
 }
 
 async function listTargets(cfg: Config, gh: GitHubClient): Promise<{ targets: number[], autoDiscover: boolean }> {

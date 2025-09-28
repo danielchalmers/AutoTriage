@@ -61,20 +61,12 @@ export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
       : Array.isArray((raw as any)?.thoughtLog)
         ? ((raw as any).thoughtLog as unknown[])
             .filter((entry): entry is string => typeof entry === 'string')
-            .map(entry => entry.trim())
-            .filter(entry => entry.length > 0)
             .join('\n')
         : '';
 
-  const normalizedThoughts = thoughtLog
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .join('\n');
-
   const result: ParsedDbEntry = {
     lastTriaged,
-    thoughtLog: normalizedThoughts,
+    thoughtLog,
     ...(reactions !== undefined ? { reactions } : {}),
     ...(summary !== undefined ? { summary } : {}),
   };
@@ -91,19 +83,11 @@ export function writeAnalysisToDb(
 ): void {
   const key = String(issueNumber);
   const existing = db[key] ?? {};
-  const normalizedThoughts = typeof thoughts === 'string'
-    ? thoughts
-        .split('\n')
-        .map(t => t.trim())
-        .filter(t => t.length > 0)
-        .join('\n')
-    : '';
-
   db[key] = {
     ...existing,
     lastTriaged: new Date().toISOString(),
     summary: analysis.summary || (fallbackTitle || 'no summary'),
-    thoughtLog: normalizedThoughts,
+    thoughtLog: typeof thoughts === 'string' ? thoughts : '',
     reactions: typeof currentReactions === 'number' ? currentReactions : (existing as any).reactions,
   } as any;
 }
