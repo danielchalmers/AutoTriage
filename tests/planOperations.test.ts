@@ -24,7 +24,7 @@ describe('planOperations', () => {
 
   it('adds comment op when comment present', () => {
     const analysis: AnalysisResult = { summary: 's', comment: 'Hello there' };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, [], { thoughtSummaries: ['Thought A'] });
+    const ops = planOperations(baseIssue, analysis, baseMetadata, [], { thoughts: 'Thought A' });
     const comment = ops.find(o => o.kind === 'comment') as any;
     expect(comment).toBeTruthy();
     expect(comment.body).toContain('Thought A');

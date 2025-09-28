@@ -8,11 +8,7 @@ export type AnalysisResult = {
   comment?: string;
   state?: 'open' | 'completed' | 'not_planned';
   newTitle?: string;
-};
-
-export type AnalysisResultAndThoughts = {
-  assessment: AnalysisResult;
-  thoughts: string[];
+  thoughts?: string;
 };
 
 export async function generateAnalysis(
@@ -23,7 +19,7 @@ export async function generateAnalysis(
   thinkingBudget: number,
   systemPrompt: string,
   userPrompt: string
-): Promise<AnalysisResultAndThoughts> {
+): Promise<AnalysisResult> {
   const schema = {
     type: 'OBJECT',
     properties: {
@@ -46,12 +42,13 @@ export async function generateAnalysis(
   );
 
   const response = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
-  const artifact: AnalysisResultAndThoughts = {
-    assessment: response.result,
-    thoughts: response.thoughts,
+  const normalizedThoughts = normalizeThoughts(response.thoughts);
+  const result: AnalysisResult = {
+    ...response.result,
+    thoughts: normalizedThoughts,
   };
-  saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(artifact, null, 2));
-  return artifact;
+  saveArtifact(issue.number, `analysis-${model}.json`, JSON.stringify(result, null, 2));
+  return result;
 }
 export async function buildPrompt(
   issue: Issue,
@@ -59,12 +56,16 @@ export async function buildPrompt(
   readmePath: string,
   timelineEvents: TimelineEvent[],
   repoLabels?: Array<{ name: string; description?: string | null; }>,
-  priorThoughts?: string[]
+  priorThoughts?: string
 ) {
   const basePrompt = loadPrompt(promptPath);
-  const trimmedThoughts = Array.isArray(priorThoughts)
-    ? priorThoughts.map(t => t.trim()).filter(Boolean)
-    : [];
+  const trimmedThoughts = typeof priorThoughts === 'string'
+    ? priorThoughts
+        .split('\n')
+        .map(t => t.trim())
+        .filter(Boolean)
+        .join('\n')
+    : '';
   const systemPrompt = `
 === SECTION: OUTPUT FORMAT ===
 JSON OUTPUT CONTRACT:
@@ -106,8 +107,8 @@ ${basePrompt}
 ${JSON.stringify(repoLabels, null, 2)}
 `;
   const userPrompt = `
-=== SECTION: PRIOR GEMINI THOUGHTS (JSON) ===
-${JSON.stringify(trimmedThoughts, null, 2)}
+=== SECTION: PRIOR GEMINI THOUGHTS (TEXT) ===
+${trimmedThoughts}
 
 === SECTION: ISSUE METADATA (JSON) ===
 ${JSON.stringify(issue, null, 2)}
@@ -119,4 +120,15 @@ ${JSON.stringify(timelineEvents, null, 2)}
 ${loadReadme(readmePath)}
 `;
   return { systemPrompt, userPrompt };
+}
+
+function normalizeThoughts(thoughts: string | undefined): string {
+  if (typeof thoughts !== 'string' || thoughts.trim().length === 0) {
+    return '';
+  }
+  return thoughts
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n');
 }

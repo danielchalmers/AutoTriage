@@ -106,7 +106,7 @@ export function planOperations(
   analysis: AnalysisResult,
   metadata: any,
   repoLabels?: string[],
-  options?: { thoughtSummaries?: string[] }
+  options?: { thoughts?: string }
 ): TriageOperation[] {
   const ops: TriageOperation[] = [];
 
@@ -120,11 +120,15 @@ export function planOperations(
 
   // Comment
   if (typeof analysis.comment === 'string' && analysis.comment.trim().length > 0) {
-    const thoughtSummaries = Array.isArray(options?.thoughtSummaries)
-      ? options.thoughtSummaries.map(t => t.trim()).filter(Boolean)
-      : [];
-    const hiddenThoughts = thoughtSummaries.length > 0
-      ? `\n\n<!-- ${thoughtSummaries.join('\n')} -->`
+    const trimmedThoughts = typeof options?.thoughts === 'string'
+      ? options.thoughts
+          .split('\n')
+          .map(t => t.trim())
+          .filter(Boolean)
+          .join('\n')
+      : '';
+    const hiddenThoughts = trimmedThoughts.length > 0
+      ? `\n\n<!--\n${trimmedThoughts}\n-->`
       : '';
     const body = `${analysis.comment}${hiddenThoughts}`;
     ops.push(new CreateCommentOp(body));

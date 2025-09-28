@@ -1,12 +1,12 @@
 # AutoTriage
 
-AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes items, applies / removes labels, posts comments, suggests better titles, and can optionally change issue state. It is driven by a project-specific prompt plus two Gemini model passes (fast first, then a higher quality review only if needed). A lightweight JSON DB (optional) preserves Gemini's cumulative thought process so model decisions stay explainable and append-only.
+AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes items, applies / removes labels, posts comments, suggests better titles, and can optionally change issue state. It is driven by a project-specific prompt plus two Gemini model passes (fast first, then a higher quality review only if needed). A lightweight JSON DB (optional) preserves the most recent Gemini thought process so model decisions stay explainable between runs.
 
 ## Key Features
 
 * Two-stage analysis (fast pass, conditional review pass) to save tokens.
 * Deterministic prompt template you fully control (checked into your repo).
-* Cumulative thought log: every run appends instead of overwriting context.
+* Latest thought log: each run stores the freshest Gemini thoughts for future prompts.
 * Dry-run mode for safe experimentation (no writes).
 * Explicit triage budget (max triages) to keep runs predictable.
 * Artifacts (prompt + model raw output + planned operations) for debugging.
@@ -62,7 +62,7 @@ Set `enabled: "false"` to log planned operations with a `[dry-run]` prefix. No l
 
 ## Reasoning History
 
-If `db-path` is provided and `enabled` is true, each run appends to the thought log + maintains a canonical summary. This powers duplicate detection or clustering later (out of scope here, but data is retained).
+If `db-path` is provided and `enabled` is true, each run overwrites the stored thought log with the latest Gemini trace while maintaining a canonical summary. This powers duplicate detection or clustering later (out of scope here, but data is retained).
 
 ## Artifacts
 

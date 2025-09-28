@@ -43,7 +43,7 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
 
 export type ParsedDbEntry = {
   lastTriaged: Date | null;
-  thoughtLog: string[];
+  thoughtLog: string;
   reactions?: number;
   summary?: string;
 };
@@ -54,25 +54,27 @@ export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
   const reactions: number | undefined = typeof raw?.reactions === 'number' ? raw.reactions : undefined;
   const summary: string | undefined = typeof raw?.summary === 'string' ? raw.summary : undefined;
 
-  const thoughtLog: string[] = [];
+  const thoughtLog: string = typeof raw?.thoughtLog === 'string'
+    ? raw.thoughtLog
+    : typeof (raw as any)?.thoughts === 'string'
+      ? ((raw as any).thoughts as string)
+      : Array.isArray((raw as any)?.thoughtLog)
+        ? ((raw as any).thoughtLog as unknown[])
+            .filter((entry): entry is string => typeof entry === 'string')
+            .map(entry => entry.trim())
+            .filter(entry => entry.length > 0)
+            .join('\n')
+        : '';
 
-  const rawThoughts = Array.isArray(raw?.thoughtLog)
-    ? raw?.thoughtLog
-    : Array.isArray((raw as any)?.thoughts)
-      ? (raw as any).thoughts
-      : undefined;
-
-  if (Array.isArray(rawThoughts)) {
-    for (const entry of rawThoughts) {
-      if (typeof entry === 'string' && entry.trim().length > 0) {
-        thoughtLog.push(entry.trim());
-      }
-    }
-  }
+  const normalizedThoughts = thoughtLog
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n');
 
   const result: ParsedDbEntry = {
     lastTriaged,
-    thoughtLog,
+    thoughtLog: normalizedThoughts,
     ...(reactions !== undefined ? { reactions } : {}),
     ...(summary !== undefined ? { summary } : {}),
   };
@@ -83,28 +85,25 @@ export function writeAnalysisToDb(
   db: TriageDb,
   issueNumber: number,
   analysis: AnalysisResult,
-  thoughts: string[],
+  thoughts: string | undefined,
   fallbackTitle: string,
   currentReactions?: number
 ): void {
   const key = String(issueNumber);
   const existing = db[key] ?? {};
-  const priorThoughts = Array.isArray((existing as any).thoughtLog)
-    ? ((existing as any).thoughtLog as unknown[])
-        .filter((entry): entry is string => typeof entry === 'string')
-        .map(entry => entry.trim())
-        .filter(entry => entry.length > 0)
-    : [];
-  const normalizedThoughts = Array.isArray(thoughts)
-    ? thoughts.map(t => t.trim()).filter(t => t.length > 0)
-    : [];
-  const combinedThoughts = [...priorThoughts, ...normalizedThoughts];
+  const normalizedThoughts = typeof thoughts === 'string'
+    ? thoughts
+        .split('\n')
+        .map(t => t.trim())
+        .filter(t => t.length > 0)
+        .join('\n')
+    : '';
 
   db[key] = {
     ...existing,
     lastTriaged: new Date().toISOString(),
     summary: analysis.summary || (fallbackTitle || 'no summary'),
-    thoughtLog: combinedThoughts,
+    thoughtLog: normalizedThoughts,
     reactions: typeof currentReactions === 'number' ? currentReactions : (existing as any).reactions,
   } as any;
 }
@@ -112,7 +111,7 @@ export function writeAnalysisToDb(
 export type TriageDb = Record<string, {
   lastTriaged: string;
   summary: string;
-  thoughtLog?: string[];
+  thoughtLog?: string;
   labels?: string[];
   reactions?: number;
 }>;

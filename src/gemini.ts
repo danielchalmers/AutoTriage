@@ -76,7 +76,7 @@ export class GeminiClient {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async generateAndParseJson<T>(payload: GenerateContentPayload): Promise<{ result: T; thoughts: string[] }> {
+  private async generateAndParseJson<T>(payload: GenerateContentPayload): Promise<{ result: T; thoughts: string }> {
     const response = await this.client.models.generateContent(payload);
 
     const candidates = Array.isArray((response as any)?.candidates)
@@ -87,16 +87,18 @@ export class GeminiClient {
       Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []
     );
 
-    const thoughtSet = new Set<string>();
+    const thoughtLines: string[] = [];
+    const seen = new Set<string>();
     for (const part of parts) {
       if (part && typeof part.text === 'string' && (part.thought === true || part.thought === 'true')) {
         const trimmed = part.text.trim();
-        if (trimmed.length > 0) {
-          thoughtSet.add(trimmed);
+        if (trimmed.length > 0 && !seen.has(trimmed)) {
+          seen.add(trimmed);
+          thoughtLines.push(trimmed);
         }
       }
     }
-    const thoughts = Array.from(thoughtSet);
+    const thoughts = thoughtLines.join('\n');
 
     let text: string | undefined;
 
@@ -136,7 +138,7 @@ export class GeminiClient {
     payload: GenerateContentPayload,
     maxRetries: number,
     initialBackoffMs: number
-  ): Promise<{ result: T; thoughts: string[] }> {
+  ): Promise<{ result: T; thoughts: string }> {
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;
