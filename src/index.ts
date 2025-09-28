@@ -2,7 +2,7 @@ import * as core from '@actions/core';
 import { getConfig } from './env';
 import type { Config, TriageDb } from './storage';
 import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
-import { generateAnalysis, AnalysisResult, buildPrompt } from './analysis';
+import { generateAnalysis, TriageAssessment, GeminiDeliberation, buildPrompt } from './analysis';
 import { GitHubClient } from './github';
 import { GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -83,14 +83,15 @@ async function processIssue(
     cfg.promptPath,
     cfg.readmePath,
     timelineEvents,
-    repoLabels
+    repoLabels,
+    dbEntry.thoughtLog
   );
 
   saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
   saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
   // Pass 1: fast model
-  const quickAnalysis: AnalysisResult = await generateAnalysis(
+  const quickResponse: GeminiDeliberation = await generateAnalysis(
     gemini,
     issue,
     cfg.modelFast,
@@ -100,16 +101,21 @@ async function processIssue(
     userPrompt
   );
 
-  let ops: TriageOperation[] = planOperations(issue, quickAnalysis, issue, repoLabels.map(l => l.name));
+  const quickAnalysis: TriageAssessment = quickResponse.assessment;
+  const quickThoughts = quickResponse.thoughts;
+
+  let ops: TriageOperation[] = planOperations(issue, quickAnalysis, issue, repoLabels.map(l => l.name), {
+    thoughtSummaries: quickThoughts,
+  });
 
   // Fast pass produced no work: skip expensive pass.
   if (ops.length === 0) {
-    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.summary} 💭 ${quickAnalysis.reasoning}`);
-    writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title, issue.reactions);
+    core.info(`⏭️ #${issueNumber}: ${quickAnalysis.summary} 💭 ${formatThoughtLog(quickThoughts)}`);
+    writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, quickThoughts, issue.title, issue.reactions);
     return false;
   }
 
-  const reviewAnalysis: AnalysisResult = await generateAnalysis(
+  const reviewResponse: GeminiDeliberation = await generateAnalysis(
     gemini,
     issue,
     cfg.modelPro,
@@ -119,8 +125,13 @@ async function processIssue(
     userPrompt
   );
 
-  ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name));
-  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary} 💭 ${reviewAnalysis.reasoning}`);
+  const reviewAnalysis: TriageAssessment = reviewResponse.assessment;
+  const reviewThoughts = reviewResponse.thoughts;
+
+  ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name), {
+    thoughtSummaries: reviewThoughts,
+  });
+  core.info(`🤖 #${issueNumber}: ${reviewAnalysis.summary} 💭 ${formatThoughtLog(reviewThoughts)}`);
 
   if (ops.length > 0) {
     saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
@@ -129,8 +140,19 @@ async function processIssue(
     }
   }
 
-  writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title, issue.reactions);
+  writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, reviewThoughts, issue.title, issue.reactions);
   return true; // Pro review executed, so consume one triage slot.
+}
+
+function formatThoughtLog(thoughts: string[]): string {
+  if (!Array.isArray(thoughts) || thoughts.length === 0) {
+    return 'No thoughts provided';
+  }
+  const first = thoughts.find(t => t.trim().length > 0);
+  if (!first) return 'No thoughts provided';
+  const truncated = first.length > 180 ? `${first.slice(0, 177)}…` : first;
+  const extraCount = thoughts.length - 1;
+  return extraCount > 0 ? `${truncated} (+${extraCount} more)` : truncated;
 }
 
 async function listTargets(cfg: Config, gh: GitHubClient): Promise<{ targets: number[], autoDiscover: boolean }> {

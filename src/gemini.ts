@@ -13,7 +13,10 @@ export function buildJsonPayload(
     responseMimeType: 'application/json',
     responseSchema: schema as any,
     temperature: temperature,
-    thinkingConfig: { thinkingBudget: thinkingBudget ?? -1 }
+    thinkingConfig: {
+      thinkingBudget: thinkingBudget ?? -1,
+      includeThoughts: true,
+    }
   };
 
   return {
@@ -47,40 +50,56 @@ export class GeminiClient {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async generateAndParseJson<T>(payload: GenerateContentParameters): Promise<T> {
+  private async generateAndParseJson<T>(payload: GenerateContentParameters): Promise<{ result: T; thoughts: string[] }> {
     const response = await this.client.models.generateContent(payload);
 
-    const textFromGetter = typeof response.text === 'string' ? response.text : undefined;
+    const candidates = Array.isArray((response as any)?.candidates)
+      ? (response as any).candidates
+      : [];
 
-    let text = textFromGetter;
+    const parts = candidates.flatMap((candidate: any) =>
+      Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []
+    );
+
+    const thoughtSet = new Set<string>();
+    for (const part of parts) {
+      if (part && typeof part.text === 'string' && (part.thought === true || part.thought === 'true')) {
+        const trimmed = part.text.trim();
+        if (trimmed.length > 0) {
+          thoughtSet.add(trimmed);
+        }
+      }
+    }
+    const thoughts = Array.from(thoughtSet);
+
+    let text: string | undefined;
+
+    const nonThoughtTexts = parts
+      .map((part: any) => {
+        if (part && typeof part.text === 'string' && !part.thought) {
+          return part.text;
+        }
+        if (typeof part === 'string') return part;
+        return '';
+      })
+      .filter((value: string) => value && value.trim().length > 0);
+
+    if (nonThoughtTexts.length > 0) {
+      text = nonThoughtTexts.join('');
+    }
 
     if (!text || text.trim().length === 0) {
-      const candidates = response.candidates;
-      if (!Array.isArray(candidates) || candidates.length === 0) {
-        throw new GeminiResponseError('Unable to extract text from Gemini response');
-      }
+      const textFromGetter = typeof (response as any).text === 'string' ? (response as any).text : undefined;
+      text = textFromGetter;
+    }
 
-      const parts = candidates[0]?.content?.parts;
-      if (!Array.isArray(parts) || parts.length === 0) {
-        throw new GeminiResponseError('Unable to extract text from Gemini response');
-      }
-
-      text = parts
-        .map(part => {
-          if (typeof part === 'string') return part;
-          if (part && typeof part.text === 'string') return part.text;
-          return '';
-        })
-        .filter(Boolean)
-        .join('');
-
-      if (!text || text.trim().length === 0) {
-        throw new GeminiResponseError('Gemini returned an empty response');
-      }
+    if (!text || text.trim().length === 0) {
+      throw new GeminiResponseError('Unable to extract text from Gemini response');
     }
 
     try {
-      return JSON.parse(text) as T;
+      const parsed = JSON.parse(text) as T;
+      return { result: parsed, thoughts };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
@@ -91,7 +110,7 @@ export class GeminiClient {
     payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
-  ): Promise<T> {
+  ): Promise<{ result: T; thoughts: string[] }> {
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;

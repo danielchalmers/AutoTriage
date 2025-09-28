@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { GeminiClient, buildJsonPayload } from '../src/gemini';
 
 describe('Gemini (real API)', () => {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -13,6 +12,7 @@ describe('Gemini (real API)', () => {
 
     it('generateJson returns a typed object', async () => {
         interface User { name: string; age: number }
+        const { GeminiClient, buildJsonPayload } = await import('../src/gemini');
         const client = new GeminiClient(apiKey);
         const schema = {
             type: 'OBJECT',
@@ -26,6 +26,7 @@ describe('Gemini (real API)', () => {
         const userPrompt = 'Return exactly this JSON object: {"name":"Alice","age":30}';
         const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0, -1);
         const result = await client.generateJson<User>(payload, 2, 500);
-        expect(result).toEqual({ name: 'Alice', age: 30 });
+        expect(result.result).toEqual({ name: 'Alice', age: 30 });
+        expect(Array.isArray(result.thoughts)).toBe(true);
     }, 5000);
 });

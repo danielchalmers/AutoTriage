@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AnalysisResult } from "./analysis";
+import type { TriageAssessment } from "./analysis";
 
 // Best-effort write; failures are non-fatal and only logged to stderr.
 export function saveArtifact(issueNumber: number, name: string, contents = ''): void {
@@ -43,7 +43,7 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
 
 export type ParsedDbEntry = {
   lastTriaged: Date | null;
-  lastReasoning: string;
+  thoughtLog: string[];
   reactions?: number;
   summary?: string;
 };
@@ -51,12 +51,33 @@ export type ParsedDbEntry = {
 export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
   const raw = db[String(issueNumber)] as (TriageDb[string] & { reason?: string }) | undefined;
   const lastTriaged: Date | null = raw?.lastTriaged ? new Date(raw.lastTriaged) : null;
-  const lastReasoning: string = (raw?.reasoning ?? raw?.reason ?? '') as string;
   const reactions: number | undefined = typeof raw?.reactions === 'number' ? raw.reactions : undefined;
   const summary: string | undefined = typeof raw?.summary === 'string' ? raw.summary : undefined;
+
+  const thoughtLog: string[] = [];
+
+  const rawThoughts = Array.isArray(raw?.thoughtLog)
+    ? raw?.thoughtLog
+    : Array.isArray((raw as any)?.thoughts)
+      ? (raw as any).thoughts
+      : undefined;
+
+  if (Array.isArray(rawThoughts)) {
+    for (const entry of rawThoughts) {
+      if (typeof entry === 'string' && entry.trim().length > 0) {
+        thoughtLog.push(entry.trim());
+      }
+    }
+  }
+
+  const legacyReasoning = raw?.reasoning ?? raw?.reason;
+  if (typeof legacyReasoning === 'string' && legacyReasoning.trim().length > 0) {
+    thoughtLog.push(legacyReasoning.trim());
+  }
+
   const result: ParsedDbEntry = {
     lastTriaged,
-    lastReasoning,
+    thoughtLog,
     ...(reactions !== undefined ? { reactions } : {}),
     ...(summary !== undefined ? { summary } : {}),
   };
@@ -66,22 +87,38 @@ export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
 export function writeAnalysisToDb(
   db: TriageDb,
   issueNumber: number,
-  analysis: AnalysisResult,
+  analysis: TriageAssessment,
+  thoughts: string[],
   fallbackTitle: string,
   currentReactions?: number
 ): void {
+  const existing = db[issueNumber] ?? {};
+  const priorThoughts = Array.isArray((existing as any).thoughtLog)
+    ? ((existing as any).thoughtLog as unknown[])
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map(entry => entry.trim())
+        .filter(entry => entry.length > 0)
+    : [];
+  const normalizedThoughts = Array.isArray(thoughts)
+    ? thoughts.map(t => t.trim()).filter(t => t.length > 0)
+    : [];
+  const combinedThoughts = [...priorThoughts, ...normalizedThoughts].slice(-50);
+
   db[issueNumber] = {
+    ...existing,
     lastTriaged: new Date().toISOString(),
-    reasoning: analysis.reasoning || 'no reasoning',
     summary: analysis.summary || (fallbackTitle || 'no summary'),
-    reactions: typeof currentReactions === 'number' ? currentReactions : (db[issueNumber]?.reactions),
+    thoughtLog: combinedThoughts,
+    reactions: typeof currentReactions === 'number' ? currentReactions : (existing as any).reactions,
   } as any;
 }
 
 export type TriageDb = Record<string, {
   lastTriaged: string;
-  reasoning: string;
   summary: string;
+  thoughtLog?: string[];
+  reasoning?: string;
+  reason?: string;
   labels?: string[];
   reactions?: number;
 }>;

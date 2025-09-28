@@ -1,12 +1,12 @@
 # AutoTriage
 
-AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes items, applies / removes labels, posts comments, suggests better titles, and can optionally change issue state. It is driven by a project-specific prompt plus two Gemini model passes (fast first, then a higher quality review only if needed). A lightweight JSON DB (optional) preserves cumulative reasoning so model decisions stay explainable and append-only.
+AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes items, applies / removes labels, posts comments, suggests better titles, and can optionally change issue state. It is driven by a project-specific prompt plus two Gemini model passes (fast first, then a higher quality review only if needed). A lightweight JSON DB (optional) preserves Gemini's cumulative thought process so model decisions stay explainable and append-only.
 
 ## Key Features
 
 * Two-stage analysis (fast pass, conditional review pass) to save tokens.
 * Deterministic prompt template you fully control (checked into your repo).
-* Cumulative reasoning log: every run appends instead of overwriting context.
+* Cumulative thought log: every run appends instead of overwriting context.
 * Dry-run mode for safe experimentation (no writes).
 * Explicit triage budget (max triages) to keep runs predictable.
 * Artifacts (prompt + model raw output + planned operations) for debugging.
@@ -19,7 +19,7 @@ AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes item
 | `issue-numbers` | Space or comma separated list of issue/PR numbers to consider for triage. | - |
 | `prompt-path` | Repo-relative path to the prompt template. | `.github/AutoTriage.prompt` |
 | `enabled` | `true` = apply changes, `false` = dry-run only. | `true` |
-| `db-path` | Optional JSON file storing per-issue summary + reasoning history. | - |
+| `db-path` | Optional JSON file storing per-issue summary + thought history. | - |
 | `model-fast` | Gemini model for the first (fast) pass. | `gemini-flash-latest` |
 | `model-pro` | Gemini model for the second (review) pass. | `gemini-2.5-pro` |
 | `model-temperature` | Sampling temperature (0-2). Lower = more deterministic. | `0.0` |
@@ -35,7 +35,7 @@ AI-assisted triage for GitHub Issues & Pull Requests. AutoTriage summarizes item
 
 ## Prompt Template
 
-Create a project prompt (default path: `.github/AutoTriage.prompt`). Keep: rules, labeling conventions, closure criteria, tone for comments, title style guidelines. The action injects issue body, metadata, timeline, prior reasoning, and a strict JSON output schema section.
+Create a project prompt (default path: `.github/AutoTriage.prompt`). Keep: rules, labeling conventions, closure criteria, tone for comments, title style guidelines. The action injects issue body, metadata, timeline, prior thought summaries, and a strict JSON output schema section.
 
 ## Example Workflows
 
@@ -62,7 +62,7 @@ Set `enabled: "false"` to log planned operations with a `[dry-run]` prefix. No l
 
 ## Reasoning History
 
-If `db-path` is provided and `enabled` is true, each run appends to the reasoning log + maintains a canonical summary. This powers duplicate detection or clustering later (out of scope here, but data is retained).
+If `db-path` is provided and `enabled` is true, each run appends to the thought log + maintains a canonical summary. This powers duplicate detection or clustering later (out of scope here, but data is retained).
 
 ## Artifacts
 

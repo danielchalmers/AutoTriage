@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import type { Config } from "./storage";
-import type { AnalysisResult } from "./analysis";
+import type { TriageAssessment } from "./analysis";
 import type { GitHubClient } from './github';
 
 export interface TriageOperation {
@@ -34,7 +34,7 @@ class UpdateLabelsOp implements TriageOperation {
   }
 }
 
-// Post a model-suggested comment (includes hidden reasoning log for traceability).
+// Post a model-suggested comment (includes hidden thought log for traceability).
 class CreateCommentOp implements TriageOperation {
   kind: 'comment' = 'comment';
   constructor(public body: string) { }
@@ -103,9 +103,10 @@ function filterLabels(labels: string[] | undefined, repoLabels: string[] | undef
  */
 export function planOperations(
   issue: any,
-  analysis: AnalysisResult,
+  analysis: TriageAssessment,
   metadata: any,
-  repoLabels?: string[]
+  repoLabels?: string[],
+  options?: { thoughtSummaries?: string[] }
 ): TriageOperation[] {
   const ops: TriageOperation[] = [];
 
@@ -119,7 +120,12 @@ export function planOperations(
 
   // Comment
   if (typeof analysis.comment === 'string' && analysis.comment.trim().length > 0) {
-    const body = `${analysis.comment}\n\n<!-- ${analysis.reasoning || 'No reasoning provided'} -->`;
+    const thoughtSummaries = Array.isArray(options?.thoughtSummaries)
+      ? options.thoughtSummaries.map(t => t.trim()).filter(Boolean)
+      : [];
+    const hiddenThoughts = thoughtSummaries.join('\n');
+    const fallbackThought = hiddenThoughts.length > 0 ? hiddenThoughts : 'No Gemini thoughts provided';
+    const body = `${analysis.comment}\n\n<!-- ${fallbackThought} -->`;
     ops.push(new CreateCommentOp(body));
   }
 
