@@ -1,6 +1,5 @@
-import { loadPrompt, loadReadme, saveArtifact } from './storage';
+import { loadPrompt, loadReadme } from './storage';
 import type { Issue, TimelineEvent } from './github';
-import { GeminiClient, buildJsonPayload } from './gemini';
 
 export type AnalysisResult = {
   summary: string;
@@ -11,49 +10,26 @@ export type AnalysisResult = {
   newTitle?: string;
 };
 
-export async function generateAnalysis(
-  gemini: GeminiClient,
-  issue: Issue,
-  model: string,
-  modelTemperature: number,
-  thinkingBudget: number,
-  systemPrompt: string,
-  userPrompt: string,
-): Promise<{ data: AnalysisResult; thoughts: string }> {
-  const schema = {
-    type: 'OBJECT',
-    properties: {
-      summary: { type: 'STRING' },
-      reasoning: { type: 'STRING' },
-      comment: { type: 'STRING' },
-      labels: { type: 'ARRAY', items: { type: 'STRING' } },
-      state: { type: 'STRING', enum: ['open', 'completed', 'not_planned'] },
-      newTitle: { type: 'STRING' },
-    },
-    required: ['summary', 'reasoning', 'labels'],
-  } as const;
-
-  const payload = buildJsonPayload(
-    systemPrompt,
-    userPrompt,
-    schema,
-    model,
-    modelTemperature,
-    thinkingBudget
-  );
-
-  const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
-  saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
-  saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
-  return { data, thoughts };
-}
+export const AnalysisResultSchema = {
+  type: 'OBJECT',
+  properties: {
+    summary: { type: 'STRING' },
+    reasoning: { type: 'STRING' },
+    comment: { type: 'STRING' },
+    labels: { type: 'ARRAY', items: { type: 'STRING' } },
+    state: { type: 'STRING', enum: ['open', 'completed', 'not_planned'] },
+    newTitle: { type: 'STRING' },
+  },
+  required: ['summary', 'reasoning', 'labels'],
+} as const;
 
 export async function buildPrompt(
   issue: Issue,
   promptPath: string,
   readmePath: string,
   timelineEvents: TimelineEvent[],
-  repoLabels?: Array<{ name: string; description?: string | null; }>
+  repoLabels: Array<{ name: string; description?: string | null; }>,
+  lastReasoning: string,
 ) {
   const basePrompt = loadPrompt(promptPath);
   const systemPrompt = `
@@ -107,6 +83,9 @@ ${JSON.stringify(issue, null, 2)}
 
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(timelineEvents, null, 2)}
+
+=== SECTION: REASONING FROM LAST RUN ===
+${lastReasoning}
 
 === SECTION: PROJECT README (MARKDOWN) ===
 ${loadReadme(readmePath)}

@@ -1,19 +1,19 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
-import type { Config, TriageDb } from './storage';
 import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
-import { generateAnalysis, AnalysisResult, buildPrompt } from './analysis';
-import { GitHubClient } from './github';
-import { GeminiClient, GeminiResponseError } from './gemini';
+import { AnalysisResult, buildPrompt, AnalysisResultSchema } from './analysis';
+import { GitHubClient, Issue } from './github';
+import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 
+const cfg = getConfig();
+const db = loadDatabase(cfg.dbPath);
+const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
+const gemini = new GeminiClient(cfg.geminiApiKey);
+
 async function run(): Promise<void> {
-  const cfg = getConfig();
-  const db = loadDatabase(cfg.dbPath);
-  const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
-  const gemini = new GeminiClient(cfg.geminiApiKey);
   const repoLabels = await gh.listRepoLabels();
-  const { targets, autoDiscover } = await listTargets(cfg, gh);
+  const { targets, autoDiscover } = await listTargets();
   let triagesPerformed = 0;
   let consecutiveFailures = 0;
 
@@ -28,7 +28,7 @@ async function run(): Promise<void> {
     }
 
     try {
-      const triageUsed = await processIssue(cfg, db, n, repoLabels, gh, gemini, autoDiscover);
+      const triageUsed = await processIssue(n, repoLabels, autoDiscover);
       if (triageUsed) triagesPerformed++;
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
@@ -57,16 +57,12 @@ async function run(): Promise<void> {
 run();
 
 async function processIssue(
-  cfg: Config,
-  triageDb: TriageDb,
   issueNumber: number,
   repoLabels: Array<{ name: string; description?: string | null }>,
-  gh: GitHubClient,
-  gemini: GeminiClient,
   autoDiscover: boolean
 ): Promise<boolean> {
   const issue = await gh.getIssue(issueNumber);
-  const dbEntry = parseDbEntry(triageDb, issueNumber);
+  const dbEntry = parseDbEntry(db, issueNumber);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
   saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
@@ -76,64 +72,91 @@ async function processIssue(
       return false;
     }
   }
-
-  // Prepare prompts once per issue
   const { systemPrompt, userPrompt } = await buildPrompt(
     issue,
     cfg.promptPath,
     cfg.readmePath,
     timelineEvents,
-    repoLabels
+    repoLabels,
+    dbEntry.lastReasoning
   );
 
   saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
   saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
   // Pass 1: fast model
-  const { data: quickAnalysis, thoughts: quickThoughts } = await generateAnalysis(
-    gemini,
+  const { ops: quickOps } = await generateAnalysis(
     issue,
     cfg.modelFast,
     cfg.modelTemperature,
     cfg.thinkingBudget,
     systemPrompt,
-    userPrompt
+    userPrompt,
+    repoLabels
   );
 
-  let ops: TriageOperation[] = planOperations(issue, quickAnalysis, issue, repoLabels.map(l => l.name));
-
   // Fast pass produced no work: skip expensive pass.
-  if (ops.length === 0) {
-    writeAnalysisToDb(triageDb, issueNumber, quickAnalysis, issue.title, issue.reactions);
+  if (quickOps.length === 0) {
     return false;
   }
 
-  const { data: reviewAnalysis, thoughts: reviewThoughts } = await generateAnalysis(
-    gemini,
+  // Full analysis pass: pro model
+  const { thoughts: reviewThoughts, ops: reviewOps } = await generateAnalysis(
     issue,
     cfg.modelPro,
     cfg.modelTemperature,
     cfg.thinkingBudget,
     systemPrompt,
-    userPrompt
+    userPrompt,
+    repoLabels
   );
 
-  ops = planOperations(issue, reviewAnalysis, issue, repoLabels.map(l => l.name));
   core.info(`🤖 #${issueNumber}:`);
   core.info(reviewThoughts.replace(/^/gm, '  💭 '));
 
-  if (ops.length > 0) {
-    saveArtifact(issueNumber, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
-    for (const op of ops) {
+  if (reviewOps.length > 0) {
+    for (const op of reviewOps) {
       await op.perform(gh, cfg, issue);
     }
   }
 
-  writeAnalysisToDb(triageDb, issueNumber, reviewAnalysis, issue.title, issue.reactions);
-  return true; // Pro review executed, so consume one triage slot.
+  return true;
 }
 
-async function listTargets(cfg: Config, gh: GitHubClient): Promise<{ targets: number[], autoDiscover: boolean }> {
+export async function generateAnalysis(
+  issue: Issue,
+  model: string,
+  modelTemperature: number,
+  thinkingBudget: number,
+  systemPrompt: string,
+  userPrompt: string,
+  repoLabels: Array<{ name: string; description?: string | null }>,
+): Promise<{ data: AnalysisResult; thoughts: string, ops: TriageOperation[] }> {
+  const payload = buildJsonPayload(
+    systemPrompt,
+    userPrompt,
+    AnalysisResultSchema,
+    model,
+    modelTemperature,
+    thinkingBudget
+  );
+
+  const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
+  saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
+
+  const ops: TriageOperation[] = planOperations(issue, data, issue, repoLabels.map(l => l.name));
+
+  if (ops.length > 0) {
+    saveArtifact(issue.number, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
+  }
+
+  writeAnalysisToDb(db, issue.number, data, issue.title, issue.reactions);
+
+  return { data, thoughts, ops };
+}
+
+async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean }> {
   const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
   if (fromInput.length > 0) return { targets: fromInput, autoDiscover: false };
 
