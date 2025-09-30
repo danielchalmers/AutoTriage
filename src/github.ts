@@ -220,8 +220,7 @@ export class GitHubClient {
 
   lastUpdated(
     issue: Issue,
-    timelineEvents: Array<TimelineEvent>,
-    previousReactions?: number
+    timelineEvents: Array<TimelineEvent>
   ): number {
     const parseTs = (s?: string): number => {
       if (!s) return 0;
@@ -235,29 +234,16 @@ export class GitHubClient {
       return ts > max ? ts : max;
     }, 0);
 
-    let latest = issueUpdatedMs > latestEventMs ? issueUpdatedMs : latestEventMs;
-
-    // If the total reactions count changed since last triage, consider that an update.
-    if (typeof previousReactions === 'number' && typeof issue.reactions === 'number') {
-      if (issue.reactions !== previousReactions) {
-        // Use issue.updated_at if present; otherwise treat as "now" to force update.
-        const fallbackNow = Date.now();
-        const reactionUpdateMs = issueUpdatedMs || fallbackNow;
-        if (reactionUpdateMs > latest) latest = reactionUpdateMs;
-      }
-    }
-
-    return latest;
+    return issueUpdatedMs > latestEventMs ? issueUpdatedMs : latestEventMs;
   }
 
   hasUpdated(
     issue: Issue,
     timelineEvents: Array<TimelineEvent>,
-    lastTriaged: Date | undefined,
-    previousReactions?: number
+    lastTriaged: Date | undefined
   ): boolean {
     if (!lastTriaged) return true; // No prior triage => treat as updated.
-    const latestUpdateMs = this.lastUpdated(issue, timelineEvents, previousReactions);
+    const latestUpdateMs = this.lastUpdated(issue, timelineEvents);
     return latestUpdateMs > lastTriaged.getTime();
   }
 }

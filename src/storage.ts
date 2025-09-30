@@ -51,7 +51,6 @@ export interface TriageDbEntry {
   thoughts?: string;        // Raw model "thoughts" / chain-of-thought summary (internal)
   summary?: string;         // One-line summary from analysis
   labels?: string[];        // (Reserved) label cache if needed later
-  reactions?: number;       // Reaction count snapshot at last triage
 }
 
 // Simple accessor; returns the raw stored entry (fields optional) or an empty object if missing.
@@ -65,7 +64,6 @@ export function writeAnalysisToDb(
   analysis: AnalysisResult,
   fallbackTitle: string,
   thoughts: string,
-  currentReactions?: number,
   triagedAt?: Date
 ): void {
   const existing: TriageDbEntry | undefined = db[issueNumber];
@@ -74,8 +72,6 @@ export function writeAnalysisToDb(
     summary: analysis.summary || (fallbackTitle || 'no summary'),
     thoughts,
   };
-  const resolvedReactions = typeof currentReactions === 'number' ? currentReactions : existing?.reactions;
-  if (typeof resolvedReactions === 'number') entry.reactions = resolvedReactions;
   if (triagedAt) entry.lastTriaged = triagedAt.toISOString();
   db[issueNumber] = entry;
 }

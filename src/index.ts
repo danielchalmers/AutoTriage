@@ -71,7 +71,7 @@ async function processIssue(
   if (autoDiscover) {
     // Skip items that haven't changed since last triage.
     const lastTriagedDate = dbEntry.lastTriaged ? new Date(dbEntry.lastTriaged) : undefined;
-    if (!gh.hasUpdated(issue, timelineEvents, lastTriagedDate, dbEntry.reactions)) {
+    if (!gh.hasUpdated(issue, timelineEvents, lastTriagedDate)) {
       return false;
     }
   }
@@ -158,7 +158,7 @@ export async function generateAnalysis(
     saveArtifact(issue.number, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
   }
 
-  writeAnalysisToDb(db, issue.number, data, issue.title, thoughts, issue.reactions);
+  writeAnalysisToDb(db, issue.number, data, issue.title, thoughts);
 
   return { data, thoughts, ops };
 }
