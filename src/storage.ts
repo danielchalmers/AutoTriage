@@ -43,36 +43,29 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
 
 export type TriageDb = Record<string, TriageDbEntry>;
 
-// Canonical in-memory representation of a single triage DB entry. All fields are optional; absence
-// (undefined) means the value has never been recorded. Persisted JSON will simply omit undefined
-// fields so everything remains a primitive or absent.
 export interface TriageDbEntry {
-  lastTriaged?: string;     // ISO timestamp of last completed triage
-  thoughts?: string;        // Raw model "thoughts" / chain-of-thought summary (internal)
-  summary?: string;         // One-line summary from analysis
-  labels?: string[];        // (Reserved) label cache if needed later
+  lastTriaged?: string;
+  thoughts?: string;
+  summary?: string;
 }
 
-// Simple accessor; returns the raw stored entry (fields optional) or an empty object if missing.
 export function getDbEntry(db: TriageDb, issueNumber: number): TriageDbEntry {
   return db[String(issueNumber)] || {};
 }
 
-export function writeAnalysisToDb(
+export function updateDbEntry(
   db: TriageDb,
   issueNumber: number,
-  analysis: AnalysisResult,
-  fallbackTitle: string,
+  summary: string,
   thoughts: string,
-  triagedAt?: Date
 ): void {
   const existing: TriageDbEntry | undefined = db[issueNumber];
   const entry: TriageDbEntry = {
     ...existing,
-    summary: analysis.summary || (fallbackTitle || 'no summary'),
+    summary,
     thoughts,
+    lastTriaged: new Date().toISOString(),
   };
-  if (triagedAt) entry.lastTriaged = triagedAt.toISOString();
   db[issueNumber] = entry;
 }
 

@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
-import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, getDbEntry } from './storage';
+import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
 import { AnalysisResult, buildPrompt, AnalysisResultSchema } from './analysis';
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
@@ -91,7 +91,7 @@ async function processIssue(
     saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
     // Pass 1: fast model
-    const { ops: quickOps } = await generateAnalysis(
+    const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
       issue,
       cfg.modelFast,
       cfg.modelTemperature,
@@ -104,11 +104,12 @@ async function processIssue(
     // Fast pass produced no work: skip expensive pass.
     if (quickOps.length === 0) {
       console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
+      updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title, quickThoughts);
       return false;
     }
 
     // Full analysis pass: pro model
-    const { ops: reviewOps } = await generateAnalysis(
+    const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
       issue,
       cfg.modelPro,
       cfg.modelTemperature,
@@ -118,12 +119,14 @@ async function processIssue(
       repoLabels
     );
 
-    if (reviewOps.length > 0) {
-      for (const op of reviewOps) {
+    if (proOps.length > 0) {
+      saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps.map(o => o.toJSON()), null, 2));
+      for (const op of proOps) {
         await op.perform(gh, cfg, issue);
       }
     }
 
+    updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
     return true;
   });
 }
@@ -153,12 +156,6 @@ export async function generateAnalysis(
   saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
 
   const ops: TriageOperation[] = planOperations(issue, data, issue, repoLabels.map(l => l.name), thoughts);
-
-  if (ops.length > 0) {
-    saveArtifact(issue.number, 'operations.json', JSON.stringify(ops.map(o => o.toJSON()), null, 2));
-  }
-
-  writeAnalysisToDb(db, issue.number, data, issue.title, thoughts);
 
   return { data, thoughts, ops };
 }
