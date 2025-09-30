@@ -98,6 +98,9 @@ INSTRUCTION HIERARCHY & ENFORCEMENT:
 === SECTION: ASSISTANT BEHAVIOR POLICY ===
 ${basePrompt}
 
+=== SECTION: RUNTIME CONTEXT ===
+Current date/time (UTC ISO 8601): ${new Date().toISOString()}
+
 === SECTION: REPOSITORY LABELS (JSON) ===
 ${JSON.stringify(repoLabels, null, 2)}
 `;
