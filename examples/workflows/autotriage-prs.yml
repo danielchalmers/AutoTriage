@@ -14,7 +14,7 @@ jobs:
     if: ${{ github.event.sender.type != 'Bot' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: AutoTriage - triage PR
         uses: danielchalmers/AutoTriage@main
         with:
