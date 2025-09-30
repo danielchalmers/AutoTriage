@@ -59,14 +59,15 @@ export function updateDbEntry(
   summary: string,
   thoughts: string,
 ): void {
-  const existing: TriageDbEntry | undefined = db[issueNumber];
+  const key = String(issueNumber);
+  const existing: TriageDbEntry | undefined = db[key];
   const entry: TriageDbEntry = {
     ...existing,
     summary,
     thoughts,
     lastTriaged: new Date().toISOString(),
   };
-  db[issueNumber] = entry;
+  db[key] = entry;
 }
 
 export type Config = {
