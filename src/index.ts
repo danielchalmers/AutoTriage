@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
-import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, parseDbEntry } from './storage';
+import { loadDatabase, saveArtifact, saveDatabase, writeAnalysisToDb, getDbEntry } from './storage';
 import { AnalysisResult, buildPrompt, AnalysisResultSchema } from './analysis';
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
@@ -65,12 +65,13 @@ async function processIssue(
   repoLabels: Array<{ name: string; description?: string | null }>,
   autoDiscover: boolean
 ): Promise<boolean> {
-  const dbEntry = parseDbEntry(db, issue.number);
+  const dbEntry = getDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
   if (autoDiscover) {
     // Skip items that haven't changed since last triage.
-    if (!gh.hasUpdated(issue, timelineEvents, dbEntry.lastTriaged, dbEntry.reactions)) {
+    const lastTriagedDate = dbEntry.lastTriaged ? new Date(dbEntry.lastTriaged) : undefined;
+    if (!gh.hasUpdated(issue, timelineEvents, lastTriagedDate, dbEntry.reactions)) {
       return false;
     }
   }
@@ -83,7 +84,7 @@ async function processIssue(
       cfg.readmePath,
       timelineEvents,
       repoLabels,
-      dbEntry.lastThoughts
+      dbEntry.thoughts || ''
     );
 
     saveArtifact(issue.number, `prompt-system.md`, systemPrompt);

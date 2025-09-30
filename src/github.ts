@@ -253,12 +253,11 @@ export class GitHubClient {
   hasUpdated(
     issue: Issue,
     timelineEvents: Array<TimelineEvent>,
-    lastTriaged: Date | null,
+    lastTriaged: Date | undefined,
     previousReactions?: number
   ): boolean {
     if (!lastTriaged) return true; // No prior triage => treat as updated.
     const latestUpdateMs = this.lastUpdated(issue, timelineEvents, previousReactions);
-    const hasChangeSinceTriage = latestUpdateMs > lastTriaged.getTime();
-    return hasChangeSinceTriage;
+    return latestUpdateMs > lastTriaged.getTime();
   }
 }

@@ -41,26 +41,22 @@ export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): 
   }
 }
 
-export type ParsedDbEntry = {
-  lastTriaged: Date | null;
-  lastThoughts: string;
-  reactions?: number;
-  summary?: string;
-};
+export type TriageDb = Record<string, TriageDbEntry>;
 
-export function parseDbEntry(db: TriageDb, issueNumber: number): ParsedDbEntry {
-  const raw = db[String(issueNumber)] as TriageDb[string] | undefined;
-  const lastTriaged: Date | null = raw?.lastTriaged ? new Date(raw.lastTriaged) : null;
-  const lastThoughts: string = typeof raw?.thoughts === 'string' ? raw.thoughts : '';
-  const reactions: number | undefined = typeof raw?.reactions === 'number' ? raw.reactions : undefined;
-  const summary: string | undefined = typeof raw?.summary === 'string' ? raw.summary : undefined;
-  const result: ParsedDbEntry = {
-    lastTriaged,
-    lastThoughts,
-    ...(reactions !== undefined ? { reactions } : {}),
-    ...(summary !== undefined ? { summary } : {}),
-  };
-  return result;
+// Canonical in-memory representation of a single triage DB entry. All fields are optional; absence
+// (undefined) means the value has never been recorded. Persisted JSON will simply omit undefined
+// fields so everything remains a primitive or absent.
+export interface TriageDbEntry {
+  lastTriaged?: string;     // ISO timestamp of last completed triage
+  thoughts?: string;        // Raw model "thoughts" / chain-of-thought summary (internal)
+  summary?: string;         // One-line summary from analysis
+  labels?: string[];        // (Reserved) label cache if needed later
+  reactions?: number;       // Reaction count snapshot at last triage
+}
+
+// Simple accessor; returns the raw stored entry (fields optional) or an empty object if missing.
+export function getDbEntry(db: TriageDb, issueNumber: number): TriageDbEntry {
+  return db[String(issueNumber)] || {};
 }
 
 export function writeAnalysisToDb(
@@ -69,23 +65,20 @@ export function writeAnalysisToDb(
   analysis: AnalysisResult,
   fallbackTitle: string,
   thoughts: string,
-  currentReactions?: number
+  currentReactions?: number,
+  triagedAt?: Date
 ): void {
-  db[issueNumber] = {
-    lastTriaged: new Date().toISOString(),
-    thoughts: thoughts,
+  const existing: TriageDbEntry | undefined = db[issueNumber];
+  const entry: TriageDbEntry = {
+    ...existing,
     summary: analysis.summary || (fallbackTitle || 'no summary'),
-    reactions: typeof currentReactions === 'number' ? currentReactions : (db[issueNumber]?.reactions),
-  } as any;
+    thoughts,
+  };
+  const resolvedReactions = typeof currentReactions === 'number' ? currentReactions : existing?.reactions;
+  if (typeof resolvedReactions === 'number') entry.reactions = resolvedReactions;
+  if (triagedAt) entry.lastTriaged = triagedAt.toISOString();
+  db[issueNumber] = entry;
 }
-
-export type TriageDb = Record<string, {
-  lastTriaged: string;
-  thoughts?: string;
-  summary: string;
-  labels?: string[];
-  reactions?: number;
-}>;
 
 export type Config = {
   owner: string;
