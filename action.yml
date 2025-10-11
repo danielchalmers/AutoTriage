@@ -1,50 +1,50 @@
 name: "AutoTriage"
-description: "AI issue & PR triage: summarize, label, comment, retitle, and optionally close using a project prompt + Gemini."
-author: "AutoTriage"
+description: "AI issue & PR triage that reads context, drafts a plan, and applies it according to your project prompt."
+author: "Daniel Chalmers"
 branding:
   color: "blue"
   icon: "robot"
 
 inputs:
   issue-number:
-    description: "Single issue or PR number to triage (defaults to the GitHub event context)."
+    description: "Single issue or PR number to triage; when omitted the GitHub event target is used."
     required: false
   issue-numbers:
-    description: "Space or comma separated list of issue / PR numbers to triage explicitly."
+    description: "Space or comma separated list of issue / PR numbers to triage explicitly, processed in the order provided."
     required: false
   prompt-path:
-    description: "Repo-relative path to the prompt template that governs triage behavior."
+    description: "Repo-relative path to the prompt template that governs triage behavior (tone, rules, closure policy)."
     required: false
     default: ".github/AutoTriage.prompt"
   readme-path:
-    description: "Path to the README file to include in the prompt context."
+    description: "Path to an optional Markdown file (e.g., your README) that is bundled into the AI prompt for extra context."
     required: false
     default: "README.md"
   enabled:
-    description: "true = apply changes; false = dry-run (log planned operations only)."
+    description: "Set to true to apply labels, comments, and title changes; false performs a dry run and logs the plan only."
     required: false
     default: "true"
   db-path:
-    description: "Optional path to JSON file storing issue data."
+    description: "Optional path to a JSON file that stores per-item history between runs."
     required: false
   model-fast:
-    description: "Gemini model name for the first (fast / inexpensive) analysis pass."
+    description: "Identifier of the fast analysis model used for the first pass (default shown below)."
     required: false
     default: "gemini-flash-latest"
   model-pro:
-    description: "Gemini model name for the second (higher quality) pass if needed."
+    description: "Identifier of the deeper review model used when the fast pass asks for confirmation."
     required: false
     default: "gemini-2.5-pro"
   model-temperature:
-    description: "Sampling temperature (0-2). Lower = deterministic; higher = more exploratory."
+    description: "Sampling temperature (0-2); lower keeps responses deterministic while higher explores alternatives."
     required: false
     default: "0.0"
   max-timeline-events:
-    description: "Maximum most-recent timeline events included in the prompt context."
+    description: "Maximum number of recent timeline events injected into the prompt context."
     required: false
     default: "50"
   max-triages:
-    description: "Cap on how many targets receive a full (pro model) triage pass this run."
+    description: "Cap on how many targets can escalate to the review pass during this run."
     required: false
     default: "20"
 

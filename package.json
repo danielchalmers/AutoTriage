@@ -1,7 +1,7 @@
 {
   "name": "autotriage",
   "version": "0.1.0",
-  "description": "AI triage for GitHub issues & PRs: summarizes, labels, comments, retitles and can close items using a project prompt + Gemini.",
+  "description": "AI triage for GitHub issues & PRs: reads context, drafts the next move, and applies it with your project prompt.",
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
@@ -18,8 +18,7 @@
     "triage",
     "issues",
     "pull-requests",
-    "ai",
-    "gemini"
+    "ai"
   ],
   "author": "Daniel Chalmers",
   "license": "MIT",
