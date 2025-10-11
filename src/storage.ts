@@ -94,9 +94,19 @@ export function loadReadme(readmePath?: string): string {
   }
 }
 
-export function loadPrompt(promptPath: string): string {
+export function loadPrompt(promptPath?: string): string {
+  const loadBundledPrompt = () => {
+    const bundledPath = path.join(__dirname, 'AutoTriage.prompt');
+    return fs.readFileSync(bundledPath, 'utf8');
+  };
+
   if (!promptPath) {
-    throw new Error('Prompt path is required');
+    try {
+      return loadBundledPrompt();
+    } catch (bundledError) {
+      const bundledMessage = getErrorMessage(bundledError);
+      throw new Error(`Failed to load prompt. Bundled fallback: ${bundledMessage}`);
+    }
   }
 
   try {
@@ -108,8 +118,7 @@ export function loadPrompt(promptPath: string): string {
   } catch (error) {
     // Fall back to bundled default prompt
     try {
-      const bundledPath = path.join(__dirname, 'AutoTriage.prompt');
-      return fs.readFileSync(bundledPath, 'utf8');
+      return loadBundledPrompt();
     } catch (bundledError) {
       const customMessage = getErrorMessage(error);
       const bundledMessage = getErrorMessage(bundledError);
