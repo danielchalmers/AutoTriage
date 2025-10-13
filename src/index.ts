@@ -119,7 +119,9 @@ async function processIssue(
       repoLabels
     );
 
-    if (proOps.length > 0) {
+    if (proOps.length === 0) {
+      console.log(chalk.yellow('Pro pass suggested no operations; skipping further processing.'));
+    } else {
       saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps.map(o => o.toJSON()), null, 2));
       for (const op of proOps) {
         await op.perform(gh, cfg, issue);
