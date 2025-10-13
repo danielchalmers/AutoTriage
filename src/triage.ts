@@ -25,9 +25,8 @@ class UpdateLabelsOp implements TriageOperation {
       const tintedAdded = this.toAdd.map(label => chalk.green(`+${label}`));
       const tintedRemoved = this.toRemove.map(label => chalk.red(`-${label}`));
       const parts = [...tintedUnchanged, ...tintedAdded, ...tintedRemoved];
-      const heading = chalk.cyan('🏷️ Labels');
       const labelLine = parts.length ? parts.join(', ') : chalk.yellow('none');
-      console.log(`${heading}: ${labelLine}`);
+      console.log(`${chalk.cyan('🏷️ Labels')}: ${labelLine}`);
       if (cfg.enabled) {
         if (this.toAdd.length) await client.addLabels(issue.number, this.toAdd);
         for (const name of this.toRemove) await client.removeLabel(issue.number, name);
@@ -42,9 +41,8 @@ class CreateCommentOp implements TriageOperation {
   constructor(public body: string) { }
   toJSON() { return { kind: this.kind, body: this.body }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    console.log(`💬 Posting comment:`);
     const preview = this.body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
-    console.log(chalk.cyan(preview));
+    console.log(`${chalk.cyan('💬 Comment')}: ${chalk.green(preview)}`);
     if (cfg.enabled) await client.createComment(issue.number, this.body);
   }
 }
@@ -55,7 +53,9 @@ class UpdateTitleOp implements TriageOperation {
   constructor(public newTitle: string) { }
   toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    console.log('✏️ Updating title from "' + issue.title + '" to "' + this.newTitle + '"');
+    console.log(chalk.cyan('✏️ Title:'));
+    console.log(chalk.red(`-"${issue.title}"`));
+    console.log(chalk.green(`+"${this.newTitle}"`));
     if (cfg.enabled) await client.updateTitle(issue.number, this.newTitle);
   }
 }
@@ -67,10 +67,10 @@ class UpdateStateOp implements TriageOperation {
   toJSON() { return { kind: this.kind, state: this.state }; }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.state === 'open') {
-      console.log('🔄 Reopening issue');
+      console.log(`${chalk.cyan('🔄 State')}: Reopening issue`);
       if (cfg.enabled) await client.updateIssueState(issue.number, 'open');
     } else {
-      console.log(`🔄 Closing issue as ${this.state}`);
+      console.log(`${chalk.cyan('🔄 State')}: Closing issue as ${this.state}`);
       if (cfg.enabled) await client.updateIssueState(issue.number, 'closed', this.state);
     }
   }
