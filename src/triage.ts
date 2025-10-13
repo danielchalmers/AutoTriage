@@ -112,6 +112,11 @@ export function planOperations(
 ): TriageOperation[] {
   const ops: TriageOperation[] = [];
 
+  // Title change
+  if (analysis.newTitle && analysis.newTitle.trim() && analysis.newTitle !== issue.title) {
+    ops.push(new UpdateTitleOp(analysis.newTitle));
+  }
+
   // Labels
   if (Array.isArray(analysis.labels)) {
     const filtered = filterLabels(analysis.labels, repoLabels) || [];
@@ -126,11 +131,6 @@ export function planOperations(
     const hiddenBlock = thoughtLog.length ? thoughtLog : 'No thoughts provided';
     const body = `${analysis.comment}\n\n<!--\n${hiddenBlock}\n-->`;
     ops.push(new CreateCommentOp(body));
-  }
-
-  // Title change
-  if (analysis.newTitle && analysis.newTitle.trim() && analysis.newTitle !== issue.title) {
-    ops.push(new UpdateTitleOp(analysis.newTitle));
   }
 
   // State change (open|completed|not_planned). Only act if different from current state/reason.
