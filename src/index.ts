@@ -5,6 +5,7 @@ import { AnalysisResult, buildPrompt, AnalysisResultSchema } from './analysis';
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
+import { buildAutoDiscoverQueue } from './autoDiscover';
 import chalk from 'chalk';
 
 chalk.level = 3;
@@ -68,13 +69,6 @@ async function processIssue(
   const dbEntry = getDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
-  if (autoDiscover) {
-    // Skip items that haven't changed since last triage.
-    const lastTriagedDate = dbEntry.lastTriaged ? new Date(dbEntry.lastTriaged) : undefined;
-    if (!gh.hasUpdated(issue, timelineEvents, lastTriagedDate)) {
-      return false;
-    }
-  }
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
@@ -171,7 +165,8 @@ async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean
   const num = payload?.issue?.number || payload?.pull_request?.number;
   if (num) return { targets: [Number(num)], autoDiscover: false };
 
-  // Fallback: process all open issues/PRs (ordered recent first) when nothing explicit given.
+  // Fallback: auto-discover mode prioritizes new/updated work first, then cycles through the rest.
   const issues = await gh.listOpenIssues();
-  return { targets: issues.map(i => i.number), autoDiscover: true };
+  const orderedNumbers = buildAutoDiscoverQueue(issues, db);
+  return { targets: orderedNumbers, autoDiscover: true };
 }
