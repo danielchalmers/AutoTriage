@@ -149,7 +149,7 @@ async function processIssue(
     }
 
     updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
-    return true;
+    return proOps.length > 0;
   });
 }
 
