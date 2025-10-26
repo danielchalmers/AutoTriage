@@ -38,6 +38,7 @@ export function getConfig(): Config {
   if (!geminiApiKey) throw new Error('GEMINI_API_KEY missing (add it as a repository secret).');
 
   const enabled = (core.getInput('enabled') || 'true').toLowerCase() === 'true';
+  const skipFastPass = (core.getInput('skip-fast-pass') || 'false').toLowerCase() === 'true';
   const promptPath = core.getInput('prompt-path') || '.github/AutoTriage.prompt';
   const readmePath = core.getInput('readme-path') || 'README.md';
   const dbPath = core.getInput('db-path');
@@ -63,6 +64,7 @@ export function getConfig(): Config {
     geminiApiKey,
     modelTemperature,
     enabled,
+    skipFastPass,
     thinkingBudget,
 
     ...(issueNumber !== undefined ? { issueNumber } : {}),

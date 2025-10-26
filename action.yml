@@ -27,6 +27,10 @@ inputs:
   db-path:
     description: "Optional path to a JSON file that stores per-item history between runs."
     required: false
+  skip-fast-pass:
+    description: "Skip the fast model pass and go directly to the pro model. Set to true for best results on initial issues/PRs."
+    required: false
+    default: "false"
   model-fast:
     description: "Identifier of the fast analysis model used for the first pass (default shown below)."
     required: false
