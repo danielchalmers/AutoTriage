@@ -127,7 +127,7 @@ async function processIssue(
     }
 
     updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
-    return proOps.length > 0;
+    return true;
   });
 }
 
