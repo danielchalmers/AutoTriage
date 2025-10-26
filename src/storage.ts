@@ -143,6 +143,7 @@ export interface Config {
   promptPath: string;
   readmePath: string;
   dbPath?: string;
+  skipFastPass: boolean;
   modelFast: string;
   modelPro: string;
   maxTimelineEvents: number;

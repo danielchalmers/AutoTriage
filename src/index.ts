@@ -84,6 +84,32 @@ async function processIssue(
     saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
     saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
+    // Skip fast pass if configured (go directly to pro model)
+    if (cfg.skipFastPass) {
+      console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
+      const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
+        issue,
+        cfg.modelPro,
+        cfg.modelTemperature,
+        cfg.thinkingBudget,
+        systemPrompt,
+        userPrompt,
+        repoLabels
+      );
+
+      if (proOps.length === 0) {
+        console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
+      } else {
+        saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps.map(o => o.toJSON()), null, 2));
+        for (const op of proOps) {
+          await op.perform(gh, cfg, issue);
+        }
+      }
+
+      updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
+      return proOps.length > 0;
+    }
+
     // Pass 1: fast model
     const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
       issue,
