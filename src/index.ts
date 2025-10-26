@@ -84,12 +84,11 @@ async function processIssue(
     saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
     saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
-    // Skip fast pass if configured (go directly to pro model)
-    if (cfg.skipFastPass) {
-      console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
-      const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
+    // Pass 1: fast model (unless skip-fast-pass is enabled)
+    if (!cfg.skipFastPass) {
+      const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
         issue,
-        cfg.modelPro,
+        cfg.modelFast,
         cfg.modelTemperature,
         cfg.thinkingBudget,
         systemPrompt,
@@ -97,38 +96,17 @@ async function processIssue(
         repoLabels
       );
 
-      if (proOps.length === 0) {
-        console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
-      } else {
-        saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps.map(o => o.toJSON()), null, 2));
-        for (const op of proOps) {
-          await op.perform(gh, cfg, issue);
-        }
+      // Fast pass produced no work: skip expensive pass.
+      if (quickOps.length === 0) {
+        console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
+        updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title, quickThoughts);
+        return false;
       }
-
-      updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
-      return proOps.length > 0;
+    } else {
+      console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
     }
 
-    // Pass 1: fast model
-    const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
-      issue,
-      cfg.modelFast,
-      cfg.modelTemperature,
-      cfg.thinkingBudget,
-      systemPrompt,
-      userPrompt,
-      repoLabels
-    );
-
-    // Fast pass produced no work: skip expensive pass.
-    if (quickOps.length === 0) {
-      console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
-      updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title, quickThoughts);
-      return false;
-    }
-
-    // Full analysis pass: pro model
+    // Pass 2: pro model (or only pass if skip-fast-pass is enabled)
     const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
       issue,
       cfg.modelPro,
@@ -140,7 +118,7 @@ async function processIssue(
     );
 
     if (proOps.length === 0) {
-      console.log(chalk.yellow('Pro pass suggested no operations; skipping further processing.'));
+      console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
     } else {
       saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps.map(o => o.toJSON()), null, 2));
       for (const op of proOps) {
