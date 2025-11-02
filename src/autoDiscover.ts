@@ -6,18 +6,27 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb): number[] 
   if (!issues || issues.length === 0) return [];
 
   const prioritized: number[] = [];
-  const secondary: number[] = [];
+  const secondary: Array<{ number: number; lastTriagedMs: number }> = [];
 
   for (const issue of issues) {
     const lastUpdatedMs = getLastUpdatedMs(issue);
     const entry = getDbEntry(db, issue.number);
     const needsAttention = shouldPrioritize(lastUpdatedMs, entry);
-    // Preserve GitHub's recency order inside each bucket to keep cycling smoothly.
-    const bucket = needsAttention ? prioritized : secondary;
-    bucket.push(issue.number);
+    if (needsAttention) {
+      // Preserve GitHub's recency order inside prioritized bucket to keep cycling smoothly.
+      prioritized.push(issue.number);
+    } else {
+      // Track lastTriaged timestamp for sorting secondary bucket
+      // safeParseDate returns 0 for missing/undefined values, sorting them first
+      const lastTriagedMs = safeParseDate(entry?.lastTriaged);
+      secondary.push({ number: issue.number, lastTriagedMs });
+    }
   }
 
-  return prioritized.concat(secondary);
+  // Sort secondary by lastTriaged (oldest first)
+  secondary.sort((a, b) => a.lastTriagedMs - b.lastTriagedMs);
+
+  return prioritized.concat(secondary.map(item => item.number));
 }
 
 function getLastUpdatedMs(issue: Issue): number {
