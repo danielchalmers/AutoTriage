@@ -17,6 +17,7 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb): number[] 
       prioritized.push(issue.number);
     } else {
       // Track lastTriaged timestamp for sorting secondary bucket
+      // safeParseDate returns 0 for missing/undefined values, sorting them first
       const lastTriagedMs = safeParseDate(entry?.lastTriaged);
       secondary.push({ number: issue.number, lastTriagedMs });
     }
