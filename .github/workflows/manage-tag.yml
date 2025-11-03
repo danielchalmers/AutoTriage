@@ -42,12 +42,6 @@ jobs:
             exit 1
           fi
           
-          # Prevent tags starting with hyphen
-          if [[ "$TAG_NAME" == -* ]]; then
-            echo "❌ Error: Tag name cannot start with a hyphen"
-            exit 1
-          fi
-          
           # Prevent certain problematic sequences and patterns
           if echo "$TAG_NAME" | grep -qE '\.\.|//|@\{|\\| |\.lock$'; then
             echo "❌ Error: Tag name contains prohibited sequences (.., //, @{, \\, spaces, or ends with .lock)"
