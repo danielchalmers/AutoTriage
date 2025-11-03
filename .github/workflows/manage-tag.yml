@@ -25,6 +25,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Validate tag name
+        run: |
+          TAG_NAME="${{ inputs.tag-name }}"
+          # Validate tag name follows Git naming conventions
+          if ! echo "$TAG_NAME" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9._/-]*$'; then
+            echo "❌ Error: Invalid tag name. Tag names must start with alphanumeric and contain only alphanumeric, dots, underscores, hyphens, and slashes."
+            exit 1
+          fi
+          # Prevent certain problematic characters
+          if echo "$TAG_NAME" | grep -qE '\.\.|//|@\{|\\'; then
+            echo "❌ Error: Tag name contains prohibited sequences (.., //, @{, \\)"
+            exit 1
+          fi
+          echo "✅ Tag name is valid: $TAG_NAME"
+
       - name: Get latest commit from main branch
         id: get-commit
         run: |
@@ -47,6 +62,10 @@ jobs:
       - name: Update existing tag
         if: steps.check-tag.outputs.exists == 'true'
         run: |
+          echo "⚠️  WARNING: Updating existing tag '${{ inputs.tag-name }}'"
+          echo "This will force-push and rewrite the tag reference."
+          echo "Users who have already fetched this tag may experience conflicts."
+          echo ""
           echo "Updating tag '${{ inputs.tag-name }}' to point to ${{ steps.get-commit.outputs.latest_commit }}"
           git tag -f "${{ inputs.tag-name }}" ${{ steps.get-commit.outputs.latest_commit }}
           git push -f origin "${{ inputs.tag-name }}"
