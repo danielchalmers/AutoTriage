@@ -1,0 +1,73 @@
+name: Manage Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag-name:
+        description: 'Tag name (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  manage-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Fetch all history and tags
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get latest commit from main branch
+        id: get-commit
+        run: |
+          git fetch origin main
+          LATEST_COMMIT=$(git rev-parse origin/main)
+          echo "latest_commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+          echo "Latest commit on main: $LATEST_COMMIT"
+
+      - name: Check if tag exists
+        id: check-tag
+        run: |
+          if git rev-parse "${{ inputs.tag-name }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag '${{ inputs.tag-name }}' exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag '${{ inputs.tag-name }}' does not exist"
+          fi
+
+      - name: Update existing tag
+        if: steps.check-tag.outputs.exists == 'true'
+        run: |
+          echo "Updating tag '${{ inputs.tag-name }}' to point to ${{ steps.get-commit.outputs.latest_commit }}"
+          git tag -f "${{ inputs.tag-name }}" ${{ steps.get-commit.outputs.latest_commit }}
+          git push -f origin "${{ inputs.tag-name }}"
+          echo "✅ Tag '${{ inputs.tag-name }}' has been updated to the latest commit on main"
+
+      - name: Create new tag
+        if: steps.check-tag.outputs.exists == 'false'
+        run: |
+          echo "Creating tag '${{ inputs.tag-name }}' at ${{ steps.get-commit.outputs.latest_commit }}"
+          git tag "${{ inputs.tag-name }}" ${{ steps.get-commit.outputs.latest_commit }}
+          git push origin "${{ inputs.tag-name }}"
+          echo "✅ Tag '${{ inputs.tag-name }}' has been created at the latest commit on main"
+
+      - name: Summary
+        run: |
+          echo "## Tag Management Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag Name:** \`${{ inputs.tag-name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ steps.get-commit.outputs.latest_commit }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check-tag.outputs.exists }}" == "true" ]; then
+            echo "- **Action:** Updated existing tag" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Action:** Created new tag" >> $GITHUB_STEP_SUMMARY
+          fi
