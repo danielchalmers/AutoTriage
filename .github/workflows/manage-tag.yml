@@ -28,16 +28,32 @@ jobs:
       - name: Validate tag name
         run: |
           TAG_NAME="${{ inputs.tag-name }}"
+          
+          # Check minimum length
+          if [ ${#TAG_NAME} -lt 1 ]; then
+            echo "❌ Error: Tag name cannot be empty"
+            exit 1
+          fi
+          
           # Validate tag name follows Git naming conventions
-          if ! echo "$TAG_NAME" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9._/-]*$'; then
-            echo "❌ Error: Invalid tag name. Tag names must start with alphanumeric and contain only alphanumeric, dots, underscores, hyphens, and slashes."
+          # Must start and end with alphanumeric, can contain dots, underscores, hyphens, slashes in between
+          if ! echo "$TAG_NAME" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9._/-]*[a-zA-Z0-9])?$'; then
+            echo "❌ Error: Invalid tag name. Tag names must start and end with alphanumeric characters."
             exit 1
           fi
-          # Prevent certain problematic characters
-          if echo "$TAG_NAME" | grep -qE '\.\.|//|@\{|\\'; then
-            echo "❌ Error: Tag name contains prohibited sequences (.., //, @{, \\)"
+          
+          # Prevent tags starting with hyphen
+          if [[ "$TAG_NAME" == -* ]]; then
+            echo "❌ Error: Tag name cannot start with a hyphen"
             exit 1
           fi
+          
+          # Prevent certain problematic sequences and patterns
+          if echo "$TAG_NAME" | grep -qE '\.\.|//|@\{|\\| |\.lock$'; then
+            echo "❌ Error: Tag name contains prohibited sequences (.., //, @{, \\, spaces, or ends with .lock)"
+            exit 1
+          fi
+          
           echo "✅ Tag name is valid: $TAG_NAME"
 
       - name: Get latest commit from main branch
@@ -51,12 +67,14 @@ jobs:
       - name: Check if tag exists
         id: check-tag
         run: |
-          if git rev-parse "${{ inputs.tag-name }}" >/dev/null 2>&1; then
+          TAG_NAME="${{ inputs.tag-name }}"
+          # Use git tag -l for safer tag existence checking
+          if git tag -l "$TAG_NAME" | grep -q "^${TAG_NAME}$"; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Tag '${{ inputs.tag-name }}' exists"
+            echo "Tag '$TAG_NAME' exists"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Tag '${{ inputs.tag-name }}' does not exist"
+            echo "Tag '$TAG_NAME' does not exist"
           fi
 
       - name: Update existing tag
