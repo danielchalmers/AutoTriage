@@ -5,7 +5,7 @@ Keep issues and pull requests moving: reads the latest context, drafts the next 
 ## How it works
 
 - The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
-- A reviewing AI pass (default: `gemini-2.5-pro`) replays the plan and confirms labels, comments, etc before anything is written.
+- A reviewing AI pass (default: `gemini-2.5-pro`) replays the plan and confirms labels, comments, etc, before anything is written.
 - The full thought process along with all actions can be inspected in the workflow artifacts.
 - It will keep going until it runs out of issues or tokens, or reaches the specified limit.
 
@@ -61,7 +61,7 @@ Copy one into `.github/workflows/` and adjust `enabled`, schedules, or permissio
 
 ## See it in action
 
-[MudBlazor](https://github.com/MudBlazor/MudBlazor) is a popular UI library for Blazor that uses a AutoTriage for all new issues, PRs, and comments.
+[MudBlazor](https://github.com/MudBlazor/MudBlazor) is a popular UI library for Blazor that uses AutoTriage for all new issues, PRs, and comments.
 
 Example log (See [workflows](https://github.com/MudBlazor/MudBlazor/actions) to browse artifacts, or view the [actual prompt](https://github.com/MudBlazor/MudBlazor/blob/dev/.github/AutoTriage.prompt)):
 
