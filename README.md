@@ -5,9 +5,9 @@ Keep issues and pull requests moving: reads the latest context, drafts the next 
 ## How it works
 
 - The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
-- If confidence is low, a reviewing AI pass (default: `gemini-2.5-pro`) replays the plan, catches edge cases, and confirms labels, comments, or closures before anything is written.
+- A reviewing AI pass (default: `gemini-2.5-pro`) replays the plan and confirms labels, comments, etc, before anything is written.
 - The full thought process along with all actions can be inspected in the workflow artifacts.
-- Safeguards pause the run after three failed analyses in a row and keep unlimited sweeps bounded by the same guard.
+- It will keep going until it runs out of issues or tokens, or reaches the specified limit.
 
 ## Quick setup
 
@@ -59,9 +59,19 @@ See ready-to-use workflow files in [`examples/workflows`](./examples/workflows/)
 
 Copy one into `.github/workflows/` and adjust `enabled`, schedules, or permissions as needed.
 
-## Targeting Specific Issues
+## Example
 
-To triage specific items manually (e.g. via a workflow_dispatch input or a one-off run), set `issue-numbers` or `issue-number` in the job step `with:` block. Spaces or commas are both accepted, e.g. `issue-numbers: "123 456,789"`. Combine with `enabled: "false"` for a safe dry-run.
+[MudBlazor](https://github.com/MudBlazor/MudBlazor) is a popular UI library that uses AutoTriage for all new issues, PRs, and comments.
+
+Here's what a typical thought process looks like:
+
+> 💭 Thinking with gemini-2.5-pro...
+> 
+> Okay, so I've got a pull request to triage. Let's break this down. Firstly, the PR itself looks straightforward. It's titled "Docs: Update cookie consent prompt design," so immediately I'm thinking documentation updates, which is nice and specific. The author is `danielchalmers`, and the good news is they are a maintainer. That's a good sign – they're likely familiar with the project's standards and processes. The body describes visual changes to the cookie consent prompt and includes before/after screenshots, which is really helpful. Now, let's consult the ASSISTANT BEHAVIOR POLICY. This is where I can ensure I'm following the established guidelines. Since the author is a maintainer, I can skip sections related to encouraging contributions, triaging, and addressing missing information. I also don't need to worry about title edits or inactivity rules. The policy is really tailored to this scenario! The main thing I need to focus on is labeling. The title starts with "Docs:", which is a clear indicator, and the changes are specifically about the documentation site. Although the changes involve visual improvements, and could be interpreted as an `enhancement` or `refactor`, the "Docs" prefix makes the `docs` label the most appropriate, as it's directly tied to the documentation site. Finally, I can synthesize my actions. The summary will be: "A maintainer submitted a pull request to update the visual design of the cookie consent prompt on the documentation website." The label will be `docs`. No comments or state changes are needed. The title is fine as it is.
+> 
+> 🏷️ Labels: +docs
+
+See MudBlazor's [workflows](https://github.com/MudBlazor/MudBlazor/actions) to browse artifacts, or view the [actual prompt](https://github.com/MudBlazor/MudBlazor/blob/dev/.github/AutoTriage.prompt).
 
 ## License
 
