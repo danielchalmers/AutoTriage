@@ -78,7 +78,8 @@ async function processIssue(
       cfg.readmePath,
       timelineEvents,
       repoLabels,
-      dbEntry.thoughts || ''
+      dbEntry.thoughts || '',
+      cfg.customInstructions
     );
 
     saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
