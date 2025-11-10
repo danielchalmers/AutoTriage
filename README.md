@@ -60,42 +60,6 @@ See ready-to-use workflow files in [`examples/workflows`](./examples/workflows/)
 
 Copy one into `.github/workflows/` and adjust `enabled`, schedules, or permissions as needed.
 
-### Using Custom Instructions
-
-The `custom-instructions` input allows you to test or tweak triage behavior without committing changes to your prompt file. This is especially useful when:
-
-- Testing new labeling rules or comment templates
-- Experimenting with different triage strategies
-- Making temporary adjustments for specific situations
-
-To use it with workflow dispatch, add the input to your workflow and pass it through:
-
-```yaml
-on:
-  workflow_dispatch:
-    inputs:
-      custom-instructions:
-        description: 'Additional custom instructions'
-        required: false
-
-jobs:
-  triage:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: danielchalmers/AutoTriage@main
-        with:
-          custom-instructions: ${{ github.event.inputs.custom-instructions }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-```
-
-Example custom instructions:
-- `"Always add the 'needs-review' label to PRs from external contributors"`
-- `"When closing issues as 'not planned', include a friendly thank-you message"`
-- `"Prioritize labeling issues with 'critical' if they mention security or data loss"`
-
 ## Example
 
 [MudBlazor](https://github.com/MudBlazor/MudBlazor) is a popular UI library that uses AutoTriage for all new issues, PRs, and comments.
