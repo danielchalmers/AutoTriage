@@ -30,7 +30,7 @@ describe('additional instructions', () => {
 
     try {
       const additionalInstructions = 'Always add the "urgent" label to issues'
-      const { systemPrompt, userPrompt } = await buildPrompt(
+      const { systemPrompt } = await buildPrompt(
         mockIssue,
         customPromptPath,
         '',
