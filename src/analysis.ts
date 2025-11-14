@@ -28,7 +28,7 @@ export async function buildPrompt(
   timelineEvents: TimelineEvent[],
   repoLabels: Array<{ name: string; description?: string | null; }>,
   lastThoughts: string,
-  customInstructions?: string,
+  additionalInstructions?: string,
 ) {
   const basePrompt = loadPrompt(promptPath);
   const systemPrompt = `
@@ -98,7 +98,7 @@ INSTRUCTION HIERARCHY & ENFORCEMENT:
 
 === SECTION: ASSISTANT BEHAVIOR POLICY ===
 ${basePrompt}
-${customInstructions ? `\n=== SECTION: CUSTOM INSTRUCTIONS ===\n${customInstructions}\n` : ''}
+${additionalInstructions ? `\n=== SECTION: ADDITIONAL INSTRUCTIONS ===\n${additionalInstructions}\n` : ''}
 === SECTION: RUNTIME CONTEXT ===
 Current date/time (UTC ISO 8601): ${new Date().toISOString()}
 

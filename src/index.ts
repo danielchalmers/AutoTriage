@@ -79,7 +79,7 @@ async function processIssue(
       timelineEvents,
       repoLabels,
       dbEntry.thoughts || '',
-      cfg.customInstructions
+      cfg.additionalInstructions
     );
 
     saveArtifact(issue.number, `prompt-system.md`, systemPrompt);

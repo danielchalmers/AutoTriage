@@ -56,7 +56,7 @@ export function getConfig(): Config {
   const multiIssues = core.getInput('issue-numbers');
   const issueNumber = singleIssue ? Number(singleIssue) : undefined;
   const issueNumbers = parseNumbers(multiIssues);
-  const customInstructions = core.getInput('custom-instructions') || undefined;
+  const additionalInstructions = core.getInput('additional-instructions') || undefined;
 
   return {
     owner,
@@ -77,6 +77,6 @@ export function getConfig(): Config {
     modelPro,
     maxTimelineEvents: Number.isFinite(maxTimelineEvents) ? maxTimelineEvents : 50,
     maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 20,
-    ...(customInstructions ? { customInstructions } : {}),
+    ...(additionalInstructions ? { additionalInstructions } : {}),
   } as Config;
 }

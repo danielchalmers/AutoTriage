@@ -12,8 +12,8 @@ on:
         description: 'Enable writes (false = dry-run)'
         type: boolean
         required: false
-      custom-instructions:
-        description: 'Additional custom instructions appended to the prompt'
+      additional-instructions:
+        description: 'Additional instructions appended to the prompt'
         required: false
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
           prompt-path: .github/AutoTriage.prompt
           enabled: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.enabled) }}
           db-path: triage-db.json
-          custom-instructions: ${{ github.event.inputs.custom-instructions }}
+          additional-instructions: ${{ github.event.inputs.additional-instructions }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

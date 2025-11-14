@@ -148,5 +148,5 @@ export interface Config {
   modelPro: string;
   maxTimelineEvents: number;
   maxTriages: number;
-  customInstructions?: string;
+  additionalInstructions?: string;
 }

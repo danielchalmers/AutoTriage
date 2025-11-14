@@ -4,7 +4,7 @@ import type { Issue, TimelineEvent } from '../src/github'
 import * as fs from 'fs'
 import * as path from 'path'
 
-describe('custom instructions', () => {
+describe('additional instructions', () => {
   const mockIssue: Issue = {
     number: 123,
     title: 'Test Issue',
@@ -24,12 +24,12 @@ describe('custom instructions', () => {
     { name: 'enhancement', description: 'New feature' },
   ]
 
-  it('includes custom instructions in the system prompt when provided', async () => {
+  it('includes additional instructions in the system prompt when provided', async () => {
     const customPromptPath = path.join(__dirname, 'test-custom-prompt.txt')
     fs.writeFileSync(customPromptPath, 'Base prompt content')
 
     try {
-      const customInstructions = 'Always add the "urgent" label to issues'
+      const additionalInstructions = 'Always add the "urgent" label to issues'
       const { systemPrompt, userPrompt } = await buildPrompt(
         mockIssue,
         customPromptPath,
@@ -37,29 +37,29 @@ describe('custom instructions', () => {
         mockTimelineEvents,
         mockRepoLabels,
         '',
-        customInstructions
+        additionalInstructions
       )
 
       expect(systemPrompt).toContain('Base prompt content')
-      expect(systemPrompt).toContain('=== SECTION: CUSTOM INSTRUCTIONS ===')
-      expect(systemPrompt).toContain(customInstructions)
+      expect(systemPrompt).toContain('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
+      expect(systemPrompt).toContain(additionalInstructions)
       
-      // Verify custom instructions appear between ASSISTANT BEHAVIOR POLICY and RUNTIME CONTEXT
+      // Verify additional instructions appear between ASSISTANT BEHAVIOR POLICY and RUNTIME CONTEXT
       const policyIndex = systemPrompt.indexOf('=== SECTION: ASSISTANT BEHAVIOR POLICY ===')
-      const customIndex = systemPrompt.indexOf('=== SECTION: CUSTOM INSTRUCTIONS ===')
+      const additionalIndex = systemPrompt.indexOf('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
       const runtimeIndex = systemPrompt.indexOf('=== SECTION: RUNTIME CONTEXT ===')
       
       expect(policyIndex).toBeGreaterThan(-1)
-      expect(customIndex).toBeGreaterThan(-1)
+      expect(additionalIndex).toBeGreaterThan(-1)
       expect(runtimeIndex).toBeGreaterThan(-1)
-      expect(customIndex).toBeGreaterThan(policyIndex)
-      expect(runtimeIndex).toBeGreaterThan(customIndex)
+      expect(additionalIndex).toBeGreaterThan(policyIndex)
+      expect(runtimeIndex).toBeGreaterThan(additionalIndex)
     } finally {
       fs.unlinkSync(customPromptPath)
     }
   })
 
-  it('does not include custom instructions section when not provided', async () => {
+  it('does not include additional instructions section when not provided', async () => {
     const customPromptPath = path.join(__dirname, 'test-custom-prompt.txt')
     fs.writeFileSync(customPromptPath, 'Base prompt content')
 
@@ -75,13 +75,13 @@ describe('custom instructions', () => {
       )
 
       expect(systemPrompt).toContain('Base prompt content')
-      expect(systemPrompt).not.toContain('=== SECTION: CUSTOM INSTRUCTIONS ===')
+      expect(systemPrompt).not.toContain('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
     } finally {
       fs.unlinkSync(customPromptPath)
     }
   })
 
-  it('does not include custom instructions section when empty string provided', async () => {
+  it('does not include additional instructions section when empty string provided', async () => {
     const customPromptPath = path.join(__dirname, 'test-custom-prompt.txt')
     fs.writeFileSync(customPromptPath, 'Base prompt content')
 
@@ -97,7 +97,7 @@ describe('custom instructions', () => {
       )
 
       expect(systemPrompt).toContain('Base prompt content')
-      expect(systemPrompt).not.toContain('=== SECTION: CUSTOM INSTRUCTIONS ===')
+      expect(systemPrompt).not.toContain('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
     } finally {
       fs.unlinkSync(customPromptPath)
     }
