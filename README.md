@@ -48,6 +48,7 @@ jobs:
 | `model-temperature` | Sampling temperature (`0` deterministic -> `2` exploratory). | `0.0` |
 | `max-timeline-events` | Maximum recent timeline events included in the prompt. | `50` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
+| `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
 
 ## Example Workflows
 

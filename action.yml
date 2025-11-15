@@ -51,6 +51,9 @@ inputs:
     description: "Cap on how many targets can escalate to the review pass during this run."
     required: false
     default: "20"
+  additional-instructions:
+    description: "Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt."
+    required: false
 
 runs:
   using: "node24"
