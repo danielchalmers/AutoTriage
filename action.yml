@@ -38,7 +38,7 @@ inputs:
   model-pro:
     description: "Identifier of the deeper review model used when the fast pass asks for confirmation."
     required: false
-    default: "gemini-2.5-pro"
+    default: "gemini-3-pro-preview"
   model-temperature:
     description: "Sampling temperature (0-2); lower keeps responses deterministic while higher explores alternatives."
     required: false

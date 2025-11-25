@@ -43,7 +43,7 @@ export function getConfig(): Config {
   const readmePath = core.getInput('readme-path') || 'README.md';
   const dbPath = core.getInput('db-path');
   const modelFast = core.getInput('model-fast') || 'gemini-flash-latest';
-  const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
+  const modelPro = core.getInput('model-pro') || 'gemini-3-pro-preview';
   const temperatureInput = core.getInput('model-temperature');
   const parsedTemperature = Number(
     temperatureInput === undefined || temperatureInput === '' ? '0' : temperatureInput
