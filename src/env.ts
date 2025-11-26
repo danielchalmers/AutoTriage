@@ -38,11 +38,12 @@ export function getConfig(): Config {
   if (!geminiApiKey) throw new Error('GEMINI_API_KEY missing (add it as a repository secret).');
 
   const enabled = (core.getInput('enabled') || 'true').toLowerCase() === 'true';
-  const skipFastPass = (core.getInput('skip-fast-pass') || 'false').toLowerCase() === 'true';
   const promptPath = core.getInput('prompt-path') || '.github/AutoTriage.prompt';
   const readmePath = core.getInput('readme-path') || 'README.md';
   const dbPath = core.getInput('db-path');
-  const modelFast = core.getInput('model-fast') || 'gemini-flash-latest';
+  const modelFastInput = core.getInput('model-fast');
+  const modelFast = modelFastInput || 'gemini-flash-latest';
+  const skipFastPass = modelFastInput === '';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
   const temperatureInput = core.getInput('model-temperature');
   const parsedTemperature = Number(
