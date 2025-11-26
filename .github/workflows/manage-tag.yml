@@ -15,90 +15,14 @@ jobs:
   manage-tag:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
-          fetch-depth: 0  # Fetch all history and tags
+          ref: main
+          fetch-depth: 0
 
-      - name: Configure Git
+      - name: Create or update tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Validate tag name
-        run: |
-          TAG_NAME="${{ inputs.tag-name }}"
-          
-          # Check minimum length
-          if [ ${#TAG_NAME} -lt 1 ]; then
-            echo "❌ Error: Tag name cannot be empty"
-            exit 1
-          fi
-          
-          # Validate tag name follows Git naming conventions
-          # Must start and end with alphanumeric, can contain dots, underscores, hyphens, slashes in between
-          if ! echo "$TAG_NAME" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9._/-]*[a-zA-Z0-9])?$'; then
-            echo "❌ Error: Invalid tag name. Tag names must start and end with alphanumeric characters."
-            exit 1
-          fi
-          
-          # Prevent certain problematic sequences and patterns
-          if echo "$TAG_NAME" | grep -qE '\.\.|//|@\{|\\| |\.lock$'; then
-            echo "❌ Error: Tag name contains prohibited sequences (.., //, @{, \\, spaces, or ends with .lock)"
-            exit 1
-          fi
-          
-          echo "✅ Tag name is valid: $TAG_NAME"
-
-      - name: Get latest commit from main branch
-        id: get-commit
-        run: |
-          git fetch origin main
-          LATEST_COMMIT=$(git rev-parse origin/main)
-          echo "latest_commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
-          echo "Latest commit on main: $LATEST_COMMIT"
-
-      - name: Check if tag exists
-        id: check-tag
-        run: |
-          TAG_NAME="${{ inputs.tag-name }}"
-          # Use git tag -l for safer tag existence checking
-          if git tag -l "$TAG_NAME" | grep -q "^${TAG_NAME}$"; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Tag '$TAG_NAME' exists"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Tag '$TAG_NAME' does not exist"
-          fi
-
-      - name: Update existing tag
-        if: steps.check-tag.outputs.exists == 'true'
-        run: |
-          echo "⚠️  WARNING: Updating existing tag '${{ inputs.tag-name }}'"
-          echo "This will force-push and rewrite the tag reference."
-          echo "Users who have already fetched this tag may experience conflicts."
-          echo ""
-          echo "Updating tag '${{ inputs.tag-name }}' to point to ${{ steps.get-commit.outputs.latest_commit }}"
-          git tag -f "${{ inputs.tag-name }}" ${{ steps.get-commit.outputs.latest_commit }}
+          git tag -f "${{ inputs.tag-name }}"
           git push -f origin "${{ inputs.tag-name }}"
-          echo "✅ Tag '${{ inputs.tag-name }}' has been updated to the latest commit on main"
-
-      - name: Create new tag
-        if: steps.check-tag.outputs.exists == 'false'
-        run: |
-          echo "Creating tag '${{ inputs.tag-name }}' at ${{ steps.get-commit.outputs.latest_commit }}"
-          git tag "${{ inputs.tag-name }}" ${{ steps.get-commit.outputs.latest_commit }}
-          git push origin "${{ inputs.tag-name }}"
-          echo "✅ Tag '${{ inputs.tag-name }}' has been created at the latest commit on main"
-
-      - name: Summary
-        run: |
-          echo "## Tag Management Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag Name:** \`${{ inputs.tag-name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** \`${{ steps.get-commit.outputs.latest_commit }}\`" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.check-tag.outputs.exists }}" == "true" ]; then
-            echo "- **Action:** Updated existing tag" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **Action:** Created new tag" >> $GITHUB_STEP_SUMMARY
-          fi
