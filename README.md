@@ -43,7 +43,7 @@ jobs:
 | `readme-path` | Extra Markdown context uploaded to the AI prompt. | `README.md` |
 | `enabled` | `"true"` applies changes, `"false"` logs the plan only. | `"true"` |
 | `db-path` | Persist per-item history between runs. | - |
-| `model-fast` | Fast analysis model for the first pass. | bundled fast model |
+| `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | bundled fast model |
 | `model-pro` | Review model that double-checks uncertain plans. | bundled review model |
 | `model-temperature` | Sampling temperature (`0` deterministic -> `2` exploratory). | `0.0` |
 | `max-timeline-events` | Maximum recent timeline events included in the prompt. | `50` |
