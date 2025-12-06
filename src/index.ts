@@ -10,6 +10,11 @@ import chalk from 'chalk';
 
 chalk.level = 3;
 
+interface ActionSummary {
+  issueNumber: number;
+  operations: TriageOperation[];
+}
+
 const cfg = getConfig();
 const db = loadDatabase(cfg.dbPath);
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
@@ -20,6 +25,7 @@ async function run(): Promise<void> {
   const { targets, autoDiscover } = await listTargets();
   let triagesPerformed = 0;
   let consecutiveFailures = 0;
+  const actionSummaries: ActionSummary[] = [];
 
   console.log(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
   console.log(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
@@ -33,8 +39,13 @@ async function run(): Promise<void> {
 
     try {
       const issue = await gh.getIssue(n);
-      const triageUsed = await processIssue(issue, repoLabels, autoDiscover);
-      if (triageUsed) triagesPerformed++;
+      const { triageUsed, operations } = await processIssue(issue, repoLabels, autoDiscover);
+      if (triageUsed) {
+        triagesPerformed++;
+        if (operations.length > 0) {
+          actionSummaries.push({ issueNumber: issue.number, operations });
+        }
+      }
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
@@ -57,15 +68,59 @@ async function run(): Promise<void> {
 
     saveDatabase(db, cfg.dbPath, cfg.enabled);
   }
+
+  // Print summary if auto-discovery was enabled
+  if (autoDiscover && actionSummaries.length > 0) {
+    printActionSummary(actionSummaries);
+  }
 }
 
 run();
+
+function printActionSummary(actionSummaries: ActionSummary[]): void {
+  console.log('\n' + chalk.bold.cyan('📋 Summary of Actions Performed:'));
+  
+  for (const { issueNumber, operations } of actionSummaries) {
+    const actionDescriptions: string[] = [];
+    
+    for (const op of operations) {
+      const opData = op.toJSON();
+      switch (op.kind) {
+        case 'labels':
+          const parts: string[] = [];
+          if (opData.toAdd?.length > 0) {
+            parts.push(`+${opData.toAdd.join(', +')}`);
+          }
+          if (opData.toRemove?.length > 0) {
+            parts.push(`-${opData.toRemove.join(', -')}`);
+          }
+          if (parts.length > 0) {
+            actionDescriptions.push(`labels: ${parts.join(', ')}`);
+          }
+          break;
+        case 'comment':
+          actionDescriptions.push('comment');
+          break;
+        case 'title':
+          actionDescriptions.push('title change');
+          break;
+        case 'state':
+          actionDescriptions.push(`state: ${opData.state}`);
+          break;
+      }
+    }
+    
+    if (actionDescriptions.length > 0) {
+      console.log(`  ${chalk.yellow(`#${issueNumber}`)}: ${actionDescriptions.join(', ')}`);
+    }
+  }
+}
 
 async function processIssue(
   issue: Issue,
   repoLabels: Array<{ name: string; description?: string | null }>,
   autoDiscover: boolean
-): Promise<boolean> {
+): Promise<{ triageUsed: boolean; operations: TriageOperation[] }> {
   const dbEntry = getDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
@@ -101,7 +156,7 @@ async function processIssue(
       if (quickOps.length === 0) {
         console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
         updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title, quickThoughts);
-        return false;
+        return { triageUsed: false, operations: [] };
       }
     } else {
       console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
@@ -128,7 +183,7 @@ async function processIssue(
     }
 
     updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
-    return true;
+    return { triageUsed: true, operations: proOps };
   });
 }
 
