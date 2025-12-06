@@ -6,14 +6,10 @@ import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 import { buildAutoDiscoverQueue } from './autoDiscover';
+import { ActionSummary, formatActionSummary } from './summary';
 import chalk from 'chalk';
 
 chalk.level = 3;
-
-interface ActionSummary {
-  issueNumber: number;
-  operations: TriageOperation[];
-}
 
 const cfg = getConfig();
 const db = loadDatabase(cfg.dbPath);
@@ -80,39 +76,9 @@ run();
 function printActionSummary(actionSummaries: ActionSummary[]): void {
   console.log('\n' + chalk.bold.cyan('📋 Summary of Actions Performed:'));
   
-  for (const { issueNumber, operations } of actionSummaries) {
-    const actionDescriptions: string[] = [];
-    
-    for (const op of operations) {
-      const opData = op.toJSON();
-      switch (op.kind) {
-        case 'labels':
-          const parts: string[] = [];
-          if (opData.toAdd?.length > 0) {
-            parts.push(`+${opData.toAdd.join(', +')}`);
-          }
-          if (opData.toRemove?.length > 0) {
-            parts.push(`-${opData.toRemove.join(', -')}`);
-          }
-          if (parts.length > 0) {
-            actionDescriptions.push(`labels: ${parts.join(', ')}`);
-          }
-          break;
-        case 'comment':
-          actionDescriptions.push('comment');
-          break;
-        case 'title':
-          actionDescriptions.push('title change');
-          break;
-        case 'state':
-          actionDescriptions.push(`state: ${opData.state}`);
-          break;
-      }
-    }
-    
-    if (actionDescriptions.length > 0) {
-      console.log(`  ${chalk.yellow(`#${issueNumber}`)}: ${actionDescriptions.join(', ')}`);
-    }
+  const lines = formatActionSummary(actionSummaries);
+  for (const line of lines) {
+    console.log(`  ${chalk.yellow(line)}`);
   }
 }
 
