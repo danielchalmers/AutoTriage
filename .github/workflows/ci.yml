@@ -36,7 +36,7 @@ jobs:
           issue-numbers: "3 6"
           prompt-path: examples/AutoTriage.prompt
           enabled: false
-          model-pro: gemini-flash-latest
+          model-pro: gemini-flash-latest # use flash for pro model (as well as fast) due to rate limits
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
