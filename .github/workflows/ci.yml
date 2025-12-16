@@ -36,6 +36,7 @@ jobs:
           issue-numbers: "3 6"
           prompt-path: examples/AutoTriage.prompt
           enabled: false
+          model-pro: gemini-flash-latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
