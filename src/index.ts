@@ -66,8 +66,8 @@ async function run(): Promise<void> {
       saveDatabase(db, cfg.dbPath, cfg.enabled);
     }
   } finally {
-    // Print summary if auto-discovery was enabled
-    if (autoDiscover && actionSummaries.length > 0) {
+    // Print summary if auto-discovery was enabled or multiple issues were targeted
+    if (actionSummaries.length > 0 && (autoDiscover || targets.length > 1)) {
       printActionSummary(actionSummaries);
     }
   }
