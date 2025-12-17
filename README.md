@@ -49,6 +49,7 @@ jobs:
 | `max-timeline-events` | Maximum recent timeline events included in the prompt. | `50` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
+| `skip-unchanged` | Skip re-processing issues already in the database that haven't changed since the last run. | `"false"` |
 
 ## Example Workflows
 
