@@ -38,8 +38,15 @@ export class GeminiResponseError extends Error {
   }
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export class GeminiClient {
   private client: GoogleGenAI;
+  public totalInputTokens: number = 0;
+  public totalOutputTokens: number = 0;
 
   constructor(apiKey: string) {
     this.client = new GoogleGenAI({ apiKey });
@@ -49,7 +56,7 @@ export class GeminiClient {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string }> {
+  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string; usage?: TokenUsage }> {
     const jsonText = response.text;
     if (!jsonText) {
       throw new GeminiResponseError('Gemini responded with empty text');
@@ -69,7 +76,13 @@ export class GeminiClient {
         .replace(/(\r?\n\s*){2,}/g, '\n')
         .trim();
 
-      return { data, thoughts: collapsedThoughts };
+      // Extract token usage from response
+      const usage: TokenUsage | undefined = response.usageMetadata ? {
+        inputTokens: response.usageMetadata.promptTokenCount || 0,
+        outputTokens: response.usageMetadata.candidatesTokenCount || 0
+      } : undefined;
+
+      return { data, thoughts: collapsedThoughts, usage };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
@@ -79,7 +92,7 @@ export class GeminiClient {
     payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
-  ): Promise<{ data: T; thoughts: string }> {
+  ): Promise<{ data: T; thoughts: string; usage?: TokenUsage }> {
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;
@@ -87,7 +100,15 @@ export class GeminiClient {
     while (attempt < totalAttempts) {
       try {
         const response = await this.client.models.generateContent(payload);
-        return await this.parseJson<T>(response);
+        const result = await this.parseJson<T>(response);
+        
+        // Track token usage
+        if (result.usage) {
+          this.totalInputTokens += result.usage.inputTokens;
+          this.totalOutputTokens += result.usage.outputTokens;
+        }
+        
+        return result;
       } catch (err) {
         lastError = err;
       }

@@ -59,7 +59,17 @@ async function run(): Promise<void> {
   }
 }
 
-run();
+run()
+  .catch((err) => {
+    console.error('Fatal error:', err);
+    throw err;
+  })
+  .finally(() => {
+    // Log token usage summary
+    const inputK = (gemini.totalInputTokens / 1000).toFixed(0);
+    const outputK = (gemini.totalOutputTokens / 1000).toFixed(0);
+    console.log(`Tokens used: ${inputK}k input, ${outputK}k output.`);
+  });
 
 async function processIssue(
   issue: Issue,
