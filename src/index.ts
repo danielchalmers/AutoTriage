@@ -172,6 +172,6 @@ async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean
 
   // Fallback: auto-discover mode prioritizes new/updated work first, then cycles through the rest.
   const issues = await gh.listOpenIssues();
-  const orderedNumbers = buildAutoDiscoverQueue(issues, db);
+  const orderedNumbers = buildAutoDiscoverQueue(issues, db, cfg.skipUnchanged);
   return { targets: orderedNumbers, autoDiscover: true };
 }

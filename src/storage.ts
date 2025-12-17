@@ -149,4 +149,5 @@ export interface Config {
   maxTimelineEvents: number;
   maxTriages: number;
   additionalInstructions?: string;
+  skipUnchanged: boolean;
 }

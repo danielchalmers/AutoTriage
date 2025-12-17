@@ -58,6 +58,7 @@ export function getConfig(): Config {
   const issueNumber = singleIssue ? Number(singleIssue) : undefined;
   const issueNumbers = parseNumbers(multiIssues);
   const additionalInstructions = core.getInput('additional-instructions') || undefined;
+  const skipUnchanged = (core.getInput('skip-unchanged') || 'false').toLowerCase() === 'true';
 
   return {
     owner,
@@ -79,5 +80,6 @@ export function getConfig(): Config {
     maxTimelineEvents: Number.isFinite(maxTimelineEvents) ? maxTimelineEvents : 50,
     maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 20,
     ...(additionalInstructions ? { additionalInstructions } : {}),
+    skipUnchanged,
   } as Config;
 }

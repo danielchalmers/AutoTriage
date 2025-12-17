@@ -120,4 +120,68 @@ describe('buildAutoDiscoverQueue', () => {
     // Order: #2 (0) before #3 (timestamp)
     expect(buildAutoDiscoverQueue(issues, db)).toEqual([2, 3]);
   });
+
+  describe('skipUnchanged parameter', () => {
+    it('excludes unchanged issues when skipUnchanged is true', () => {
+      const db: TriageDb = {
+        '4': { lastTriaged: '2024-04-04T00:00:00Z' },
+        '3': { lastTriaged: '2024-04-03T00:00:00Z' },
+      };
+      const issues = [
+        makeIssue(5, '2024-04-05T00:00:00Z'), // Not in DB - prioritized
+        makeIssue(4, '2024-04-02T00:00:00Z'), // Unchanged - should be excluded
+        makeIssue(3, '2024-04-01T00:00:00Z'), // Unchanged - should be excluded
+      ];
+
+      // With skipUnchanged=true, only #5 (not in DB) should be included
+      expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([5]);
+    });
+
+    it('includes unchanged issues when skipUnchanged is false', () => {
+      const db: TriageDb = {
+        '4': { lastTriaged: '2024-04-04T00:00:00Z' },
+        '3': { lastTriaged: '2024-04-03T00:00:00Z' },
+      };
+      const issues = [
+        makeIssue(5, '2024-04-05T00:00:00Z'), // Not in DB - prioritized
+        makeIssue(4, '2024-04-02T00:00:00Z'), // Unchanged - included in secondary
+        makeIssue(3, '2024-04-01T00:00:00Z'), // Unchanged - included in secondary
+      ];
+
+      // With skipUnchanged=false (default), all should be included
+      expect(buildAutoDiscoverQueue(issues, db, false)).toEqual([5, 3, 4]);
+    });
+
+    it('includes updated issues even when skipUnchanged is true', () => {
+      const db: TriageDb = {
+        '5': { lastTriaged: '2024-04-01T00:00:00Z' },
+        '4': { lastTriaged: '2024-04-04T00:00:00Z' },
+        '3': { lastTriaged: '2024-04-03T00:00:00Z' },
+      };
+      const issues = [
+        makeIssue(6, '2024-04-06T00:00:00Z'), // Not in DB - prioritized
+        makeIssue(5, '2024-04-10T00:00:00Z'), // Updated after triage - prioritized
+        makeIssue(4, '2024-04-02T00:00:00Z'), // Unchanged - excluded
+        makeIssue(3, '2024-04-01T00:00:00Z'), // Unchanged - excluded
+      ];
+
+      // With skipUnchanged=true, only #6 (not in DB) and #5 (updated) should be included
+      expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([6, 5]);
+    });
+
+    it('behaves the same as false when skipUnchanged is not provided', () => {
+      const db: TriageDb = {
+        '4': { lastTriaged: '2024-04-04T00:00:00Z' },
+        '3': { lastTriaged: '2024-04-03T00:00:00Z' },
+      };
+      const issues = [
+        makeIssue(5, '2024-04-05T00:00:00Z'),
+        makeIssue(4, '2024-04-02T00:00:00Z'),
+        makeIssue(3, '2024-04-01T00:00:00Z'),
+      ];
+
+      // Default behavior (no skipUnchanged) should be same as skipUnchanged=false
+      expect(buildAutoDiscoverQueue(issues, db)).toEqual([5, 3, 4]);
+    });
+  });
 });
