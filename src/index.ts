@@ -26,48 +26,50 @@ async function run(): Promise<void> {
   console.log(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
   console.log(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
 
-  for (const n of targets) {
-    const remaining = cfg.maxTriages - triagesPerformed;
-    if (remaining <= 0) {
-      console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
-      break;
-    }
-
-    try {
-      const issue = await gh.getIssue(n);
-      const { triageUsed, operations } = await processIssue(issue, repoLabels, autoDiscover);
-      if (triageUsed) {
-        triagesPerformed++;
-        if (operations.length > 0) {
-          actionSummaries.push({ issueNumber: issue.number, operations });
-        }
+  try {
+    for (const n of targets) {
+      const remaining = cfg.maxTriages - triagesPerformed;
+      if (remaining <= 0) {
+        console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
+        break;
       }
-      consecutiveFailures = 0; // reset on success path
-    } catch (err) {
-      if (err instanceof GeminiResponseError) {
-        console.warn(`#${n}: ${err.message}`);
-        consecutiveFailures++;
-        if (consecutiveFailures >= 3) {
-          console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
-          break;
+
+      try {
+        const issue = await gh.getIssue(n);
+        const { triageUsed, operations } = await processIssue(issue, repoLabels, autoDiscover);
+        if (triageUsed) {
+          triagesPerformed++;
+          if (operations.length > 0) {
+            actionSummaries.push({ issueNumber: issue.number, operations });
+          }
         }
-        continue;
+        consecutiveFailures = 0; // reset on success path
+      } catch (err) {
+        if (err instanceof GeminiResponseError) {
+          console.warn(`#${n}: ${err.message}`);
+          consecutiveFailures++;
+          if (consecutiveFailures >= 3) {
+            console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
+            break;
+          }
+          continue;
+        }
+        // Re-throw non-Gemini errors to stop processing
+        throw err;
       }
-      // Re-throw non-Gemini errors to stop processing
-      throw err;
+
+      if (triagesPerformed >= cfg.maxTriages) {
+        console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
+        break;
+      }
+
+      saveDatabase(db, cfg.dbPath, cfg.enabled);
     }
-
-    if (triagesPerformed >= cfg.maxTriages) {
-      console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
-      break;
+  } finally {
+    // Print summary if auto-discovery was enabled
+    if (autoDiscover && actionSummaries.length > 0) {
+      printActionSummary(actionSummaries);
     }
-
-    saveDatabase(db, cfg.dbPath, cfg.enabled);
-  }
-
-  // Print summary if auto-discovery was enabled
-  if (autoDiscover && actionSummaries.length > 0) {
-    printActionSummary(actionSummaries);
   }
 }
 
