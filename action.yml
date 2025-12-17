@@ -50,6 +50,10 @@ inputs:
   additional-instructions:
     description: "Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt."
     required: false
+  skip-unchanged:
+    description: "Set to true to skip re-processing issues that are already in the database and haven't changed since the last run."
+    required: false
+    default: "false"
 
 runs:
   using: "node24"
