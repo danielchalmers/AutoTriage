@@ -49,7 +49,7 @@ export class GeminiClient {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string }> {
+  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string; usageMetadata: any }> {
     const jsonText = response.text;
     if (!jsonText) {
       throw new GeminiResponseError('Gemini responded with empty text');
@@ -69,7 +69,7 @@ export class GeminiClient {
         .replace(/(\r?\n\s*){2,}/g, '\n')
         .trim();
 
-      return { data, thoughts: collapsedThoughts };
+      return { data, thoughts: collapsedThoughts, usageMetadata: response.usageMetadata };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
@@ -79,7 +79,7 @@ export class GeminiClient {
     payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
-  ): Promise<{ data: T; thoughts: string }> {
+  ): Promise<{ data: T; thoughts: string; usageMetadata: any }> {
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;
