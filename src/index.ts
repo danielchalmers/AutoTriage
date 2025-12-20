@@ -103,7 +103,7 @@ async function processIssue(
       const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
         issue,
         cfg.modelFast,
-        cfg.modelTemperature,
+        cfg.modelFastTemperature,
         cfg.thinkingBudget,
         systemPrompt,
         userPrompt,
@@ -126,7 +126,7 @@ async function processIssue(
     const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
       issue,
       cfg.modelPro,
-      cfg.modelTemperature,
+      cfg.modelProTemperature,
       cfg.thinkingBudget,
       systemPrompt,
       userPrompt,

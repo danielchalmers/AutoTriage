@@ -45,7 +45,8 @@ jobs:
 | `db-path` | Persist per-item history between runs. | - |
 | `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | bundled fast model |
 | `model-pro` | Review model that double-checks uncertain plans. | bundled review model |
-| `model-temperature` | Sampling temperature (`0` deterministic -> `2` exploratory). | `0.0` |
+| `model-fast-temperature` | Sampling temperature for fast model (`0` deterministic -> `2` exploratory). | `0.0` |
+| `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3.0 recommends `1.0`. | `1.0` |
 | `max-timeline-events` | Maximum recent timeline events included in the prompt. | `50` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
