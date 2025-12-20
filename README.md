@@ -47,7 +47,7 @@ jobs:
 | `model-pro` | Review model that double-checks uncertain plans. | bundled review model |
 | `model-fast-temperature` | Sampling temperature for fast model (`0` deterministic -> `2` exploratory). | `0.0` |
 | `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3.0 recommends `1.0`. | `1.0` |
-| `max-timeline-events` | Maximum recent timeline events included in the prompt. | `50` |
+| `max-timeline-events` | Maximum recent timeline events included in the prompt. | `40` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
