@@ -52,9 +52,9 @@ export function getConfig(): Config {
   const modelFastTemperature = Number.isFinite(parsedFastTemperature) ? parsedFastTemperature : 0;
   const proTemperatureInput = core.getInput('model-pro-temperature');
   const parsedProTemperature = Number(
-    proTemperatureInput === undefined || proTemperatureInput === '' ? '1' : proTemperatureInput
+    proTemperatureInput === undefined || proTemperatureInput === '' ? '0' : proTemperatureInput
   );
-  const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 1;
+  const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 0;
   const thinkingBudget = -1;
   const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
   const maxTriages = Number(core.getInput('max-triages') || '20');
