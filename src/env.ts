@@ -56,7 +56,7 @@ export function getConfig(): Config {
   );
   const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 0;
   const thinkingBudget = -1;
-  const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
+  const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '40');
   const maxTriages = Number(core.getInput('max-triages') || '20');
   const maxFastRuns = Number(core.getInput('max-fast-runs') || '100');
   const singleIssue = core.getInput('issue-number');
@@ -84,7 +84,7 @@ export function getConfig(): Config {
     dbPath,
     modelFast,
     modelPro,
-    maxTimelineEvents: Number.isFinite(maxTimelineEvents) ? maxTimelineEvents : 50,
+    maxTimelineEvents: Number.isFinite(maxTimelineEvents) ? maxTimelineEvents : 40,
     maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 20,
     maxFastRuns: Number.isFinite(maxFastRuns) && maxFastRuns > 0 ? Math.floor(maxFastRuns) : 100,
     ...(additionalInstructions ? { additionalInstructions } : {}),
