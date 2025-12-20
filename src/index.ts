@@ -100,7 +100,6 @@ async function processIssue(
 
     // Pass 1: fast model (unless skip-fast-pass is enabled)
     if (!cfg.skipFastPass) {
-      fastRunUsed = true;
       const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
         issue,
         cfg.modelFast,
@@ -110,6 +109,8 @@ async function processIssue(
         userPrompt,
         repoLabels
       );
+      
+      fastRunUsed = true;
 
       // Fast pass produced no work: skip expensive pass.
       if (quickOps.length === 0) {
