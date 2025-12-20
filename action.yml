@@ -47,6 +47,10 @@ inputs:
     description: "Cap on how many targets can escalate to the review pass during this run."
     required: false
     default: "20"
+  max-fast-runs:
+    description: "Cap on how many targets can be analyzed with the fast model during this run."
+    required: false
+    default: "100"
   additional-instructions:
     description: "Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt."
     required: false

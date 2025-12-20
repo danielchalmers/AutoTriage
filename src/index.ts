@@ -19,22 +19,33 @@ async function run(): Promise<void> {
   const repoLabels = await gh.listRepoLabels();
   const { targets, autoDiscover } = await listTargets();
   let triagesPerformed = 0;
+  let fastRunsPerformed = 0;
   let consecutiveFailures = 0;
 
   console.log(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
   console.log(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
+  console.log(`⚡ Fast runs limited to ${cfg.maxFastRuns} item(s)`);
 
   for (const n of targets) {
-    const remaining = cfg.maxTriages - triagesPerformed;
-    if (remaining <= 0) {
+    const remainingTriages = cfg.maxTriages - triagesPerformed;
+    const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
+    
+    // Only check fast runs limit if we're not skipping the fast pass
+    if (!cfg.skipFastPass && remainingFastRuns <= 0) {
+      console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
+      break;
+    }
+    
+    if (remainingTriages <= 0) {
       console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
       break;
     }
 
     try {
       const issue = await gh.getIssue(n);
-      const triageUsed = await processIssue(issue, repoLabels, autoDiscover);
+      const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover);
       if (triageUsed) triagesPerformed++;
+      if (fastRunUsed) fastRunsPerformed++;
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
@@ -65,7 +76,7 @@ async function processIssue(
   issue: Issue,
   repoLabels: Array<{ name: string; description?: string | null }>,
   autoDiscover: boolean
-): Promise<boolean> {
+): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const dbEntry = getDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
 
@@ -85,6 +96,8 @@ async function processIssue(
     saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
     saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
+    let fastRunUsed = false;
+
     // Pass 1: fast model (unless skip-fast-pass is enabled)
     if (!cfg.skipFastPass) {
       const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
@@ -96,12 +109,14 @@ async function processIssue(
         userPrompt,
         repoLabels
       );
+      
+      fastRunUsed = true;
 
       // Fast pass produced no work: skip expensive pass.
       if (quickOps.length === 0) {
         console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
         updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title, quickThoughts);
-        return false;
+        return { triageUsed: false, fastRunUsed };
       }
     } else {
       console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
@@ -128,7 +143,7 @@ async function processIssue(
     }
 
     updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
-    return true;
+    return { triageUsed: true, fastRunUsed };
   });
 }
 
