@@ -30,7 +30,8 @@ async function run(): Promise<void> {
     const remainingTriages = cfg.maxTriages - triagesPerformed;
     const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
     
-    if (remainingFastRuns <= 0) {
+    // Only check fast runs limit if we're not skipping the fast pass
+    if (!cfg.skipFastPass && remainingFastRuns <= 0) {
       console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
       break;
     }
@@ -62,11 +63,6 @@ async function run(): Promise<void> {
 
     if (triagesPerformed >= cfg.maxTriages) {
       console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
-      break;
-    }
-    
-    if (fastRunsPerformed >= cfg.maxFastRuns) {
-      console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
       break;
     }
 
