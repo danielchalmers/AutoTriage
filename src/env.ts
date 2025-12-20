@@ -45,11 +45,16 @@ export function getConfig(): Config {
   const modelFast = modelFastInput || 'gemini-flash-latest';
   const skipFastPass = modelFastInput === '';
   const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
-  const temperatureInput = core.getInput('model-temperature');
-  const parsedTemperature = Number(
-    temperatureInput === undefined || temperatureInput === '' ? '0' : temperatureInput
+  const fastTemperatureInput = core.getInput('model-fast-temperature');
+  const parsedFastTemperature = Number(
+    fastTemperatureInput === undefined || fastTemperatureInput === '' ? '0' : fastTemperatureInput
   );
-  const modelTemperature = Number.isFinite(parsedTemperature) ? parsedTemperature : 0;
+  const modelFastTemperature = Number.isFinite(parsedFastTemperature) ? parsedFastTemperature : 0;
+  const proTemperatureInput = core.getInput('model-pro-temperature');
+  const parsedProTemperature = Number(
+    proTemperatureInput === undefined || proTemperatureInput === '' ? '1' : proTemperatureInput
+  );
+  const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 1;
   const thinkingBudget = -1;
   const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '50');
   const maxTriages = Number(core.getInput('max-triages') || '20');
@@ -66,7 +71,8 @@ export function getConfig(): Config {
     repo,
     token,
     geminiApiKey,
-    modelTemperature,
+    modelFastTemperature,
+    modelProTemperature,
     enabled,
     skipFastPass,
     thinkingBudget,

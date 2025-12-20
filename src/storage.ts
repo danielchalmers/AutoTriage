@@ -135,7 +135,8 @@ export interface Config {
   repo: string;
   token: string;
   geminiApiKey: string;
-  modelTemperature: number;
+  modelFastTemperature: number;
+  modelProTemperature: number;
   enabled: boolean;
   thinkingBudget: number;
   issueNumber?: number;
