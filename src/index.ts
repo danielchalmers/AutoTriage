@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
-import { AnalysisResult, buildPrompt, AnalysisResultSchema } from './analysis';
+import { AnalysisResult, buildPrompt, buildAnalysisResultSchema } from './analysis';
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -156,10 +156,11 @@ export async function generateAnalysis(
   userPrompt: string,
   repoLabels: Array<{ name: string; description?: string | null }>,
 ): Promise<{ data: AnalysisResult; thoughts: string, ops: TriageOperation[] }> {
+  const schema = buildAnalysisResultSchema(repoLabels);
   const payload = buildJsonPayload(
     systemPrompt,
     userPrompt,
-    AnalysisResultSchema,
+    schema,
     model,
     modelTemperature,
     thinkingBudget
