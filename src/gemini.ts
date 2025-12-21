@@ -50,16 +50,26 @@ export class GeminiClient {
   }
 
   private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string }> {
-    const jsonText = response.text;
-    if (!jsonText) {
-      throw new GeminiResponseError('Gemini responded with empty text');
+    // Manually extract text from parts to avoid warnings about non-text parts (e.g., thoughtSignature)
+    // when using Gemini 3.0 models with thinking enabled
+    const thoughts: string[] = [];
+    const textParts: string[] = [];
+    
+    for (const p of response.candidates?.[0]?.content?.parts ?? []) {
+      if (typeof p.text === 'string') {
+        if (p.thought) {
+          // This is a thought part - collect it separately
+          thoughts.push(p.text);
+        } else {
+          // This is a regular text part - use it for JSON parsing
+          textParts.push(p.text);
+        }
+      }
     }
 
-    const thoughts: string[] = [];
-    for (const p of response.candidates?.[0]?.content?.parts ?? []) {
-      if (p.thought && typeof p.text === 'string') {
-        thoughts.push(p.text);
-      }
+    const jsonText = textParts.join('');
+    if (!jsonText) {
+      throw new GeminiResponseError('Gemini responded with empty text');
     }
 
     try {
