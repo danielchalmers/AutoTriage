@@ -27,29 +27,25 @@ export const AnalysisResultSchema = {
  * preventing issues like "breaking change" being converted to "breaking_change".
  */
 export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
-  const labelNames = repoLabels.map(l => l.name);
-  
   // If no repository labels are available, fall back to unconstrained schema
-  if (labelNames.length === 0) {
+  if (repoLabels.length === 0) {
     return AnalysisResultSchema;
   }
   
+  const labelNames = repoLabels.map(l => l.name);
+  
   return {
-    type: 'OBJECT',
+    ...AnalysisResultSchema,
     properties: {
-      summary: { type: 'STRING' },
-      comment: { type: 'STRING' },
+      ...AnalysisResultSchema.properties,
       labels: { 
-        type: 'ARRAY', 
+        type: 'ARRAY' as const, 
         items: { 
-          type: 'STRING',
+          type: 'STRING' as const,
           enum: labelNames
         } 
       },
-      state: { type: 'STRING', enum: ['open', 'completed', 'not_planned'] },
-      newTitle: { type: 'STRING' },
     },
-    required: ['summary', 'labels'],
   };
 }
 
