@@ -115,7 +115,7 @@ This command performs the following steps:
    - Minifies the output
    - Generates source maps
    - Includes license information in `licenses.txt`
-4. **Copy Assets** (`npm run copy-assets`) - Copies `examples/AutoTriage.prompt` to dist
+4. **Copy Assets** (`npm run copy-assets`) - Copies `examples/AutoTriage.prompt` to dist as the bundled default prompt
 
 #### Important: Commit dist Changes
 
@@ -200,7 +200,8 @@ The action is defined in `action.yml` and runs from `dist/index.js`. Key points:
 - **Entry point**: `dist/index.js`
 - **Runtime**: Node.js 24 (specified in `action.yml`)
 - **Inputs**: Defined in `action.yml`
-- **Default prompt**: `.github/AutoTriage.prompt`
+- **Default prompt path**: `.github/AutoTriage.prompt` (where users place their custom prompt)
+- **Bundled prompt**: `examples/AutoTriage.prompt` (copied to dist during build as fallback)
 
 ## File Artifacts
 
