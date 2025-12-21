@@ -21,6 +21,34 @@ export const AnalysisResultSchema = {
   required: ['summary', 'labels'],
 } as const;
 
+/**
+ * Build a schema that constrains label values to actual repository labels.
+ * This ensures the AI returns labels in the exact format they exist in the repository,
+ * preventing issues like "breaking change" being converted to "breaking_change".
+ */
+export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
+  // If no repository labels are available, fall back to unconstrained schema
+  if (repoLabels.length === 0) {
+    return AnalysisResultSchema;
+  }
+  
+  const labelNames = repoLabels.map(l => l.name);
+  
+  return {
+    ...AnalysisResultSchema,
+    properties: {
+      ...AnalysisResultSchema.properties,
+      labels: { 
+        type: 'ARRAY' as const, 
+        items: { 
+          type: 'STRING' as const,
+          enum: labelNames
+        } 
+      },
+    },
+  };
+}
+
 export async function buildPrompt(
   issue: Issue,
   promptPath: string,
