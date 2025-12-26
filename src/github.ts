@@ -50,8 +50,18 @@ export type TimelineEvent = {
 
 export class GitHubClient {
   private octokit;
+  private apiCallCount = 0;
+  
   constructor(token: string, private owner: string, private repo: string) {
     this.octokit = github.getOctokit(token);
+  }
+
+  getApiCallCount(): number {
+    return this.apiCallCount;
+  }
+
+  private incrementApiCalls(): void {
+    this.apiCallCount++;
   }
 
   private buildMetadata(rawIssue: any): Issue {
@@ -78,11 +88,13 @@ export class GitHubClient {
   }
 
   async getIssue(issue_number: number): Promise<Issue> {
+    this.incrementApiCalls();
     const { data } = await this.octokit.rest.issues.get({ owner: this.owner, repo: this.repo, issue_number });
     return this.buildMetadata(data);
   }
 
   async listOpenIssues(): Promise<Issue[]> {
+    this.incrementApiCalls();
     const issues = await this.octokit.paginate(this.octokit.rest.issues.listForRepo, {
       owner: this.owner,
       repo: this.repo,
@@ -95,6 +107,7 @@ export class GitHubClient {
   }
 
   async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {
+    this.incrementApiCalls();
     const labels = await this.octokit.paginate(this.octokit.rest.issues.listLabelsForRepo, {
       owner: this.owner,
       repo: this.repo,
@@ -113,6 +126,7 @@ export class GitHubClient {
   }
 
   async listTimelineEvents(issue_number: number, limit: number): Promise<{ raw: any[]; filtered: TimelineEvent[] }> {
+    this.incrementApiCalls();
     const events = await this.octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
       owner: this.owner,
       repo: this.repo,
@@ -176,18 +190,22 @@ export class GitHubClient {
 
   async addLabels(issue_number: number, labels: string[]): Promise<void> {
     if (labels.length === 0) return;
+    this.incrementApiCalls();
     await this.octokit.rest.issues.addLabels({ owner: this.owner, repo: this.repo, issue_number, labels });
   }
 
   async removeLabel(issue_number: number, name: string): Promise<void> {
+    this.incrementApiCalls();
     await this.octokit.rest.issues.removeLabel({ owner: this.owner, repo: this.repo, issue_number, name });
   }
 
   async createComment(issue_number: number, body: string): Promise<void> {
+    this.incrementApiCalls();
     await this.octokit.rest.issues.createComment({ owner: this.owner, repo: this.repo, issue_number, body });
   }
 
   async updateTitle(issue_number: number, title: string): Promise<void> {
+    this.incrementApiCalls();
     await this.octokit.rest.issues.update({ owner: this.owner, repo: this.repo, issue_number, title });
   }
 
@@ -195,6 +213,7 @@ export class GitHubClient {
     issue_number: number,
     reason: 'completed' | 'not_planned' | 'reopened' | undefined = 'not_planned'
   ): Promise<void> {
+    this.incrementApiCalls();
     await this.octokit.rest.issues.update({
       owner: this.owner,
       repo: this.repo,
@@ -209,6 +228,7 @@ export class GitHubClient {
     state: 'open' | 'closed',
     reason?: 'completed' | 'not_planned'
   ): Promise<void> {
+    this.incrementApiCalls();
     await this.octokit.rest.issues.update({
       owner: this.owner,
       repo: this.repo,

@@ -7,6 +7,7 @@ export interface TriageOperation {
   kind: 'labels' | 'comment' | 'title' | 'state';
   toJSON(): any;
   perform(client: GitHubClient, cfg: Config, issue: any): Promise<void>;
+  getActionDetails(): string;
 }
 
 // Apply the delta between current and proposed label sets.
@@ -15,6 +16,12 @@ class UpdateLabelsOp implements TriageOperation {
   constructor(public toAdd: string[], public toRemove: string[], public merged: string[]) { }
   toJSON() {
     return { kind: this.kind, toAdd: this.toAdd, toRemove: this.toRemove, merged: this.merged };
+  }
+  getActionDetails(): string {
+    const parts: string[] = [];
+    if (this.toAdd.length) parts.push(...this.toAdd.map(l => `+${l}`));
+    if (this.toRemove.length) parts.push(...this.toRemove.map(l => `-${l}`));
+    return `labels: ${parts.join(', ')}`;
   }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.toAdd.length || this.toRemove.length) {
@@ -40,6 +47,9 @@ class CreateCommentOp implements TriageOperation {
   kind: 'comment' = 'comment';
   constructor(public body: string) { }
   toJSON() { return { kind: this.kind, body: this.body }; }
+  getActionDetails(): string {
+    return 'comment';
+  }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     const preview = this.body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
     console.log(chalk.cyan('💬 Comment:'));
@@ -53,6 +63,9 @@ class UpdateTitleOp implements TriageOperation {
   kind: 'title' = 'title';
   constructor(public newTitle: string) { }
   toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
+  getActionDetails(): string {
+    return 'title change';
+  }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     console.log(chalk.cyan('✏️ Title:'));
     console.log(chalk.red(`-"${issue.title}"`));
@@ -66,6 +79,9 @@ class UpdateStateOp implements TriageOperation {
   kind: 'state' = 'state';
   constructor(public state: 'open' | 'completed' | 'not_planned') { }
   toJSON() { return { kind: this.kind, state: this.state }; }
+  getActionDetails(): string {
+    return `state: ${this.state}`;
+  }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.state === 'open') {
       console.log(`${chalk.cyan('🔄 State')}: Reopening issue`);
