@@ -176,6 +176,8 @@ describe('RunStatistics', () => {
 
   describe('comprehensive scenario', () => {
     it('displays complete statistics for a typical run', () => {
+      stats.setRepository('danielchalmers', 'AutoTriage');
+      
       // Fast runs
       stats.trackFastRun({
         startTime: 0,

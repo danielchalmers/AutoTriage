@@ -21,6 +21,13 @@ export class RunStatistics {
   private skipped = 0;
   private failed = 0;
   private githubApiCalls = 0;
+  private owner = '';
+  private repo = '';
+
+  setRepository(owner: string, repo: string): void {
+    this.owner = owner;
+    this.repo = repo;
+  }
 
   trackFastRun(stats: ModelRunStats): void {
     this.fastRuns.push(stats);
@@ -154,7 +161,8 @@ export class RunStatistics {
       for (const issueNumber of sortedIssues) {
         const actions = byIssue.get(issueNumber)!;
         const parts = actions.map(a => a.details);
-        console.log(`  #${issueNumber}: ${parts.join(', ')}`);
+        const prefix = this.owner && this.repo ? `${this.owner}/${this.repo}#${issueNumber}` : `#${issueNumber}`;
+        console.log(`  ${prefix}: ${parts.join(', ')}`);
       }
     }
   }
