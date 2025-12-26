@@ -120,7 +120,8 @@ async function processIssue(
         cfg.thinkingBudget,
         systemPrompt,
         userPrompt,
-        repoLabels
+        repoLabels,
+        true // isFastModel
       );
       
       fastRunUsed = true;
@@ -143,7 +144,8 @@ async function processIssue(
       cfg.thinkingBudget,
       systemPrompt,
       userPrompt,
-      repoLabels
+      repoLabels,
+      false // isFastModel
     );
 
     if (proOps.length === 0) {
@@ -156,7 +158,7 @@ async function processIssue(
         stats.trackAction({
           issueNumber: issue.number,
           type: op.kind,
-          details: op.getActionDetails(issue.number),
+          details: op.getActionDetails(),
         });
       }
     }
@@ -174,6 +176,7 @@ export async function generateAnalysis(
   systemPrompt: string,
   userPrompt: string,
   repoLabels: Array<{ name: string; description?: string | null }>,
+  isFastModel: boolean = false,
 ): Promise<{ data: AnalysisResult; thoughts: string, ops: TriageOperation[] }> {
   const schema = buildAnalysisResultSchema(repoLabels);
   const payload = buildJsonPayload(
@@ -192,7 +195,7 @@ export async function generateAnalysis(
   
   // Track model run stats
   const modelRunStats = { startTime, endTime, inputTokens, outputTokens };
-  if (model.includes('flash') || model.includes('fast')) {
+  if (isFastModel) {
     stats.trackFastRun(modelRunStats);
   } else {
     stats.trackProRun(modelRunStats);

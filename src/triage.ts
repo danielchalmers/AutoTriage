@@ -7,7 +7,7 @@ export interface TriageOperation {
   kind: 'labels' | 'comment' | 'title' | 'state';
   toJSON(): any;
   perform(client: GitHubClient, cfg: Config, issue: any): Promise<void>;
-  getActionDetails(issueNumber: number): string;
+  getActionDetails(): string;
 }
 
 // Apply the delta between current and proposed label sets.
@@ -17,7 +17,7 @@ class UpdateLabelsOp implements TriageOperation {
   toJSON() {
     return { kind: this.kind, toAdd: this.toAdd, toRemove: this.toRemove, merged: this.merged };
   }
-  getActionDetails(issueNumber: number): string {
+  getActionDetails(): string {
     const parts: string[] = [];
     if (this.toAdd.length) parts.push(...this.toAdd.map(l => `+${l}`));
     if (this.toRemove.length) parts.push(...this.toRemove.map(l => `-${l}`));
@@ -47,7 +47,7 @@ class CreateCommentOp implements TriageOperation {
   kind: 'comment' = 'comment';
   constructor(public body: string) { }
   toJSON() { return { kind: this.kind, body: this.body }; }
-  getActionDetails(issueNumber: number): string {
+  getActionDetails(): string {
     return 'comment';
   }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
@@ -63,7 +63,7 @@ class UpdateTitleOp implements TriageOperation {
   kind: 'title' = 'title';
   constructor(public newTitle: string) { }
   toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
-  getActionDetails(issueNumber: number): string {
+  getActionDetails(): string {
     return 'title change';
   }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
@@ -79,7 +79,7 @@ class UpdateStateOp implements TriageOperation {
   kind: 'state' = 'state';
   constructor(public state: 'open' | 'completed' | 'not_planned') { }
   toJSON() { return { kind: this.kind, state: this.state }; }
-  getActionDetails(issueNumber: number): string {
+  getActionDetails(): string {
     return `state: ${this.state}`;
   }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
