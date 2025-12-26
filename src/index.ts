@@ -6,6 +6,7 @@ import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 import { buildAutoDiscoverQueue } from './autoDiscover';
+import { RunStatistics } from './stats';
 import chalk from 'chalk';
 
 chalk.level = 3;
@@ -14,6 +15,7 @@ const cfg = getConfig();
 const db = loadDatabase(cfg.dbPath);
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
 const gemini = new GeminiClient(cfg.geminiApiKey);
+const stats = new RunStatistics();
 
 async function run(): Promise<void> {
   const repoLabels = await gh.listRepoLabels();
@@ -44,12 +46,18 @@ async function run(): Promise<void> {
     try {
       const issue = await gh.getIssue(n);
       const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover);
-      if (triageUsed) triagesPerformed++;
+      if (triageUsed) {
+        triagesPerformed++;
+        stats.incrementTriaged();
+      } else {
+        stats.incrementSkipped();
+      }
       if (fastRunUsed) fastRunsPerformed++;
       consecutiveFailures = 0; // reset on success path
     } catch (err) {
       if (err instanceof GeminiResponseError) {
         console.warn(`#${n}: ${err.message}`);
+        stats.incrementFailed();
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {
           console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
@@ -68,6 +76,10 @@ async function run(): Promise<void> {
 
     saveDatabase(db, cfg.dbPath, cfg.enabled);
   }
+
+  // Print summary at the end
+  stats.incrementGithubApiCalls(gh.getApiCallCount());
+  stats.printSummary();
 }
 
 run();
@@ -139,6 +151,12 @@ async function processIssue(
       saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps.map(o => o.toJSON()), null, 2));
       for (const op of proOps) {
         await op.perform(gh, cfg, issue);
+        // Track action details
+        stats.trackAction({
+          issueNumber: issue.number,
+          type: op.kind,
+          details: op.getActionDetails(issue.number),
+        });
       }
     }
 
@@ -167,7 +185,18 @@ export async function generateAnalysis(
   );
 
   console.log(chalk.blue(`💭 Thinking with ${model}...`));
-  const { data, thoughts } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  const startTime = Date.now();
+  const { data, thoughts, inputTokens, outputTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  const endTime = Date.now();
+  
+  // Track model run stats
+  const modelRunStats = { startTime, endTime, inputTokens, outputTokens };
+  if (model.includes('flash') || model.includes('fast')) {
+    stats.trackFastRun(modelRunStats);
+  } else {
+    stats.trackProRun(modelRunStats);
+  }
+  
   console.log(chalk.magenta(thoughts));
   saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
   saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);

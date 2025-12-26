@@ -49,7 +49,7 @@ export class GeminiClient {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
   }
 
-  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string }> {
+  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string; inputTokens: number; outputTokens: number }> {
     // Manually extract text from parts to avoid warnings about non-text parts (e.g., thoughtSignature)
     // when using Gemini 3.0 models with thinking enabled
     const thoughts: string[] = [];
@@ -79,7 +79,11 @@ export class GeminiClient {
         .replace(/(\r?\n\s*){2,}/g, '\n')
         .trim();
 
-      return { data, thoughts: collapsedThoughts };
+      // Extract token usage from response metadata
+      const inputTokens = response.usageMetadata?.promptTokenCount ?? 0;
+      const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
+
+      return { data, thoughts: collapsedThoughts, inputTokens, outputTokens };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
@@ -89,7 +93,7 @@ export class GeminiClient {
     payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
-  ): Promise<{ data: T; thoughts: string }> {
+  ): Promise<{ data: T; thoughts: string; inputTokens: number; outputTokens: number }> {
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;
