@@ -37,8 +37,8 @@ jobs:
           prompt-path: examples/AutoTriage.prompt
           enabled: false
           model-fast: gemini-2.5-flash
-          model-pro: gemini-3-flash-preview
           model-fast-temperature: 0.0
+          model-pro: gemini-3-flash-preview
           model-pro-temperature: 1.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

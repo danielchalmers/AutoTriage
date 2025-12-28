@@ -40,7 +40,7 @@ inputs:
     required: false
     default: "0.0"
   model-pro-temperature:
-    description: "Sampling temperature for the pro model (0-2); Gemini 3.0 recommends 1.0 for optimal performance."
+    description: "Sampling temperature for the pro model (0-2); Gemini 3 recommends 1.0 for optimal performance."
     required: false
     default: "1.0"
   max-timeline-events:
