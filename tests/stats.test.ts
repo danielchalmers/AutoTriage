@@ -177,6 +177,7 @@ describe('RunStatistics', () => {
   describe('comprehensive scenario', () => {
     it('displays complete statistics for a typical run', () => {
       stats.setRepository('danielchalmers', 'AutoTriage');
+      stats.setModelNames('gemini-2.5-flash', 'gemini-3-flash-preview');
       
       // Fast runs
       stats.trackFastRun({
@@ -231,6 +232,26 @@ describe('RunStatistics', () => {
       stats.incrementSkipped();
 
       stats.incrementGithubApiCalls(199);
+
+      expect(() => stats.printSummary()).not.toThrow();
+    });
+
+    it('displays model names when set', () => {
+      stats.setModelNames('gemini-2.5-flash', 'gemini-3-flash-preview');
+      
+      stats.trackFastRun({
+        startTime: 0,
+        endTime: 1000,
+        inputTokens: 100,
+        outputTokens: 50,
+      });
+      
+      stats.trackProRun({
+        startTime: 0,
+        endTime: 2000,
+        inputTokens: 200,
+        outputTokens: 100,
+      });
 
       expect(() => stats.printSummary()).not.toThrow();
     });
