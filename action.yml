@@ -30,19 +30,19 @@ inputs:
   model-fast:
     description: "Identifier of the fast analysis model used for the first pass (default shown below). Leave blank to skip the fast pass."
     required: false
-    default: "gemini-flash-latest"
+    default: "gemini-2.5-flash"
   model-pro:
     description: "Identifier of the deeper review model used when the fast pass asks for confirmation."
     required: false
-    default: "gemini-2.5-pro"
+    default: "gemini-3-flash-preview"
   model-fast-temperature:
     description: "Sampling temperature for the fast model (0-2); lower keeps responses deterministic while higher explores alternatives."
     required: false
     default: "0.0"
   model-pro-temperature:
-    description: "Sampling temperature for the pro model (0-2); Gemini 3.0 recommends 1.0 for optimal performance."
+    description: "Sampling temperature for the pro model (0-2); Gemini 3 recommends 1.0 for optimal performance."
     required: false
-    default: "0.0"
+    default: "1.0"
   max-timeline-events:
     description: "Maximum number of recent timeline events injected into the prompt context."
     required: false

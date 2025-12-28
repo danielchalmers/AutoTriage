@@ -42,17 +42,17 @@ export function getConfig(): Config {
   const readmePath = core.getInput('readme-path') || 'README.md';
   const dbPath = core.getInput('db-path');
   const modelFastInput = core.getInput('model-fast');
-  const modelFast = modelFastInput || 'gemini-flash-latest';
+  const modelFast = modelFastInput || 'gemini-2.5-flash';
   const skipFastPass = modelFastInput === '';
-  const modelPro = core.getInput('model-pro') || 'gemini-2.5-pro';
+  const modelPro = core.getInput('model-pro') || 'gemini-3-flash-preview';
   const fastTemperatureInput = core.getInput('model-fast-temperature');
   const parsedFastTemperature = Number(
-    fastTemperatureInput === undefined || fastTemperatureInput === '' ? '0' : fastTemperatureInput
+    fastTemperatureInput === undefined || fastTemperatureInput === '' ? '0.0' : fastTemperatureInput
   );
   const modelFastTemperature = Number.isFinite(parsedFastTemperature) ? parsedFastTemperature : 0;
   const proTemperatureInput = core.getInput('model-pro-temperature');
   const parsedProTemperature = Number(
-    proTemperatureInput === undefined || proTemperatureInput === '' ? '0' : proTemperatureInput
+    proTemperatureInput === undefined || proTemperatureInput === '' ? '1.0' : proTemperatureInput
   );
   const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 0;
   const thinkingBudget = -1;

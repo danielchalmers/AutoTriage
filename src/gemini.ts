@@ -51,7 +51,7 @@ export class GeminiClient {
 
   private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string; inputTokens: number; outputTokens: number }> {
     // Manually extract text from parts to avoid warnings about non-text parts (e.g., thoughtSignature)
-    // when using Gemini 3.0 models with thinking enabled
+    // when using Gemini 3 models with thinking enabled
     const thoughts: string[] = [];
     const textParts: string[] = [];
     

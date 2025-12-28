@@ -5,7 +5,8 @@ Keep issues and pull requests moving: reads the latest context, drafts the next 
 ## How it works
 
 - The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
-- A reviewing AI pass (default: `gemini-2.5-pro`) replays the plan and confirms labels, comments, etc, before anything is written.
+- A reviewing AI pass (default: `gemini-3-flash-preview`) replays the plan and confirms labels, comments, etc, before anything is written.
+- Defaults use the free-tier models (`gemini-2.5-flash` + `gemini-3-flash-preview`) rather than `gemini-3-pro`.
 - The full thought process along with all actions can be inspected in the workflow artifacts.
 - It will keep going until it runs out of issues or tokens, or reaches the specified limit.
 
@@ -43,10 +44,10 @@ jobs:
 | `readme-path` | Extra Markdown context uploaded to the AI prompt. | `README.md` |
 | `enabled` | `"true"` applies changes, `"false"` logs the plan only. | `"true"` |
 | `db-path` | Persist per-item history between runs. | - |
-| `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | bundled fast model |
-| `model-pro` | Review model that double-checks uncertain plans. | bundled review model |
+| `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-2.5-flash` |
+| `model-pro` | Review model that double-checks uncertain plans. | `gemini-3-flash-preview` |
 | `model-fast-temperature` | Sampling temperature for fast model (`0` deterministic -> `2` exploratory). | `0.0` |
-| `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3.0 recommends `1.0`. | `1.0` |
+| `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3 recommends `1.0`. | `1.0` |
 | `max-timeline-events` | Maximum recent timeline events included in the prompt. | `40` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
