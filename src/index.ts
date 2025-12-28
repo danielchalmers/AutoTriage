@@ -17,6 +17,7 @@ const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
 const gemini = new GeminiClient(cfg.geminiApiKey);
 const stats = new RunStatistics();
 stats.setRepository(cfg.owner, cfg.repo);
+stats.setModelNames(cfg.modelFast, cfg.modelPro);
 
 async function run(): Promise<void> {
   const repoLabels = await gh.listRepoLabels();

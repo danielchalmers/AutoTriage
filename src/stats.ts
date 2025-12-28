@@ -23,10 +23,17 @@ export class RunStatistics {
   private githubApiCalls = 0;
   private owner = '';
   private repo = '';
+  private modelFast = '';
+  private modelPro = '';
 
   setRepository(owner: string, repo: string): void {
     this.owner = owner;
     this.repo = repo;
+  }
+
+  setModelNames(modelFast: string, modelPro: string): void {
+    this.modelFast = modelFast;
+    this.modelPro = modelPro;
   }
 
   trackFastRun(stats: ModelRunStats): void {
@@ -97,10 +104,16 @@ export class RunStatistics {
   printSummary(): void {
     console.log('\n' + chalk.bold('📊 Run Statistics:'));
 
+    // GitHub API calls
+    if (this.githubApiCalls > 0) {
+      console.log(`  GitHub API calls: ${this.githubApiCalls}`);
+    }
+
     // Fast model stats
     if (this.fastRuns.length > 0) {
       const stats = this.calculateStats(this.fastRuns);
-      console.log(chalk.cyan('  Fast'));
+      const modelLabel = this.modelFast ? ` (${this.modelFast})` : '';
+      console.log(chalk.cyan(`  Fast${modelLabel}`));
       console.log(
         `    Total: ${this.formatDuration(stats.total)} • ` +
         `Avg: ${this.formatDuration(stats.avg)} • ` +
@@ -115,7 +128,8 @@ export class RunStatistics {
     // Pro model stats
     if (this.proRuns.length > 0) {
       const stats = this.calculateStats(this.proRuns);
-      console.log(chalk.cyan('  Pro'));
+      const modelLabel = this.modelPro ? ` (${this.modelPro})` : '';
+      console.log(chalk.cyan(`  Pro${modelLabel}`));
       console.log(
         `    Total: ${this.formatDuration(stats.total)} • ` +
         `Avg: ${this.formatDuration(stats.avg)} • ` +
@@ -134,17 +148,12 @@ export class RunStatistics {
     if (this.failed > 0) actionParts.push(`❌ ${this.failed} failed`);
     
     if (actionParts.length > 0) {
-      console.log(`  Actions performed: ${actionParts.join(', ')}`);
-    }
-
-    // GitHub API calls
-    if (this.githubApiCalls > 0) {
-      console.log(`  GitHub API calls: ${this.githubApiCalls}`);
+      console.log(`  Total: ${actionParts.join(' ')}`);
     }
 
     // Detailed actions list
     if (this.actionsPerformed.length > 0) {
-      console.log('\n' + chalk.bold('📋 Summary of Actions Performed:'));
+      console.log('\n' + chalk.bold('🎬 Actions Performed:'));
       
       // Group actions by issue number
       const byIssue = new Map<number, ActionDetail[]>();
@@ -161,8 +170,7 @@ export class RunStatistics {
       for (const issueNumber of sortedIssues) {
         const actions = byIssue.get(issueNumber)!;
         const parts = actions.map(a => a.details);
-        const prefix = this.owner && this.repo ? `${this.owner}/${this.repo}#${issueNumber}` : `#${issueNumber}`;
-        console.log(`  ${prefix}: ${parts.join(', ')}`);
+        console.log(`  #${issueNumber}: ${parts.join(', ')}`);
       }
     }
   }
