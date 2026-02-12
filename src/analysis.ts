@@ -133,15 +133,9 @@ Current date/time (UTC ISO 8601): ${new Date().toISOString()}
 === SECTION: REPOSITORY LABELS (JSON) ===
 ${JSON.stringify(repoLabels, null, 2)}
 `;
-  const changedFilesBlock = issue.changed_files
-    ? `
-=== SECTION: CHANGED FILES (JSON) ===
-${JSON.stringify(issue.changed_files, null, 2)}
-`
-    : '';
   const userPrompt = `
 === SECTION: ISSUE METADATA (JSON) ===
-${JSON.stringify(issue, null, 2)}${changedFilesBlock}
+${JSON.stringify(issue, null, 2)}
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(timelineEvents, null, 2)}
 

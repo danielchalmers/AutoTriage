@@ -42,7 +42,7 @@ describe('changed files metadata', () => {
         undefined
       )
 
-      expect(userPrompt).toContain('=== SECTION: CHANGED FILES (JSON) ===')
+      expect(userPrompt).toContain('"changed_files"')
       expect(userPrompt).toContain('"src/index.ts"')
       expect(userPrompt).toContain('"src/github.ts"')
     } finally {
