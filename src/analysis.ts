@@ -143,6 +143,7 @@ ${JSON.stringify(changedFiles, null, 2)}`
 === SECTION: ISSUE METADATA (JSON) ===
 ${JSON.stringify(issue, null, 2)}
 ${changedFilesBlock}
+
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(timelineEvents, null, 2)}
 
