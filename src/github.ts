@@ -189,12 +189,12 @@ export class GitHubClient {
     };
   }
 
-  async listPullRequestFiles(pull_number: number): Promise<string[]> {
+  async listPullRequestFiles(pullNumber: number): Promise<string[]> {
     this.incrementApiCalls();
     const files = await this.octokit.paginate(this.octokit.rest.pulls.listFiles, {
       owner: this.owner,
       repo: this.repo,
-      pull_number,
+      pull_number: pullNumber,
       per_page: 100,
     }) as Array<{ filename: string }>;
     return files.map(file => file.filename);
