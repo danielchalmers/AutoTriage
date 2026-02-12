@@ -137,7 +137,8 @@ ${JSON.stringify(repoLabels, null, 2)}
   const changedFilesBlock = changedFiles
     ? `
 === SECTION: CHANGED FILES (JSON) ===
-${JSON.stringify(changedFiles, null, 2)}`
+${JSON.stringify(changedFiles, null, 2)}
+`
     : '';
   const userPrompt = `
 === SECTION: ISSUE METADATA (JSON) ===
