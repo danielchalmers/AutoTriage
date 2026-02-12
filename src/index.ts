@@ -93,10 +93,8 @@ async function processIssue(
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const dbEntry = getDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
-  let changedFiles: string[] | undefined;
   if (issue.type === 'pull request') {
-    changedFiles = await gh.listPullRequestFiles(issue.number);
-    issue.changed_files = changedFiles;
+    issue.changed_files = await gh.listPullRequestFiles(issue.number);
   }
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
@@ -107,7 +105,6 @@ async function processIssue(
       cfg.promptPath,
       cfg.readmePath,
       timelineEvents,
-      changedFiles,
       repoLabels,
       dbEntry.thoughts || '',
       cfg.additionalInstructions

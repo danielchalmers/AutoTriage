@@ -7,6 +7,7 @@ import * as path from 'path'
 
 describe('changed files metadata', () => {
   it('includes changed filenames for pull requests', async () => {
+    const changedFiles = ['src/index.ts', 'src/github.ts']
     const mockIssue: Issue = {
       title: 'Test PR',
       state: 'open',
@@ -22,10 +23,10 @@ describe('changed files metadata', () => {
       labels: [],
       assignees: [],
       body: 'Test pull request',
+      changed_files: changedFiles,
     }
     const mockTimelineEvents: TimelineEvent[] = []
     const mockRepoLabels: Array<{ name: string; description?: string | null }> = []
-    const changedFiles = ['src/index.ts', 'src/github.ts']
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-'))
     const customPromptPath = path.join(tempDir, 'test-changed-files-prompt.txt')
     fs.writeFileSync(customPromptPath, 'Base prompt content')
@@ -36,7 +37,6 @@ describe('changed files metadata', () => {
         customPromptPath,
         '',
         mockTimelineEvents,
-        changedFiles,
         mockRepoLabels,
         '',
         undefined

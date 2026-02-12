@@ -54,7 +54,6 @@ export async function buildPrompt(
   promptPath: string,
   readmePath: string,
   timelineEvents: TimelineEvent[],
-  changedFiles: string[] | undefined,
   repoLabels: Array<{ name: string; description?: string | null; }>,
   lastThoughts: string,
   additionalInstructions?: string,
@@ -134,10 +133,10 @@ Current date/time (UTC ISO 8601): ${new Date().toISOString()}
 === SECTION: REPOSITORY LABELS (JSON) ===
 ${JSON.stringify(repoLabels, null, 2)}
 `;
-  const changedFilesBlock = changedFiles
+  const changedFilesBlock = issue.changed_files
     ? `
 === SECTION: CHANGED FILES (JSON) ===
-${JSON.stringify(changedFiles, null, 2)}
+${JSON.stringify(issue.changed_files, null, 2)}
 `
     : '';
   const userPrompt = `

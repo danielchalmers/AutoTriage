@@ -41,7 +41,6 @@ describe('additional instructions', () => {
         customPromptPath,
         '',
         mockTimelineEvents,
-        undefined,
         mockRepoLabels,
         '',
         additionalInstructions
@@ -76,7 +75,6 @@ describe('additional instructions', () => {
         customPromptPath,
         '',
         mockTimelineEvents,
-        undefined,
         mockRepoLabels,
         '',
         undefined
@@ -99,7 +97,6 @@ describe('additional instructions', () => {
         customPromptPath,
         '',
         mockTimelineEvents,
-        undefined,
         mockRepoLabels,
         '',
         ''
