@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { buildPrompt } from '../src/analysis'
 import type { Issue, TimelineEvent } from '../src/github'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 
 describe('changed files metadata', () => {
@@ -25,7 +26,8 @@ describe('changed files metadata', () => {
     const mockTimelineEvents: TimelineEvent[] = []
     const mockRepoLabels: Array<{ name: string; description?: string | null }> = []
     const changedFiles = ['src/index.ts', 'src/github.ts']
-    const customPromptPath = path.join(__dirname, `test-changed-files-prompt-${Date.now()}.txt`)
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-'))
+    const customPromptPath = path.join(tempDir, 'test-changed-files-prompt.txt')
     fs.writeFileSync(customPromptPath, 'Base prompt content')
 
     try {
@@ -44,7 +46,7 @@ describe('changed files metadata', () => {
       expect(userPrompt).toContain('"src/index.ts"')
       expect(userPrompt).toContain('"src/github.ts"')
     } finally {
-      fs.unlinkSync(customPromptPath)
+      fs.rmSync(tempDir, { recursive: true, force: true })
     }
   })
 })
