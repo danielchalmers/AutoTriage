@@ -196,10 +196,8 @@ export class GitHubClient {
       repo: this.repo,
       pull_number,
       per_page: 100,
-    }) as Array<{ filename?: string }>;
-    return files
-      .map(file => (typeof file.filename === 'string' ? file.filename : null))
-      .filter((filename): filename is string => !!filename);
+    }) as Array<{ filename: string }>;
+    return files.map(file => file.filename);
   }
 
   async addLabels(issue_number: number, labels: string[]): Promise<void> {
