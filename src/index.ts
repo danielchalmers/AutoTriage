@@ -93,6 +93,9 @@ async function processIssue(
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const dbEntry = getDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
+  if (issue.type === 'pull request') {
+    issue.changed_files = await gh.listPullRequestFiles(issue.number);
+  }
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));

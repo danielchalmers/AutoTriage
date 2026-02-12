@@ -19,6 +19,7 @@ export type Issue = {
   labels: string[];
   assignees: string[];
   body?: string | null;
+  changed_files?: string[];
 };
 
 export type TimelineEvent = {
@@ -186,6 +187,22 @@ export class GitHubClient {
       raw: events,
       filtered: mapped.filter((ev): ev is TimelineEvent => ev !== null).slice(-limit),
     };
+  }
+
+  async listPullRequestFiles(pullNumber: number): Promise<string[]> {
+    this.incrementApiCalls();
+    try {
+      const files = await this.octokit.paginate(this.octokit.rest.pulls.listFiles, {
+        owner: this.owner,
+        repo: this.repo,
+        pull_number: pullNumber,
+        per_page: 100,
+      }) as Array<{ filename: string }>;
+      return files.map(file => file.filename);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to list files for pull request #${pullNumber}: ${message}`);
+    }
   }
 
   async addLabels(issue_number: number, labels: string[]): Promise<void> {
