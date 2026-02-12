@@ -191,13 +191,18 @@ export class GitHubClient {
 
   async listPullRequestFiles(pullNumber: number): Promise<string[]> {
     this.incrementApiCalls();
-    const files = await this.octokit.paginate(this.octokit.rest.pulls.listFiles, {
-      owner: this.owner,
-      repo: this.repo,
-      pull_number: pullNumber,
-      per_page: 100,
-    }) as Array<{ filename: string }>;
-    return files.map(file => file.filename);
+    try {
+      const files = await this.octokit.paginate(this.octokit.rest.pulls.listFiles, {
+        owner: this.owner,
+        repo: this.repo,
+        pull_number: pullNumber,
+        per_page: 100,
+      }) as Array<{ filename: string }>;
+      return files.map(file => file.filename);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to list files for pull request #${pullNumber}: ${message}`);
+    }
   }
 
   async addLabels(issue_number: number, labels: string[]): Promise<void> {
