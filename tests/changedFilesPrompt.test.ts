@@ -25,7 +25,7 @@ describe('changed files metadata', () => {
     const mockTimelineEvents: TimelineEvent[] = []
     const mockRepoLabels: Array<{ name: string; description?: string | null }> = []
     const changedFiles = ['src/index.ts', 'src/github.ts']
-    const customPromptPath = path.join(__dirname, 'test-changed-files-prompt.txt')
+    const customPromptPath = path.join(__dirname, `test-changed-files-prompt-${Date.now()}.txt`)
     fs.writeFileSync(customPromptPath, 'Base prompt content')
 
     try {
