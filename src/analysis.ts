@@ -136,6 +136,7 @@ ${JSON.stringify(repoLabels, null, 2)}
   const userPrompt = `
 === SECTION: ISSUE METADATA (JSON) ===
 ${JSON.stringify(issue, null, 2)}
+
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(timelineEvents, null, 2)}
 
