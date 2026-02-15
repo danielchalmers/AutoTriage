@@ -33,7 +33,7 @@ jobs:
       - name: Mock triage
         uses: ./
         with:
-          issue-numbers: ${{ github.event.pull_request.number != '' && format('{0} 3 6', github.event.pull_request.number) || '3 6' }}
+          issue-numbers: ${{ github.event.pull_request.number != null && format('{0} 3 6', github.event.pull_request.number) || '3 6' }}
           prompt-path: examples/AutoTriage.prompt
           enabled: false
           model-fast: gemini-2.5-flash
