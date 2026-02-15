@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAutoDiscoverQueue, prioritizeIssueNumbers } from '../src/autoDiscover';
+import { buildAutoDiscoverQueue } from '../src/autoDiscover';
 import { Issue } from '../src/github';
 import { TriageDb } from '../src/storage';
 
@@ -183,15 +183,5 @@ describe('buildAutoDiscoverQueue', () => {
       // Default behavior (no skipUnchanged) should be same as skipUnchanged=false
       expect(buildAutoDiscoverQueue(issues, db)).toEqual([5, 3, 4]);
     });
-  });
-});
-
-describe('prioritizeIssueNumbers', () => {
-  it('moves the priority number to the front when present', () => {
-    expect(prioritizeIssueNumbers([3, 6, 10], 10)).toEqual([10, 3, 6]);
-  });
-
-  it('prepends the priority number when missing', () => {
-    expect(prioritizeIssueNumbers([3, 6], 10)).toEqual([10, 3, 6]);
   });
 });

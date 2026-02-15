@@ -33,15 +33,6 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchan
   return prioritized.concat(secondary.map(item => item.number));
 }
 
-/**
- * Moves the priority issue number to the front of the list, inserting it if missing.
- */
-export function prioritizeIssueNumbers(issueNumbers: number[], priorityNumber?: number): number[] {
-  if (priorityNumber === undefined) return issueNumbers;
-  const remaining = issueNumbers.filter(n => n !== priorityNumber);
-  return [priorityNumber, ...remaining];
-}
-
 function getLastUpdatedMs(issue: Issue): number {
   return safeParseDate(issue.updated_at) || safeParseDate(issue.created_at);
 }
