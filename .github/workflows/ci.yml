@@ -30,10 +30,15 @@ jobs:
         run: |
           git status --porcelain
           git diff --exit-code --name-only
+      - name: Set mock triage targets
+        id: mock-triage-targets
+        run: echo "issue_numbers=${ISSUE_NUMBERS}" >> "$GITHUB_OUTPUT"
+        env:
+          ISSUE_NUMBERS: ${{ github.event_name == 'pull_request' && format('{0} 3 6', github.event.pull_request.number) || '3 6' }}
       - name: Mock triage
         uses: ./
         with:
-          issue-numbers: ${{ github.event_name == 'pull_request' && format('{0} 3 6', github.event.pull_request.number) || '3 6' }}
+          issue-numbers: ${{ steps.mock-triage-targets.outputs.issue_numbers }}
           prompt-path: examples/AutoTriage.prompt
           enabled: false
           model-fast: gemini-2.5-flash
