@@ -19,6 +19,7 @@ export type Issue = {
   labels: string[];
   assignees: string[];
   body?: string | null;
+  changed_files?: string[];
 };
 
 export type TimelineEvent = {
@@ -90,7 +91,22 @@ export class GitHubClient {
   async getIssue(issue_number: number): Promise<Issue> {
     this.incrementApiCalls();
     const { data } = await this.octokit.rest.issues.get({ owner: this.owner, repo: this.repo, issue_number });
-    return this.buildMetadata(data);
+    const metadata = this.buildMetadata(data);
+
+    if (data.pull_request) {
+      this.incrementApiCalls();
+      const files = await this.octokit.paginate(this.octokit.rest.pulls.listFiles, {
+        owner: this.owner,
+        repo: this.repo,
+        pull_number: issue_number,
+        per_page: 100,
+      });
+      metadata.changed_files = (files as any[])
+        .map((file: any) => file?.filename)
+        .filter((filename: unknown): filename is string => typeof filename === 'string');
+    }
+
+    return metadata;
   }
 
   async listOpenIssues(): Promise<Issue[]> {
