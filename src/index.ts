@@ -5,7 +5,7 @@ import { AnalysisResult, buildPrompt, buildAnalysisResultSchema } from './analys
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
-import { buildAutoDiscoverQueue } from './autoDiscover';
+import { buildAutoDiscoverQueue, prioritizeIssueNumbers } from './autoDiscover';
 import { RunStatistics } from './stats';
 import chalk from 'chalk';
 
@@ -213,12 +213,19 @@ export async function generateAnalysis(
 
 async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean }> {
   const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
-  if (fromInput.length > 0) return { targets: fromInput, autoDiscover: false };
+  const payload: any = (await import('@actions/github')).context.payload;
+  const payloadNumber = payload?.issue?.number ?? payload?.pull_request?.number;
+  const payloadTarget = Number(payloadNumber);
+  const hasPayloadTarget = Number.isFinite(payloadTarget);
+  if (fromInput.length > 0) {
+    if (cfg.issueNumbers && hasPayloadTarget) {
+      return { targets: prioritizeIssueNumbers(fromInput, payloadTarget), autoDiscover: false };
+    }
+    return { targets: fromInput, autoDiscover: false };
+  }
 
   // Event payload single target (issue or PR) takes priority over fallback listing.
-  const payload: any = (await import('@actions/github')).context.payload;
-  const num = payload?.issue?.number || payload?.pull_request?.number;
-  if (num) return { targets: [Number(num)], autoDiscover: false };
+  if (hasPayloadTarget) return { targets: [payloadTarget], autoDiscover: false };
 
   // Fallback: auto-discover mode prioritizes new/updated work first, then cycles through the rest.
   const issues = await gh.listOpenIssues();
