@@ -211,12 +211,17 @@ export async function generateAnalysis(
   return { data, thoughts, ops };
 }
 
-async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean }> {
-  const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
+async function getPayloadTarget(): Promise<number | undefined> {
   const payload: any = (await import('@actions/github')).context.payload;
   const payloadNumber = payload?.issue?.number ?? payload?.pull_request?.number;
   const payloadTarget = Number(payloadNumber);
-  const hasPayloadTarget = Number.isFinite(payloadTarget);
+  return Number.isFinite(payloadTarget) ? payloadTarget : undefined;
+}
+
+async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean }> {
+  const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
+  const payloadTarget = await getPayloadTarget();
+  const hasPayloadTarget = payloadTarget !== undefined;
   if (fromInput.length > 0) {
     if (cfg.issueNumbers && hasPayloadTarget) {
       return { targets: prioritizeIssueNumbers(fromInput, payloadTarget), autoDiscover: false };
