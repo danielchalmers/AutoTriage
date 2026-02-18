@@ -178,7 +178,7 @@ describe('RunStatistics', () => {
   describe('comprehensive scenario', () => {
     it('displays complete statistics for a typical run', () => {
       stats.setRepository('danielchalmers', 'AutoTriage');
-      stats.setModelNames('gemini-2.5-flash', 'gemini-3-flash-preview');
+      stats.setModelNames('gemini-2.5-flash-lite', 'gemini-3-flash-preview');
       
       // Fast runs
       stats.trackFastRun({
@@ -238,7 +238,7 @@ describe('RunStatistics', () => {
     });
 
     it('displays model names when set', () => {
-      stats.setModelNames('gemini-2.5-flash', 'gemini-3-flash-preview');
+      stats.setModelNames('gemini-2.5-flash-lite', 'gemini-3-flash-preview');
       
       stats.trackFastRun({
         startTime: 0,
