@@ -153,4 +153,5 @@ export interface Config {
   additionalInstructions?: string;
   contextCaching: boolean;
   skipUnchanged: boolean;
+  strictMode: boolean;
 }

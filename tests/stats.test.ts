@@ -134,6 +134,7 @@ describe('RunStatistics', () => {
 
     it('tracks failed count', () => {
       stats.incrementFailed();
+      expect(stats.getFailed()).toBe(1);
 
       expect(() => stats.printSummary()).not.toThrow();
     });

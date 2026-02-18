@@ -66,6 +66,7 @@ export function getConfig(): Config {
   const additionalInstructions = core.getInput('additional-instructions') || undefined;
   const contextCaching = (core.getInput('context-caching') || 'false').toLowerCase() === 'true';
   const skipUnchanged = (core.getInput('skip-unchanged') || 'false').toLowerCase() === 'true';
+  const strictMode = (core.getInput('strict-mode') || 'false').toLowerCase() === 'true';
 
   return {
     owner,
@@ -91,5 +92,6 @@ export function getConfig(): Config {
     ...(additionalInstructions ? { additionalInstructions } : {}),
     contextCaching,
     skipUnchanged,
+    strictMode,
   } as Config;
 }
