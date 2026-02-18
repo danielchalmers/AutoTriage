@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
-import { AnalysisResult, buildPrompt, buildAnalysisResultSchema } from './analysis';
+import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema } from './analysis';
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -30,53 +30,86 @@ async function run(): Promise<void> {
   console.log(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
   console.log(`⚡ Fast runs limited to ${cfg.maxFastRuns} item(s)`);
 
-  for (const n of targets) {
-    const remainingTriages = cfg.maxTriages - triagesPerformed;
-    const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
-    
-    // Only check fast runs limit if we're not skipping the fast pass
-    if (!cfg.skipFastPass && remainingFastRuns <= 0) {
-      console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
-      break;
-    }
-    
-    if (remainingTriages <= 0) {
-      console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
-      break;
-    }
+  // Build the static system prompt once for all issues
+  const systemPrompt = buildSystemPrompt(
+    cfg.promptPath,
+    cfg.readmePath,
+    repoLabels,
+    cfg.additionalInstructions
+  );
+  saveArtifact(0, 'prompt-system.md', systemPrompt);
 
+  // Create context caches for models that will be used
+  const cacheNames: Map<string, string> = new Map();
+  const modelsToCache = new Set<string>();
+  if (!cfg.skipFastPass) modelsToCache.add(cfg.modelFast);
+  modelsToCache.add(cfg.modelPro);
+
+  for (const model of modelsToCache) {
     try {
-      const issue = await gh.getIssue(n);
-      const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover);
-      if (triageUsed) {
-        triagesPerformed++;
-        stats.incrementTriaged();
-      } else {
-        stats.incrementSkipped();
-      }
-      if (fastRunUsed) fastRunsPerformed++;
-      consecutiveFailures = 0; // reset on success path
+      const cacheName = await gemini.createCache(model, systemPrompt, `autotriage-${cfg.owner}/${cfg.repo}`);
+      cacheNames.set(model, cacheName);
+      console.log(`📦 Created context cache for ${model}`);
     } catch (err) {
-      if (err instanceof GeminiResponseError) {
-        console.warn(`#${n}: ${err.message}`);
-        stats.incrementFailed();
-        consecutiveFailures++;
-        if (consecutiveFailures >= 3) {
-          console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
-          break;
-        }
-        continue;
+      console.warn(`⚠️ Context caching unavailable for ${model}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  try {
+    for (const n of targets) {
+      const remainingTriages = cfg.maxTriages - triagesPerformed;
+      const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
+      
+      // Only check fast runs limit if we're not skipping the fast pass
+      if (!cfg.skipFastPass && remainingFastRuns <= 0) {
+        console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
+        break;
       }
-      // Re-throw non-Gemini errors to stop processing
-      throw err;
-    }
+      
+      if (remainingTriages <= 0) {
+        console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
+        break;
+      }
 
-    if (triagesPerformed >= cfg.maxTriages) {
-      console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
-      break;
-    }
+      try {
+        const issue = await gh.getIssue(n);
+        const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover, systemPrompt, cacheNames);
+        if (triageUsed) {
+          triagesPerformed++;
+          stats.incrementTriaged();
+        } else {
+          stats.incrementSkipped();
+        }
+        if (fastRunUsed) fastRunsPerformed++;
+        consecutiveFailures = 0; // reset on success path
+      } catch (err) {
+        if (err instanceof GeminiResponseError) {
+          console.warn(`#${n}: ${err.message}`);
+          stats.incrementFailed();
+          consecutiveFailures++;
+          if (consecutiveFailures >= 3) {
+            console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
+            break;
+          }
+          continue;
+        }
+        // Re-throw non-Gemini errors to stop processing
+        throw err;
+      }
 
-    saveDatabase(db, cfg.dbPath, cfg.enabled);
+      if (triagesPerformed >= cfg.maxTriages) {
+        console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
+        break;
+      }
+
+      saveDatabase(db, cfg.dbPath, cfg.enabled);
+    }
+  } finally {
+    // Clean up caches
+    for (const [model, name] of cacheNames) {
+      await gemini.deleteCache(name);
+      console.log(`🗑️ Deleted context cache for ${model}`);
+    }
   }
 
   // Print summary at the end
@@ -89,7 +122,9 @@ run();
 async function processIssue(
   issue: Issue,
   repoLabels: Array<{ name: string; description?: string | null }>,
-  autoDiscover: boolean
+  autoDiscover: boolean,
+  systemPrompt: string,
+  cacheNames: Map<string, string>
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const dbEntry = getDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
@@ -97,17 +132,12 @@ async function processIssue(
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
-    const { systemPrompt, userPrompt } = await buildPrompt(
+    const userPrompt = buildUserPrompt(
       issue,
-      cfg.promptPath,
-      cfg.readmePath,
       timelineEvents,
-      repoLabels,
-      dbEntry.thoughts || '',
-      cfg.additionalInstructions
+      dbEntry.thoughts || ''
     );
 
-    saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
     saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
     let fastRunUsed = false;
@@ -122,7 +152,8 @@ async function processIssue(
         systemPrompt,
         userPrompt,
         repoLabels,
-        true // isFastModel
+        true, // isFastModel
+        cacheNames.get(cfg.modelFast)
       );
       
       fastRunUsed = true;
@@ -146,7 +177,8 @@ async function processIssue(
       systemPrompt,
       userPrompt,
       repoLabels,
-      false // isFastModel
+      false, // isFastModel
+      cacheNames.get(cfg.modelPro)
     );
 
     if (proOps.length === 0) {
@@ -178,6 +210,7 @@ export async function generateAnalysis(
   userPrompt: string,
   repoLabels: Array<{ name: string; description?: string | null }>,
   isFastModel: boolean = false,
+  cachedContentName?: string
 ): Promise<{ data: AnalysisResult; thoughts: string, ops: TriageOperation[] }> {
   const schema = buildAnalysisResultSchema(repoLabels);
   const payload = buildJsonPayload(
@@ -186,10 +219,11 @@ export async function generateAnalysis(
     schema,
     model,
     modelTemperature,
-    thinkingBudget
+    thinkingBudget,
+    cachedContentName
   );
 
-  console.log(chalk.blue(`💭 Thinking with ${model}...`));
+  console.log(chalk.blue(`💭 Thinking with ${model}${cachedContentName ? ' (cached)' : ''}...`));
   const startTime = Date.now();
   const { data, thoughts, inputTokens, outputTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
   const endTime = Date.now();

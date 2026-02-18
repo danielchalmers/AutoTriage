@@ -49,17 +49,18 @@ export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
   };
 }
 
-export async function buildPrompt(
-  issue: Issue,
+/**
+ * Build the static system prompt that is identical across all issues in a run.
+ * This content is suitable for Gemini context caching.
+ */
+export function buildSystemPrompt(
   promptPath: string,
   readmePath: string,
-  timelineEvents: TimelineEvent[],
   repoLabels: Array<{ name: string; description?: string | null; }>,
-  lastThoughts: string,
   additionalInstructions?: string,
-) {
+): string {
   const basePrompt = loadPrompt(promptPath);
-  const systemPrompt = `
+  return `
 === SECTION: OUTPUT FORMAT ===
 JSON OUTPUT CONTRACT:
 - Return exactly one valid JSON object. Do not wrap it in markdown, comments, extra text, or code fences. Avoid trailing commas.
@@ -127,13 +128,26 @@ INSTRUCTION HIERARCHY & ENFORCEMENT:
 === SECTION: ASSISTANT BEHAVIOR POLICY ===
 ${basePrompt}
 ${additionalInstructions ? `\n=== SECTION: ADDITIONAL INSTRUCTIONS ===\n${additionalInstructions}\n` : ''}
+=== SECTION: REPOSITORY LABELS (JSON) ===
+${JSON.stringify(repoLabels, null, 2)}
+
+=== SECTION: PROJECT README (MARKDOWN) ===
+${loadReadme(readmePath)}
+`;
+}
+
+/**
+ * Build the dynamic user prompt that varies per issue.
+ */
+export function buildUserPrompt(
+  issue: Issue,
+  timelineEvents: TimelineEvent[],
+  lastThoughts: string,
+): string {
+  return `
 === SECTION: RUNTIME CONTEXT ===
 Current date/time (UTC ISO 8601): ${new Date().toISOString()}
 
-=== SECTION: REPOSITORY LABELS (JSON) ===
-${JSON.stringify(repoLabels, null, 2)}
-`;
-  const userPrompt = `
 === SECTION: ISSUE METADATA (JSON) ===
 ${JSON.stringify(issue, null, 2)}
 
@@ -142,9 +156,19 @@ ${JSON.stringify(timelineEvents, null, 2)}
 
 === SECTION: THOUGHTS FROM LAST RUN ===
 ${lastThoughts || 'none'}
-
-=== SECTION: PROJECT README (MARKDOWN) ===
-${loadReadme(readmePath)}
 `;
+}
+
+export async function buildPrompt(
+  issue: Issue,
+  promptPath: string,
+  readmePath: string,
+  timelineEvents: TimelineEvent[],
+  repoLabels: Array<{ name: string; description?: string | null; }>,
+  lastThoughts: string,
+  additionalInstructions?: string,
+) {
+  const systemPrompt = buildSystemPrompt(promptPath, readmePath, repoLabels, additionalInstructions);
+  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts);
   return { systemPrompt, userPrompt };
 }
