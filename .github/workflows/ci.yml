@@ -31,6 +31,7 @@ jobs:
           git status --porcelain
           git diff --exit-code --name-only
       - name: Mock triage
+        if: github.event_name == 'pull_request'
         uses: ./
         with:
           issue-numbers: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '3 6' }}
