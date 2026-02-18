@@ -48,13 +48,7 @@ jobs:
 | `model-pro` | Review model that double-checks uncertain plans. | `gemini-3-flash-preview` |
 | `model-fast-temperature` | Sampling temperature for fast model (`0` deterministic -> `2` exploratory). | `0.0` |
 | `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3 recommends `1.0`. | `1.0` |
-| `max-timeline-events` | Per-pass timeline caps as `fast,pro` (one value applies to both). | `12,40` |
-| `max-readme-chars` | Per-pass README caps as `fast,pro` (fast `0` disables README). | `0,120000` |
-| `max-issue-body-chars` | Per-pass issue/PR body caps as `fast,pro`. | `4000,20000` |
-| `max-comment-body-chars` | Per-pass timeline comment caps as `fast,pro`. | `600,4000` |
-| `max-commit-message-chars` | Per-pass commit message caps as `fast,pro`. | `300,2000` |
-| `max-review-text-chars` | Per-pass review text caps as `fast,pro`. | `600,4000` |
-| `max-prior-thought-chars` | Per-pass prior-thought carryover caps as `fast,pro`. | `0,8000` |
+| `context-size-multiplier` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
@@ -64,11 +58,8 @@ jobs:
 
 ### Fast vs Pro context presets
 
-- **Cost-sensitive preset**: keep defaults (Fast omits README and prior thoughts, with tighter field caps).
-- **Quality-sensitive preset**: increase Fast caps and README usage, for example:
-  - `max-readme-chars: 12000,120000`
-  - `max-prior-thought-chars: 1500,8000`
-  - `max-timeline-events: 20,40`
+- **Cost-sensitive preset**: keep defaults (`context-size-multiplier: 1`).
+- **Quality-sensitive preset**: increase the dial, for example `context-size-multiplier: 1.5` or `2`.
 
 ## Example Workflows
 

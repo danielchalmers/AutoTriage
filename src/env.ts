@@ -10,21 +10,8 @@ function parseNumbers(input?: string): number[] | undefined {
   return nums.length ? nums : undefined;
 }
 
-function parseNonNegativeInt(value: string | undefined, fallback: number): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
-}
-
-function parsePassPair(value: string | undefined, fastDefault: number, proDefault: number): [number, number] {
-  if (!value || value.trim() === '') return [fastDefault, proDefault];
-  const parts = value.split(/[\s,]+/).map(p => p.trim()).filter(Boolean);
-  if (parts.length === 1) {
-    const both = parseNonNegativeInt(parts[0], fastDefault);
-    return [both, both];
-  }
-  const fast = parseNonNegativeInt(parts[0], fastDefault);
-  const pro = parseNonNegativeInt(parts[1], proDefault);
-  return [fast, pro];
+function applyMultiplier(base: number, multiplier: number): number {
+  return Math.max(0, Math.floor(base * multiplier));
 }
 
 /**
@@ -73,14 +60,23 @@ export function getConfig(): Config {
   );
   const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 0;
   const thinkingBudget = -1;
-  const [maxFastTimelineEvents, maxProTimelineEvents] = parsePassPair(core.getInput('max-timeline-events'), 12, 40);
+  const contextSizeMultiplier = Number(core.getInput('context-size-multiplier') || '1');
+  const multiplier = Number.isFinite(contextSizeMultiplier) && contextSizeMultiplier >= 0 ? contextSizeMultiplier : 1;
+  const maxFastTimelineEvents = applyMultiplier(12, multiplier);
+  const maxProTimelineEvents = applyMultiplier(40, multiplier);
   const maxTimelineEvents = maxProTimelineEvents;
-  const [maxFastReadmeChars, maxProReadmeChars] = parsePassPair(core.getInput('max-readme-chars'), 0, 120000);
-  const [maxFastIssueBodyChars, maxProIssueBodyChars] = parsePassPair(core.getInput('max-issue-body-chars'), 4000, 20000);
-  const [maxFastCommentBodyChars, maxProCommentBodyChars] = parsePassPair(core.getInput('max-comment-body-chars'), 600, 4000);
-  const [maxFastCommitMessageChars, maxProCommitMessageChars] = parsePassPair(core.getInput('max-commit-message-chars'), 300, 2000);
-  const [maxFastReviewTextChars, maxProReviewTextChars] = parsePassPair(core.getInput('max-review-text-chars'), 600, 4000);
-  const [maxFastPriorThoughtChars, maxProPriorThoughtChars] = parsePassPair(core.getInput('max-prior-thought-chars'), 0, 8000);
+  const maxFastReadmeChars = applyMultiplier(0, multiplier);
+  const maxProReadmeChars = applyMultiplier(120000, multiplier);
+  const maxFastIssueBodyChars = applyMultiplier(4000, multiplier);
+  const maxProIssueBodyChars = applyMultiplier(20000, multiplier);
+  const maxFastCommentBodyChars = applyMultiplier(600, multiplier);
+  const maxProCommentBodyChars = applyMultiplier(4000, multiplier);
+  const maxFastCommitMessageChars = applyMultiplier(300, multiplier);
+  const maxProCommitMessageChars = applyMultiplier(2000, multiplier);
+  const maxFastReviewTextChars = applyMultiplier(600, multiplier);
+  const maxProReviewTextChars = applyMultiplier(4000, multiplier);
+  const maxFastPriorThoughtChars = applyMultiplier(0, multiplier);
+  const maxProPriorThoughtChars = applyMultiplier(8000, multiplier);
   const maxTriages = Number(core.getInput('max-triages') || '20');
   const maxFastRuns = Number(core.getInput('max-fast-runs') || '100');
   const singleIssue = core.getInput('issue-number');

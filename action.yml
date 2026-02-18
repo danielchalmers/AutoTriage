@@ -43,34 +43,10 @@ inputs:
     description: "Sampling temperature for the pro model (0-2); Gemini 3 recommends 1.0 for optimal performance."
     required: false
     default: "1.0"
-  max-timeline-events:
-    description: "Timeline event caps as `fast,pro` (or one value for both passes)."
+  context-size-multiplier:
+    description: "Scalar multiplier for internal Fast/Pro context limits. Use values >1 to allow more prompt context."
     required: false
-    default: "12,40"
-  max-readme-chars:
-    description: "README character caps as `fast,pro` (0 in fast disables README there by default)."
-    required: false
-    default: "0,120000"
-  max-issue-body-chars:
-    description: "Issue/PR body character caps as `fast,pro`."
-    required: false
-    default: "4000,20000"
-  max-comment-body-chars:
-    description: "Timeline comment character caps as `fast,pro`."
-    required: false
-    default: "600,4000"
-  max-commit-message-chars:
-    description: "Commit message character caps as `fast,pro`."
-    required: false
-    default: "300,2000"
-  max-review-text-chars:
-    description: "Review body character caps as `fast,pro`."
-    required: false
-    default: "600,4000"
-  max-prior-thought-chars:
-    description: "Prior-thought character caps as `fast,pro` (0 disables fast carry-over by default)."
-    required: false
-    default: "0,8000"
+    default: "1"
   max-triages:
     description: "Cap on how many targets can escalate to the review pass during this run."
     required: false
