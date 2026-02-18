@@ -151,5 +151,6 @@ export interface Config {
   maxTriages: number;
   maxFastRuns: number;
   additionalInstructions?: string;
+  contextCaching: boolean;
   skipUnchanged: boolean;
 }

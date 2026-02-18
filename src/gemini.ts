@@ -6,10 +6,10 @@ export function buildJsonPayload(
   schema: unknown,
   model: string,
   temperature: number,
-  thinkingBudget?: number
+  thinkingBudget?: number,
+  cachedContentName?: string
 ): GenerateContentParameters {
   const config: NonNullable<GenerateContentParameters['config']> = {
-    systemInstruction: systemPrompt,
     responseMimeType: 'application/json',
     responseSchema: schema as any,
     temperature: temperature,
@@ -18,6 +18,13 @@ export function buildJsonPayload(
       thinkingBudget: thinkingBudget ?? -1
     }
   };
+
+  // When using a cache, the system instruction is already part of the cached content.
+  if (cachedContentName) {
+    config.cachedContent = cachedContentName;
+  } else {
+    config.systemInstruction = systemPrompt;
+  }
 
   return {
     model,
@@ -47,6 +54,36 @@ export class GeminiClient {
 
   private sleep(ms: number) {
     return new Promise<void>(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Create a context cache for the given system prompt and model.
+   * Returns the cache resource name to be used in subsequent generateContent calls.
+   */
+  async createCache(model: string, systemPrompt: string, displayName?: string): Promise<string> {
+    const cache = await this.client.caches.create({
+      model,
+      config: {
+        displayName: displayName || 'autotriage-context',
+        systemInstruction: systemPrompt,
+        ttl: '3600s',
+      },
+    });
+    if (!cache.name) {
+      throw new GeminiResponseError('Failed to create context cache: no name returned');
+    }
+    return cache.name;
+  }
+
+  /**
+   * Delete a previously created context cache.
+   */
+  async deleteCache(name: string): Promise<void> {
+    try {
+      await this.client.caches.delete({ name });
+    } catch {
+      // Best-effort cleanup; caches expire automatically via TTL
+    }
   }
 
   private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string; inputTokens: number; outputTokens: number }> {

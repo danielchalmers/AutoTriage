@@ -44,16 +44,16 @@ describe('additional instructions', () => {
       expect(systemPrompt).toContain('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
       expect(systemPrompt).toContain(additionalInstructions)
       
-      // Verify additional instructions appear between ASSISTANT BEHAVIOR POLICY and RUNTIME CONTEXT
+      // Verify additional instructions appear between ASSISTANT BEHAVIOR POLICY and REPOSITORY LABELS
       const policyIndex = systemPrompt.indexOf('=== SECTION: ASSISTANT BEHAVIOR POLICY ===')
       const additionalIndex = systemPrompt.indexOf('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
-      const runtimeIndex = systemPrompt.indexOf('=== SECTION: RUNTIME CONTEXT ===')
+      const labelsIndex = systemPrompt.indexOf('=== SECTION: REPOSITORY LABELS (JSON) ===')
       
       expect(policyIndex).toBeGreaterThan(-1)
       expect(additionalIndex).toBeGreaterThan(-1)
-      expect(runtimeIndex).toBeGreaterThan(-1)
+      expect(labelsIndex).toBeGreaterThan(-1)
       expect(additionalIndex).toBeGreaterThan(policyIndex)
-      expect(runtimeIndex).toBeGreaterThan(additionalIndex)
+      expect(labelsIndex).toBeGreaterThan(additionalIndex)
     } finally {
       fs.unlinkSync(customPromptPath)
     }
