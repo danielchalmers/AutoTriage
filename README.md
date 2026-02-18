@@ -41,7 +41,7 @@ jobs:
 | `issue-number` | Triage a single issue or PR; falls back to the GitHub event target. | event target |
 | `issue-numbers` | Provide an explicit list (space or comma separated). | - |
 | `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
-| `readme-path` | Extra Markdown context uploaded to the review (pro) prompt when the fast pass escalates. | `README.md` |
+| `readme-path` | Extra context included in the prompt in the pro pass. | `README.md` |
 | `enabled` | `"true"` applies changes, `"false"` logs the plan only. | `"true"` |
 | `db-path` | Persist per-item history between runs. | - |
 | `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-2.5-flash` |
