@@ -4,8 +4,8 @@ Keep issues and pull requests moving: reads the latest context, drafts the next 
 
 ## How it works
 
-- The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations (without README context to save tokens).
-- A reviewing AI pass (default: `gemini-3-flash-preview`) runs only when the fast pass proposes operations, then replays the plan with README context and confirms labels, comments, etc, before anything is written.
+- The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
+- A reviewing AI pass (default: `gemini-3-flash-preview`) replays the plan and confirms labels, comments, etc, before anything is written.
 - Defaults use the free-tier models (`gemini-2.5-flash` + `gemini-3-flash-preview`) rather than `gemini-3-pro`.
 - The full thought process along with all actions can be inspected in the workflow artifacts.
 - It will keep going until it runs out of issues or tokens, or reaches the specified limit.
