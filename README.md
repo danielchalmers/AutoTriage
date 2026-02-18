@@ -53,6 +53,7 @@ jobs:
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
 | `skip-unchanged` | Skip re-processing issues already in the database that haven't changed since the last run. | `"false"` |
+| `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
 
 ## Example Workflows
 

@@ -60,6 +60,10 @@ export class RunStatistics {
     this.failed++;
   }
 
+  getFailed(): number {
+    return this.failed;
+  }
+
   incrementGithubApiCalls(count: number = 1): void {
     this.githubApiCalls += count;
   }

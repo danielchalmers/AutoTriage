@@ -40,6 +40,7 @@ jobs:
           model-fast-temperature: 0.0
           model-pro: gemini-3-flash-preview
           model-pro-temperature: 1.0
+          strict-mode: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

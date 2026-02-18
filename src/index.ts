@@ -117,6 +117,9 @@ async function run(): Promise<void> {
   // Print summary at the end
   stats.incrementGithubApiCalls(gh.getApiCallCount());
   stats.printSummary();
+  if (cfg.strictMode && stats.getFailed() > 0) {
+    core.setFailed(`Strict mode enabled: ${stats.getFailed()} run(s) had errors.`);
+  }
 }
 
 run();
