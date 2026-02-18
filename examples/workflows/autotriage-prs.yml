@@ -20,9 +20,9 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           prompt-path: .github/AutoTriage.prompt
-          max-fast-timeline-events: 10
-          max-fast-readme-chars: 0
-          max-fast-prior-thought-chars: 0
+          max-timeline-events: 10,40
+          max-readme-chars: 0,120000
+          max-prior-thought-chars: 0,8000
           skip-fast-pass: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -44,65 +44,33 @@ inputs:
     required: false
     default: "1.0"
   max-timeline-events:
-    description: "Maximum number of recent timeline events injected into the prompt context."
+    description: "Timeline event caps as `fast,pro` (or one value for both passes)."
     required: false
-    default: "40"
-  max-fast-timeline-events:
-    description: "Maximum timeline events included in the fast pass prompt."
+    default: "12,40"
+  max-readme-chars:
+    description: "README character caps as `fast,pro` (0 in fast disables README there by default)."
     required: false
-    default: "12"
-  max-pro-timeline-events:
-    description: "Maximum timeline events included in the pro pass prompt."
+    default: "0,120000"
+  max-issue-body-chars:
+    description: "Issue/PR body character caps as `fast,pro`."
     required: false
-    default: "40"
-  max-fast-readme-chars:
-    description: "Character cap for README context in the fast pass (0 disables README in fast)."
+    default: "4000,20000"
+  max-comment-body-chars:
+    description: "Timeline comment character caps as `fast,pro`."
     required: false
-    default: "0"
-  max-pro-readme-chars:
-    description: "Character cap for README context in the pro pass."
+    default: "600,4000"
+  max-commit-message-chars:
+    description: "Commit message character caps as `fast,pro`."
     required: false
-    default: "120000"
-  max-fast-issue-body-chars:
-    description: "Character cap for issue/PR body text in the fast pass."
+    default: "300,2000"
+  max-review-text-chars:
+    description: "Review body character caps as `fast,pro`."
     required: false
-    default: "4000"
-  max-pro-issue-body-chars:
-    description: "Character cap for issue/PR body text in the pro pass."
+    default: "600,4000"
+  max-prior-thought-chars:
+    description: "Prior-thought character caps as `fast,pro` (0 disables fast carry-over by default)."
     required: false
-    default: "20000"
-  max-fast-comment-body-chars:
-    description: "Character cap for timeline comment text in the fast pass."
-    required: false
-    default: "600"
-  max-pro-comment-body-chars:
-    description: "Character cap for timeline comment text in the pro pass."
-    required: false
-    default: "4000"
-  max-fast-commit-message-chars:
-    description: "Character cap for commit messages in the fast pass."
-    required: false
-    default: "300"
-  max-pro-commit-message-chars:
-    description: "Character cap for commit messages in the pro pass."
-    required: false
-    default: "2000"
-  max-fast-review-text-chars:
-    description: "Character cap for pull request review text in the fast pass."
-    required: false
-    default: "600"
-  max-pro-review-text-chars:
-    description: "Character cap for pull request review text in the pro pass."
-    required: false
-    default: "4000"
-  max-fast-prior-thought-chars:
-    description: "Character cap for prior run thoughts in the fast pass (0 disables carry-over thoughts)."
-    required: false
-    default: "0"
-  max-pro-prior-thought-chars:
-    description: "Character cap for prior run thoughts in the pro pass."
-    required: false
-    default: "8000"
+    default: "0,8000"
   max-triages:
     description: "Cap on how many targets can escalate to the review pass during this run."
     required: false

@@ -44,9 +44,9 @@ jobs:
           prompt-path: .github/AutoTriage.prompt
           enabled: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.enabled) }}
           db-path: triage-db.json
-          max-fast-timeline-events: 20
-          max-fast-readme-chars: 12000
-          max-fast-prior-thought-chars: 1500
+          max-timeline-events: 20,40
+          max-readme-chars: 12000,120000
+          max-prior-thought-chars: 1500,8000
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
