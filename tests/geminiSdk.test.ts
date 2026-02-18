@@ -3,7 +3,7 @@ import { GeminiClient, buildJsonPayload } from '../src/gemini';
 
 describe('Gemini (real API)', () => {
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-2.5-flash-lite';
 
     if (!apiKey) {
         console.warn('GEMINI_API_KEY environment variable must be set to run Gemini tests. Skipping Gemini tests.');

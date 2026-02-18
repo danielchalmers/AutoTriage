@@ -9,7 +9,7 @@ describe('context caching', () => {
     const systemPrompt = 'You are a triage assistant.'
     const userPrompt = 'Analyze this issue.'
     const schema = { type: 'OBJECT', properties: { summary: { type: 'STRING' } }, required: ['summary'] }
-    const model = 'gemini-2.5-flash'
+    const model = 'gemini-2.5-flash-lite'
 
     it('uses systemInstruction when no cache name is provided', () => {
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0, -1)
