@@ -39,19 +39,21 @@ async function run(): Promise<void> {
   );
   saveArtifact(0, 'prompt-system.md', systemPrompt);
 
-  // Create context caches for models that will be used
+  // Create context caches for models that will be used (only when enabled)
   const cacheNames: Map<string, string> = new Map();
-  const modelsToCache = new Set<string>();
-  if (!cfg.skipFastPass) modelsToCache.add(cfg.modelFast);
-  modelsToCache.add(cfg.modelPro);
+  if (cfg.contextCaching) {
+    const modelsToCache = new Set<string>();
+    if (!cfg.skipFastPass) modelsToCache.add(cfg.modelFast);
+    modelsToCache.add(cfg.modelPro);
 
-  for (const model of modelsToCache) {
-    try {
-      const cacheName = await gemini.createCache(model, systemPrompt, `autotriage-${cfg.owner}/${cfg.repo}`);
-      cacheNames.set(model, cacheName);
-      console.log(`📦 Created context cache for ${model}`);
-    } catch (err) {
-      console.warn(`⚠️ Context caching unavailable for ${model}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
+    for (const model of modelsToCache) {
+      try {
+        const cacheName = await gemini.createCache(model, systemPrompt, `autotriage-${cfg.owner}/${cfg.repo}`);
+        cacheNames.set(model, cacheName);
+        console.log(`📦 Created context cache for ${model}`);
+      } catch (err) {
+        console.warn(`⚠️ Context caching unavailable for ${model}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   }
 

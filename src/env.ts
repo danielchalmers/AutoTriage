@@ -64,6 +64,7 @@ export function getConfig(): Config {
   const issueNumber = singleIssue ? Number(singleIssue) : undefined;
   const issueNumbers = parseNumbers(multiIssues);
   const additionalInstructions = core.getInput('additional-instructions') || undefined;
+  const contextCaching = (core.getInput('context-caching') || 'false').toLowerCase() === 'true';
   const skipUnchanged = (core.getInput('skip-unchanged') || 'false').toLowerCase() === 'true';
 
   return {
@@ -88,6 +89,7 @@ export function getConfig(): Config {
     maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 20,
     maxFastRuns: Number.isFinite(maxFastRuns) && maxFastRuns > 0 ? Math.floor(maxFastRuns) : 100,
     ...(additionalInstructions ? { additionalInstructions } : {}),
+    contextCaching,
     skipUnchanged,
   } as Config;
 }
