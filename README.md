@@ -4,8 +4,8 @@ Keep issues and pull requests moving: reads the latest context, drafts the next 
 
 ## How it works
 
-- The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
-- A reviewing AI pass (default: `gemini-3-flash-preview`) replays the plan and confirms labels, comments, etc, before anything is written.
+- The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations (without README context to save tokens).
+- A reviewing AI pass (default: `gemini-3-flash-preview`) runs only when the fast pass proposes operations, then replays the plan with README context and confirms labels, comments, etc, before anything is written.
 - Defaults use the free-tier models (`gemini-2.5-flash` + `gemini-3-flash-preview`) rather than `gemini-3-pro`.
 - The full thought process along with all actions can be inspected in the workflow artifacts.
 - It will keep going until it runs out of issues or tokens, or reaches the specified limit.
@@ -41,7 +41,7 @@ jobs:
 | `issue-number` | Triage a single issue or PR; falls back to the GitHub event target. | event target |
 | `issue-numbers` | Provide an explicit list (space or comma separated). | - |
 | `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
-| `readme-path` | Extra Markdown context uploaded to the AI prompt. | `README.md` |
+| `readme-path` | Extra Markdown context uploaded to the review (pro) prompt when the fast pass escalates. | `README.md` |
 | `enabled` | `"true"` applies changes, `"false"` logs the plan only. | `"true"` |
 | `db-path` | Persist per-item history between runs. | - |
 | `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-2.5-flash` |
