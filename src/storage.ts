@@ -66,7 +66,7 @@ function getErrorMessage(error: unknown): string {
 export function saveArtifact(issueNumber: number, name: string, contents: string): void {
   try {
     const artifactsDir = path.join(process.cwd(), 'artifacts');
-    const fileName = `${issueNumber}-${name}`;
+    const fileName = name === 'prompt-system.md' ? name : `${issueNumber}-${name}`;
     const filePath = path.join(artifactsDir, fileName);
 
     fs.mkdirSync(artifactsDir, { recursive: true });
