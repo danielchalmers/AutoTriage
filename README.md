@@ -49,11 +49,27 @@ jobs:
 | `model-fast-temperature` | Sampling temperature for fast model (`0` deterministic -> `2` exploratory). | `0.0` |
 | `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3 recommends `1.0`. | `1.0` |
 | `max-timeline-events` | Maximum recent timeline events included in the prompt. | `40` |
+| `max-fast-timeline-events` / `max-pro-timeline-events` | Per-pass timeline depth caps. Fast defaults lower to save tokens. | `12` / `40` |
+| `max-fast-readme-chars` / `max-pro-readme-chars` | Per-pass README character caps. Fast default is `0` (README off), Pro includes README. | `0` / `120000` |
+| `max-fast-issue-body-chars` / `max-pro-issue-body-chars` | Per-pass issue/PR body caps. | `4000` / `20000` |
+| `max-fast-comment-body-chars` / `max-pro-comment-body-chars` | Per-pass timeline comment body caps. | `600` / `4000` |
+| `max-fast-commit-message-chars` / `max-pro-commit-message-chars` | Per-pass commit message caps. | `300` / `2000` |
+| `max-fast-review-text-chars` / `max-pro-review-text-chars` | Per-pass review text caps. | `600` / `4000` |
+| `max-fast-prior-thought-chars` / `max-pro-prior-thought-chars` | Per-pass prior-thought carryover caps. Fast default disables prior thoughts. | `0` / `8000` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
+| `context-caching` | Enable Gemini context caching (disabled by default). | `"false"` |
 | `skip-unchanged` | Skip re-processing issues already in the database that haven't changed since the last run. | `"false"` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
+
+### Fast vs Pro context presets
+
+- **Cost-sensitive preset**: keep defaults (Fast omits README and prior thoughts, with tighter field caps).
+- **Quality-sensitive preset**: increase Fast caps and README usage, for example:
+  - `max-fast-readme-chars: 12000`
+  - `max-fast-prior-thought-chars: 1500`
+  - `max-fast-timeline-events: 20`
 
 ## Example Workflows
 

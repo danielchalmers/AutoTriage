@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
-import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema } from './analysis';
+import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits } from './analysis';
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -30,30 +30,42 @@ async function run(): Promise<void> {
   console.log(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
   console.log(`⚡ Fast runs limited to ${cfg.maxFastRuns} item(s)`);
 
-  // Build the static system prompt once for all issues
-  const systemPrompt = buildSystemPrompt(
+  const fastLimits = getPromptLimits(cfg, 'fast');
+  const proLimits = getPromptLimits(cfg, 'pro');
+
+  // Build static system prompts once for all issues
+  const systemPromptFast = cfg.skipFastPass
+    ? ''
+    : buildSystemPrompt(cfg.promptPath, cfg.readmePath, repoLabels, cfg.additionalInstructions, 'fast', fastLimits);
+  const systemPromptPro = buildSystemPrompt(
     cfg.promptPath,
     cfg.readmePath,
     repoLabels,
-    cfg.additionalInstructions
+    cfg.additionalInstructions,
+    'pro',
+    proLimits
   );
-  saveArtifact(0, 'prompt-system.md', systemPrompt);
+  saveArtifact(0, 'prompt-system-fast.md', systemPromptFast);
+  saveArtifact(0, 'prompt-system.md', systemPromptPro);
 
   // Create context caches for models that will be used (only when enabled)
-  const cacheNames: Map<string, string> = new Map();
+  const cacheNames: Map<'fast' | 'pro', string> = new Map();
   if (cfg.contextCaching) {
-    const modelsToCache = new Set<string>();
-    if (!cfg.skipFastPass) modelsToCache.add(cfg.modelFast);
-    modelsToCache.add(cfg.modelPro);
-
-    for (const model of modelsToCache) {
+    if (!cfg.skipFastPass) {
       try {
-        const cacheName = await gemini.createCache(model, systemPrompt, `autotriage-${cfg.owner}/${cfg.repo}`);
-        cacheNames.set(model, cacheName);
-        console.log(`📦 Created context cache for ${model}`);
+        const cacheName = await gemini.createCache(cfg.modelFast, systemPromptFast, `autotriage-fast-${cfg.owner}/${cfg.repo}`);
+        cacheNames.set('fast', cacheName);
+        console.log(`📦 Created context cache for ${cfg.modelFast}`);
       } catch (err) {
-        console.warn(`⚠️ Context caching unavailable for ${model}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(`⚠️ Context caching unavailable for ${cfg.modelFast}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
       }
+    }
+    try {
+      const cacheName = await gemini.createCache(cfg.modelPro, systemPromptPro, `autotriage-pro-${cfg.owner}/${cfg.repo}`);
+      cacheNames.set('pro', cacheName);
+      console.log(`📦 Created context cache for ${cfg.modelPro}`);
+    } catch (err) {
+      console.warn(`⚠️ Context caching unavailable for ${cfg.modelPro}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -75,7 +87,7 @@ async function run(): Promise<void> {
 
       try {
         const issue = await gh.getIssue(n);
-        const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover, systemPrompt, cacheNames);
+        const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheNames);
         if (triageUsed) {
           triagesPerformed++;
           stats.incrementTriaged();
@@ -108,9 +120,9 @@ async function run(): Promise<void> {
     }
   } finally {
     // Clean up caches
-    for (const [model, name] of cacheNames) {
+    for (const [passMode, name] of cacheNames) {
       await gemini.deleteCache(name);
-      console.log(`🗑️ Deleted context cache for ${model}`);
+      console.log(`🗑️ Deleted context cache for ${passMode}`);
     }
   }
 
@@ -128,37 +140,44 @@ async function processIssue(
   issue: Issue,
   repoLabels: Array<{ name: string; description?: string | null }>,
   autoDiscover: boolean,
-  systemPrompt: string,
-  cacheNames: Map<string, string>
+  systemPromptFast: string,
+  systemPromptPro: string,
+  cacheNames: Map<'fast' | 'pro', string>
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const dbEntry = getDbEntry(db, issue.number);
-  const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, cfg.maxTimelineEvents);
+  const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents, cfg.maxTimelineEvents);
+  const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, timelineFetchLimit);
+  const fastLimits = getPromptLimits(cfg, 'fast');
+  const proLimits = getPromptLimits(cfg, 'pro');
+  const fastTimelineEvents = timelineEvents.slice(-fastLimits.timelineEvents);
+  const proTimelineEvents = timelineEvents.slice(-proLimits.timelineEvents);
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
-
-    const userPrompt = buildUserPrompt(
-      issue,
-      timelineEvents,
-      dbEntry.thoughts || ''
-    );
-
-    saveArtifact(issue.number, `prompt-user.md`, userPrompt);
 
     let fastRunUsed = false;
 
     // Pass 1: fast model (unless skip-fast-pass is enabled)
     if (!cfg.skipFastPass) {
+      const fastUserPrompt = buildUserPrompt(
+        issue,
+        fastTimelineEvents,
+        '',
+        'fast',
+        fastLimits
+      );
+      saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
+
       const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
         issue,
         cfg.modelFast,
         cfg.modelFastTemperature,
         cfg.thinkingBudget,
-        systemPrompt,
-        userPrompt,
+        systemPromptFast,
+        fastUserPrompt,
         repoLabels,
         true, // isFastModel
-        cacheNames.get(cfg.modelFast)
+        cacheNames.get('fast')
       );
       
       fastRunUsed = true;
@@ -174,16 +193,25 @@ async function processIssue(
     }
 
     // Pass 2: pro model (or only pass if skip-fast-pass is enabled)
+    const proUserPrompt = buildUserPrompt(
+      issue,
+      proTimelineEvents,
+      dbEntry.thoughts || '',
+      'pro',
+      proLimits
+    );
+    saveArtifact(issue.number, `prompt-user.md`, proUserPrompt);
+
     const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
       issue,
       cfg.modelPro,
       cfg.modelProTemperature,
       cfg.thinkingBudget,
-      systemPrompt,
-      userPrompt,
+      systemPromptPro,
+      proUserPrompt,
       repoLabels,
       false, // isFastModel
-      cacheNames.get(cfg.modelPro)
+      cacheNames.get('pro')
     );
 
     if (proOps.length === 0) {

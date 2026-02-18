@@ -10,6 +10,11 @@ function parseNumbers(input?: string): number[] | undefined {
   return nums.length ? nums : undefined;
 }
 
+function parseNonNegativeInt(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+}
+
 /**
  * Resolve runtime config. Throws early with actionable messages if mandatory
  * secrets (GITHUB_TOKEN, GEMINI_API_KEY) are missing or repo context is absent.
@@ -56,7 +61,21 @@ export function getConfig(): Config {
   );
   const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 0;
   const thinkingBudget = -1;
-  const maxTimelineEvents = Number(core.getInput('max-timeline-events') || '40');
+  const maxTimelineEvents = parseNonNegativeInt(core.getInput('max-timeline-events') || '40', 40);
+  const maxFastTimelineEvents = parseNonNegativeInt(core.getInput('max-fast-timeline-events') || '12', 12);
+  const maxProTimelineEvents = parseNonNegativeInt(core.getInput('max-pro-timeline-events') || String(maxTimelineEvents), maxTimelineEvents);
+  const maxFastReadmeChars = parseNonNegativeInt(core.getInput('max-fast-readme-chars') || '0', 0);
+  const maxProReadmeChars = parseNonNegativeInt(core.getInput('max-pro-readme-chars') || '120000', 120000);
+  const maxFastIssueBodyChars = parseNonNegativeInt(core.getInput('max-fast-issue-body-chars') || '4000', 4000);
+  const maxProIssueBodyChars = parseNonNegativeInt(core.getInput('max-pro-issue-body-chars') || '20000', 20000);
+  const maxFastCommentBodyChars = parseNonNegativeInt(core.getInput('max-fast-comment-body-chars') || '600', 600);
+  const maxProCommentBodyChars = parseNonNegativeInt(core.getInput('max-pro-comment-body-chars') || '4000', 4000);
+  const maxFastCommitMessageChars = parseNonNegativeInt(core.getInput('max-fast-commit-message-chars') || '300', 300);
+  const maxProCommitMessageChars = parseNonNegativeInt(core.getInput('max-pro-commit-message-chars') || '2000', 2000);
+  const maxFastReviewTextChars = parseNonNegativeInt(core.getInput('max-fast-review-text-chars') || '600', 600);
+  const maxProReviewTextChars = parseNonNegativeInt(core.getInput('max-pro-review-text-chars') || '4000', 4000);
+  const maxFastPriorThoughtChars = parseNonNegativeInt(core.getInput('max-fast-prior-thought-chars') || '0', 0);
+  const maxProPriorThoughtChars = parseNonNegativeInt(core.getInput('max-pro-prior-thought-chars') || '8000', 8000);
   const maxTriages = Number(core.getInput('max-triages') || '20');
   const maxFastRuns = Number(core.getInput('max-fast-runs') || '100');
   const singleIssue = core.getInput('issue-number');
@@ -86,7 +105,21 @@ export function getConfig(): Config {
     dbPath,
     modelFast,
     modelPro,
-    maxTimelineEvents: Number.isFinite(maxTimelineEvents) ? maxTimelineEvents : 40,
+    maxTimelineEvents,
+    maxFastTimelineEvents,
+    maxProTimelineEvents,
+    maxFastReadmeChars,
+    maxProReadmeChars,
+    maxFastIssueBodyChars,
+    maxProIssueBodyChars,
+    maxFastCommentBodyChars,
+    maxProCommentBodyChars,
+    maxFastCommitMessageChars,
+    maxProCommitMessageChars,
+    maxFastReviewTextChars,
+    maxProReviewTextChars,
+    maxFastPriorThoughtChars,
+    maxProPriorThoughtChars,
     maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 20,
     maxFastRuns: Number.isFinite(maxFastRuns) && maxFastRuns > 0 ? Math.floor(maxFastRuns) : 100,
     ...(additionalInstructions ? { additionalInstructions } : {}),

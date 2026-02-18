@@ -48,22 +48,43 @@ describe('context caching', () => {
   describe('buildSystemPrompt', () => {
     it('builds system prompt with repo labels and README', () => {
       const customPromptPath = path.join(__dirname, 'test-cache-prompt.txt')
+      const readmePath = path.join(__dirname, 'test-cache-readme.md')
       fs.writeFileSync(customPromptPath, 'Test behavior policy')
+      fs.writeFileSync(readmePath, '# Test readme section')
 
       try {
         const repoLabels = [
           { name: 'bug', description: 'Something is broken' },
           { name: 'enhancement', description: 'New feature' },
         ]
-        const systemPrompt = buildSystemPrompt(customPromptPath, '', repoLabels)
+        const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, repoLabels)
         
         expect(systemPrompt).toContain('Test behavior policy')
         expect(systemPrompt).toContain('=== SECTION: REPOSITORY LABELS (JSON) ===')
         expect(systemPrompt).toContain('"bug"')
         expect(systemPrompt).toContain('"enhancement"')
         expect(systemPrompt).toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
+        expect(systemPrompt).toContain('# Test readme section')
       } finally {
         fs.unlinkSync(customPromptPath)
+        fs.unlinkSync(readmePath)
+      }
+    })
+
+    it('omits README section in fast pass by default', () => {
+      const customPromptPath = path.join(__dirname, 'test-cache-prompt-fast.txt')
+      const readmePath = path.join(__dirname, 'test-cache-readme-fast.md')
+      fs.writeFileSync(customPromptPath, 'Test behavior policy')
+      fs.writeFileSync(readmePath, '# README should be omitted')
+
+      try {
+        const repoLabels = [{ name: 'bug', description: null }]
+        const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, repoLabels, undefined, 'fast', { readmeChars: 0 })
+        expect(systemPrompt).not.toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
+        expect(systemPrompt).not.toContain('README should be omitted')
+      } finally {
+        fs.unlinkSync(customPromptPath)
+        fs.unlinkSync(readmePath)
       }
     })
 
@@ -139,6 +160,56 @@ describe('context caching', () => {
       expect(userPrompt).not.toContain('=== SECTION: REPOSITORY LABELS')
       expect(userPrompt).not.toContain('=== SECTION: PROJECT README')
       expect(userPrompt).not.toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY')
+    })
+
+    it('uses pass-specific truncation limits and thought gating', () => {
+      const issue = {
+        number: 2,
+        title: 'Issue',
+        body: 'x'.repeat(20),
+        state: 'open',
+        type: 'issue',
+        author: 'user',
+        user_type: 'User',
+        draft: false,
+        locked: false,
+        milestone: null,
+        comments: 0,
+        reactions: 0,
+        labels: [],
+        assignees: [],
+      } as any
+
+      const timelineEvents = [
+        { event: 'commented', body: 'a'.repeat(20), created_at: '2024-01-01T00:00:00Z' },
+        { event: 'committed', message: 'b'.repeat(20), created_at: '2024-01-02T00:00:00Z' },
+        { event: 'reviewed', body: 'c'.repeat(20), created_at: '2024-01-03T00:00:00Z' },
+      ] as any[]
+
+      const fastPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'fast', {
+        issueBodyChars: 5,
+        timelineEvents: 2,
+        commentBodyChars: 4,
+        commitMessageChars: 3,
+        reviewTextChars: 2,
+        priorThoughtChars: 0,
+      })
+      expect(fastPrompt).toContain('"body": "xxxxx"')
+      expect(fastPrompt).toContain('"message": "bbb"')
+      expect(fastPrompt).toContain('"body": "cc"')
+      expect(fastPrompt).not.toContain('THOUGHTS FROM LAST RUN')
+
+      const proPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'pro', {
+        issueBodyChars: 50,
+        timelineEvents: 3,
+        commentBodyChars: 50,
+        commitMessageChars: 50,
+        reviewTextChars: 50,
+        priorThoughtChars: 5,
+      })
+      expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
+      expect(proPrompt).toContain('prior')
+      expect(proPrompt).not.toContain('prior thoughts')
     })
   })
 })
