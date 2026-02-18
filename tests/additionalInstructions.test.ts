@@ -102,4 +102,52 @@ describe('additional instructions', () => {
       fs.unlinkSync(customPromptPath)
     }
   })
+
+  it('omits README section when includeReadme is false', async () => {
+    const customPromptPath = path.join(__dirname, 'test-custom-prompt.txt')
+    fs.writeFileSync(customPromptPath, 'Base prompt content')
+
+    try {
+      const { userPrompt } = await buildPrompt(
+        mockIssue,
+        customPromptPath,
+        path.join(__dirname, 'README.md'),
+        mockTimelineEvents,
+        mockRepoLabels,
+        '',
+        undefined,
+        false
+      )
+
+      expect(userPrompt).not.toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
+    } finally {
+      fs.unlinkSync(customPromptPath)
+    }
+  })
+
+  it('includes README section when includeReadme is true', async () => {
+    const customPromptPath = path.join(__dirname, 'test-custom-prompt.txt')
+    const readmePath = path.join(__dirname, 'test-README.md')
+    fs.writeFileSync(customPromptPath, 'Base prompt content')
+    fs.writeFileSync(readmePath, '# Test README')
+
+    try {
+      const { userPrompt } = await buildPrompt(
+        mockIssue,
+        customPromptPath,
+        readmePath,
+        mockTimelineEvents,
+        mockRepoLabels,
+        '',
+        undefined,
+        true
+      )
+
+      expect(userPrompt).toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
+      expect(userPrompt).toContain('# Test README')
+    } finally {
+      fs.unlinkSync(customPromptPath)
+      fs.unlinkSync(readmePath)
+    }
+  })
 })

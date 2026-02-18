@@ -97,18 +97,19 @@ async function processIssue(
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
-    const { systemPrompt, userPrompt } = await buildPrompt(
+    const { systemPrompt, userPrompt: fastUserPrompt } = await buildPrompt(
       issue,
       cfg.promptPath,
       cfg.readmePath,
       timelineEvents,
       repoLabels,
       dbEntry.thoughts || '',
-      cfg.additionalInstructions
+      cfg.additionalInstructions,
+      false
     );
 
     saveArtifact(issue.number, `prompt-system.md`, systemPrompt);
-    saveArtifact(issue.number, `prompt-user.md`, userPrompt);
+    saveArtifact(issue.number, `prompt-user.md`, fastUserPrompt);
 
     let fastRunUsed = false;
 
@@ -120,7 +121,7 @@ async function processIssue(
         cfg.modelFastTemperature,
         cfg.thinkingBudget,
         systemPrompt,
-        userPrompt,
+        fastUserPrompt,
         repoLabels,
         true // isFastModel
       );
@@ -137,6 +138,18 @@ async function processIssue(
       console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
     }
 
+    const { userPrompt: proUserPrompt } = await buildPrompt(
+      issue,
+      cfg.promptPath,
+      cfg.readmePath,
+      timelineEvents,
+      repoLabels,
+      dbEntry.thoughts || '',
+      cfg.additionalInstructions,
+      !cfg.skipFastPass
+    );
+    saveArtifact(issue.number, `prompt-user.md`, proUserPrompt);
+
     // Pass 2: pro model (or only pass if skip-fast-pass is enabled)
     const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
       issue,
@@ -144,7 +157,7 @@ async function processIssue(
       cfg.modelProTemperature,
       cfg.thinkingBudget,
       systemPrompt,
-      userPrompt,
+      proUserPrompt,
       repoLabels,
       false // isFastModel
     );

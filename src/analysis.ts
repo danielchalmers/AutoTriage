@@ -57,6 +57,7 @@ export async function buildPrompt(
   repoLabels: Array<{ name: string; description?: string | null; }>,
   lastThoughts: string,
   additionalInstructions?: string,
+  includeReadme: boolean = true,
 ) {
   const basePrompt = loadPrompt(promptPath);
   const systemPrompt = `
@@ -142,9 +143,10 @@ ${JSON.stringify(timelineEvents, null, 2)}
 
 === SECTION: THOUGHTS FROM LAST RUN ===
 ${lastThoughts || 'none'}
-
+${includeReadme ? `
 === SECTION: PROJECT README (MARKDOWN) ===
 ${loadReadme(readmePath)}
+` : ''}
 `;
   return { systemPrompt, userPrompt };
 }
