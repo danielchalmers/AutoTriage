@@ -60,8 +60,8 @@ export function getConfig(): Config {
   );
   const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 0;
   const thinkingBudget = -1;
-  const contextSizeMultiplier = Number(core.getInput('context-size-multiplier') || '1');
-  const multiplier = Number.isFinite(contextSizeMultiplier) && contextSizeMultiplier >= 0 ? contextSizeMultiplier : 1;
+  const budgetScale = Number(core.getInput('budget-scale') || '1');
+  const multiplier = Number.isFinite(budgetScale) && budgetScale >= 0 ? budgetScale : 1;
   const maxFastTimelineEvents = applyMultiplier(12, multiplier);
   const maxProTimelineEvents = applyMultiplier(40, multiplier);
   const maxFastReadmeChars = applyMultiplier(0, multiplier);

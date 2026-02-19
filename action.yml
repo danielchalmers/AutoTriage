@@ -43,7 +43,7 @@ inputs:
     description: "Sampling temperature for the pro model (0-2); Gemini 3 recommends 1.0 for optimal performance."
     required: false
     default: "1.0"
-  context-size-multiplier:
+  budget-scale:
     description: "Scalar multiplier for internal Fast/Pro context limits. Use values >1 to allow more prompt context."
     required: false
     default: "1"

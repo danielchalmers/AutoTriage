@@ -48,7 +48,7 @@ jobs:
 | `model-pro` | Review model that double-checks uncertain plans. | `gemini-3-flash-preview` |
 | `model-fast-temperature` | Sampling temperature for fast model (`0` deterministic -> `2` exploratory). | `0.0` |
 | `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3 recommends `1.0`. | `1.0` |
-| `context-size-multiplier` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
+| `budget-scale` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
@@ -58,8 +58,8 @@ jobs:
 
 ### Fast vs Pro context presets
 
-- **Cost-sensitive preset**: keep defaults (`context-size-multiplier: 1`).
-- **Quality-sensitive preset**: increase the dial, for example `context-size-multiplier: 1.5` or `2`.
+- **Cost-sensitive preset**: keep defaults (`budget-scale: 1`).
+- **Quality-sensitive preset**: increase the dial, for example `budget-scale: 1.5` or `2`.
 
 ## Example Workflows
 
