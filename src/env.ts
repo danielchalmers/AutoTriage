@@ -64,19 +64,12 @@ export function getConfig(): Config {
   const multiplier = Number.isFinite(contextSizeMultiplier) && contextSizeMultiplier >= 0 ? contextSizeMultiplier : 1;
   const maxFastTimelineEvents = applyMultiplier(12, multiplier);
   const maxProTimelineEvents = applyMultiplier(40, multiplier);
-  const maxTimelineEvents = maxProTimelineEvents;
   const maxFastReadmeChars = applyMultiplier(0, multiplier);
   const maxProReadmeChars = applyMultiplier(120000, multiplier);
   const maxFastIssueBodyChars = applyMultiplier(4000, multiplier);
   const maxProIssueBodyChars = applyMultiplier(20000, multiplier);
-  const maxFastCommentBodyChars = applyMultiplier(600, multiplier);
-  const maxProCommentBodyChars = applyMultiplier(4000, multiplier);
-  const maxFastCommitMessageChars = applyMultiplier(300, multiplier);
-  const maxProCommitMessageChars = applyMultiplier(2000, multiplier);
-  const maxFastReviewTextChars = applyMultiplier(600, multiplier);
-  const maxProReviewTextChars = applyMultiplier(4000, multiplier);
-  const maxFastPriorThoughtChars = applyMultiplier(0, multiplier);
-  const maxProPriorThoughtChars = applyMultiplier(8000, multiplier);
+  const maxFastTimelineTextChars = applyMultiplier(600, multiplier);
+  const maxProTimelineTextChars = applyMultiplier(4000, multiplier);
   const maxTriages = Number(core.getInput('max-triages') || '20');
   const maxFastRuns = Number(core.getInput('max-fast-runs') || '100');
   const singleIssue = core.getInput('issue-number');
@@ -106,21 +99,14 @@ export function getConfig(): Config {
     dbPath,
     modelFast,
     modelPro,
-    maxTimelineEvents,
     maxFastTimelineEvents,
     maxProTimelineEvents,
     maxFastReadmeChars,
     maxProReadmeChars,
     maxFastIssueBodyChars,
     maxProIssueBodyChars,
-    maxFastCommentBodyChars,
-    maxProCommentBodyChars,
-    maxFastCommitMessageChars,
-    maxProCommitMessageChars,
-    maxFastReviewTextChars,
-    maxProReviewTextChars,
-    maxFastPriorThoughtChars,
-    maxProPriorThoughtChars,
+    maxFastTimelineTextChars,
+    maxProTimelineTextChars,
     maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 20,
     maxFastRuns: Number.isFinite(maxFastRuns) && maxFastRuns > 0 ? Math.floor(maxFastRuns) : 100,
     ...(additionalInstructions ? { additionalInstructions } : {}),

@@ -28,10 +28,7 @@ type PromptPassLimits = {
   readmeChars: number;
   issueBodyChars: number;
   timelineEvents: number;
-  commentBodyChars: number;
-  commitMessageChars: number;
-  reviewTextChars: number;
-  priorThoughtChars: number;
+  timelineTextChars: number;
 };
 
 function clampText(value: string | null | undefined, maxChars: number): string {
@@ -50,11 +47,10 @@ function applyTimelineLimits(events: TimelineEvent[], limits: PromptPassLimits):
   return (events || []).slice(-limits.timelineEvents).map((event) => {
     const next = { ...event };
     if (next.message !== undefined) {
-      next.message = clampText(next.message, limits.commitMessageChars);
+      next.message = clampText(next.message, limits.timelineTextChars);
     }
     if (next.body !== undefined) {
-      const bodyLimit = next.event === 'reviewed' ? limits.reviewTextChars : limits.commentBodyChars;
-      next.body = clampText(next.body, bodyLimit);
+      next.body = clampText(next.body, limits.timelineTextChars);
     }
     return next;
   });
@@ -66,20 +62,14 @@ export function getPromptLimits(config: Config, mode: PromptPassMode): PromptPas
       readmeChars: config.maxFastReadmeChars,
       issueBodyChars: config.maxFastIssueBodyChars,
       timelineEvents: config.maxFastTimelineEvents,
-      commentBodyChars: config.maxFastCommentBodyChars,
-      commitMessageChars: config.maxFastCommitMessageChars,
-      reviewTextChars: config.maxFastReviewTextChars,
-      priorThoughtChars: config.maxFastPriorThoughtChars,
+      timelineTextChars: config.maxFastTimelineTextChars,
     };
   }
   return {
     readmeChars: config.maxProReadmeChars,
     issueBodyChars: config.maxProIssueBodyChars,
     timelineEvents: config.maxProTimelineEvents,
-    commentBodyChars: config.maxProCommentBodyChars,
-    commitMessageChars: config.maxProCommitMessageChars,
-    reviewTextChars: config.maxProReviewTextChars,
-    priorThoughtChars: config.maxProPriorThoughtChars,
+    timelineTextChars: config.maxProTimelineTextChars,
   };
 }
 
@@ -214,14 +204,11 @@ export function buildUserPrompt(
     readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
     issueBodyChars: limits?.issueBodyChars ?? Number.MAX_SAFE_INTEGER,
     timelineEvents: limits?.timelineEvents ?? Number.MAX_SAFE_INTEGER,
-    commentBodyChars: limits?.commentBodyChars ?? Number.MAX_SAFE_INTEGER,
-    commitMessageChars: limits?.commitMessageChars ?? Number.MAX_SAFE_INTEGER,
-    reviewTextChars: limits?.reviewTextChars ?? Number.MAX_SAFE_INTEGER,
-    priorThoughtChars: limits?.priorThoughtChars ?? Number.MAX_SAFE_INTEGER,
+    timelineTextChars: limits?.timelineTextChars ?? Number.MAX_SAFE_INTEGER,
   };
   const promptIssue = applyIssueLimits(issue, resolvedLimits);
   const promptTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
-  const promptThoughts = mode === 'pro' ? clampText(lastThoughts, resolvedLimits.priorThoughtChars) : '';
+  const promptThoughts = mode === 'pro' ? lastThoughts : '';
 
   return `
 === SECTION: RUNTIME CONTEXT ===
@@ -232,7 +219,7 @@ ${JSON.stringify(promptIssue, null, 2)}
 
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(promptTimelineEvents, null, 2)}
-${mode === 'pro' && resolvedLimits.priorThoughtChars > 0 ? `\n=== SECTION: THOUGHTS FROM LAST RUN ===\n${promptThoughts || 'none'}` : ''}
+${mode === 'pro' ? `\n=== SECTION: THOUGHTS FROM LAST RUN ===\n${promptThoughts || 'none'}` : ''}
 `;
 }
 

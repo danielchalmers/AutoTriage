@@ -145,7 +145,7 @@ async function processIssue(
   cacheNames: Map<'fast' | 'pro', string>
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const dbEntry = getDbEntry(db, issue.number);
-  const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents, cfg.maxTimelineEvents);
+  const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(issue.number, timelineFetchLimit);
   const fastLimits = getPromptLimits(cfg, 'fast');
   const proLimits = getPromptLimits(cfg, 'pro');

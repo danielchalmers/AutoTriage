@@ -189,27 +189,20 @@ describe('context caching', () => {
       const fastPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'fast', {
         issueBodyChars: 5,
         timelineEvents: 2,
-        commentBodyChars: 4,
-        commitMessageChars: 3,
-        reviewTextChars: 2,
-        priorThoughtChars: 0,
+        timelineTextChars: 3,
       })
       expect(fastPrompt).toContain('"body": "xxxxx"')
       expect(fastPrompt).toContain('"message": "bbb"')
-      expect(fastPrompt).toContain('"body": "cc"')
+      expect(fastPrompt).toContain('"body": "ccc"')
       expect(fastPrompt).not.toContain('THOUGHTS FROM LAST RUN')
 
       const proPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'pro', {
         issueBodyChars: 50,
         timelineEvents: 3,
-        commentBodyChars: 50,
-        commitMessageChars: 50,
-        reviewTextChars: 50,
-        priorThoughtChars: 5,
+        timelineTextChars: 50,
       })
       expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
-      expect(proPrompt).toContain('prior')
-      expect(proPrompt).not.toContain('prior thoughts')
+      expect(proPrompt).toContain('prior thoughts')
     })
   })
 })
