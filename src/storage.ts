@@ -147,7 +147,14 @@ export interface Config {
   skipFastPass: boolean;
   modelFast: string;
   modelPro: string;
-  maxTimelineEvents: number;
+  maxFastTimelineEvents: number;
+  maxProTimelineEvents: number;
+  maxFastReadmeChars: number;
+  maxProReadmeChars: number;
+  maxFastIssueBodyChars: number;
+  maxProIssueBodyChars: number;
+  maxFastTimelineTextChars: number;
+  maxProTimelineTextChars: number;
   maxTriages: number;
   maxFastRuns: number;
   additionalInstructions?: string;

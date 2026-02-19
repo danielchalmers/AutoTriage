@@ -1,5 +1,6 @@
 import { loadPrompt, loadReadme } from './storage';
 import type { Issue, TimelineEvent } from './github';
+import type { Config } from './storage';
 
 export type AnalysisResult = {
   summary: string;
@@ -20,6 +21,57 @@ export const AnalysisResultSchema = {
   },
   required: ['summary', 'labels'],
 } as const;
+
+export type PromptPassMode = 'fast' | 'pro';
+
+type PromptPassLimits = {
+  readmeChars: number;
+  issueBodyChars: number;
+  timelineEvents: number;
+  timelineTextChars: number;
+};
+
+function clampText(value: string | null | undefined, maxChars: number): string {
+  if (!value || maxChars <= 0) return '';
+  return value.length > maxChars ? value.slice(0, maxChars) : value;
+}
+
+function applyIssueLimits(issue: Issue, limits: PromptPassLimits): Issue {
+  return {
+    ...issue,
+    body: clampText(issue.body || '', limits.issueBodyChars),
+  };
+}
+
+function applyTimelineLimits(events: TimelineEvent[], limits: PromptPassLimits): TimelineEvent[] {
+  return (events || []).slice(-limits.timelineEvents).map((event) => {
+    const next = { ...event };
+    if (next.message !== undefined) {
+      next.message = clampText(next.message, limits.timelineTextChars);
+    }
+    if (next.body !== undefined) {
+      next.body = clampText(next.body, limits.timelineTextChars);
+    }
+    return next;
+  });
+}
+
+export function getPromptLimits(config: Config, mode: PromptPassMode): PromptPassLimits {
+  if (mode === 'fast') {
+    return {
+      readmeChars: config.maxFastReadmeChars,
+      issueBodyChars: config.maxFastIssueBodyChars,
+      timelineEvents: config.maxFastTimelineEvents,
+      timelineTextChars: config.maxFastTimelineTextChars,
+    };
+  }
+  return {
+    readmeChars: config.maxProReadmeChars,
+    issueBodyChars: config.maxProIssueBodyChars,
+    timelineEvents: config.maxProTimelineEvents,
+    timelineTextChars: config.maxProTimelineTextChars,
+  };
+}
 
 /**
  * Build a schema that constrains label values to actual repository labels.
@@ -58,8 +110,12 @@ export function buildSystemPrompt(
   readmePath: string,
   repoLabels: Array<{ name: string; description?: string | null; }>,
   additionalInstructions?: string,
+  mode: PromptPassMode = 'pro',
+  limits?: Partial<PromptPassLimits>,
 ): string {
   const basePrompt = loadPrompt(promptPath);
+  const readmeLimit = limits?.readmeChars ?? Number.MAX_SAFE_INTEGER;
+  const readme = readmeLimit > 0 ? clampText(loadReadme(readmePath), readmeLimit) : '';
   return `
 === SECTION: OUTPUT FORMAT ===
 JSON OUTPUT CONTRACT:
@@ -130,9 +186,7 @@ ${basePrompt}
 ${additionalInstructions ? `\n=== SECTION: ADDITIONAL INSTRUCTIONS ===\n${additionalInstructions}\n` : ''}
 === SECTION: REPOSITORY LABELS (JSON) ===
 ${JSON.stringify(repoLabels, null, 2)}
-
-=== SECTION: PROJECT README (MARKDOWN) ===
-${loadReadme(readmePath)}
+${mode === 'pro' && readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${readme}` : ''}
 `;
 }
 
@@ -143,19 +197,29 @@ export function buildUserPrompt(
   issue: Issue,
   timelineEvents: TimelineEvent[],
   lastThoughts: string,
+  mode: PromptPassMode = 'pro',
+  limits?: Partial<PromptPassLimits>,
 ): string {
+  const resolvedLimits: PromptPassLimits = {
+    readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
+    issueBodyChars: limits?.issueBodyChars ?? Number.MAX_SAFE_INTEGER,
+    timelineEvents: limits?.timelineEvents ?? Number.MAX_SAFE_INTEGER,
+    timelineTextChars: limits?.timelineTextChars ?? Number.MAX_SAFE_INTEGER,
+  };
+  const promptIssue = applyIssueLimits(issue, resolvedLimits);
+  const promptTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
+  const promptThoughts = mode === 'pro' ? lastThoughts : '';
+
   return `
 === SECTION: RUNTIME CONTEXT ===
 Current date/time (UTC ISO 8601): ${new Date().toISOString()}
 
 === SECTION: ISSUE METADATA (JSON) ===
-${JSON.stringify(issue, null, 2)}
+${JSON.stringify(promptIssue, null, 2)}
 
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
-${JSON.stringify(timelineEvents, null, 2)}
-
-=== SECTION: THOUGHTS FROM LAST RUN ===
-${lastThoughts || 'none'}
+${JSON.stringify(promptTimelineEvents, null, 2)}
+${mode === 'pro' ? `\n=== SECTION: THOUGHTS FROM LAST RUN ===\n${promptThoughts || 'none'}` : ''}
 `;
 }
 
@@ -167,8 +231,10 @@ export async function buildPrompt(
   repoLabels: Array<{ name: string; description?: string | null; }>,
   lastThoughts: string,
   additionalInstructions?: string,
+  mode: PromptPassMode = 'pro',
+  limits?: Partial<PromptPassLimits>,
 ) {
-  const systemPrompt = buildSystemPrompt(promptPath, readmePath, repoLabels, additionalInstructions);
-  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts);
+  const systemPrompt = buildSystemPrompt(promptPath, readmePath, repoLabels, additionalInstructions, mode, limits);
+  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts, mode, limits);
   return { systemPrompt, userPrompt };
 }

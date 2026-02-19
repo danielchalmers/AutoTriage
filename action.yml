@@ -43,10 +43,10 @@ inputs:
     description: "Sampling temperature for the pro model (0-2); Gemini 3 recommends 1.0 for optimal performance."
     required: false
     default: "1.0"
-  max-timeline-events:
-    description: "Maximum number of recent timeline events injected into the prompt context."
+  budget-scale:
+    description: "Scalar multiplier for internal Fast/Pro context limits. Use values >1 to allow more prompt context."
     required: false
-    default: "40"
+    default: "1"
   max-triages:
     description: "Cap on how many targets can escalate to the review pass during this run."
     required: false

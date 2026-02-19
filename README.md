@@ -48,10 +48,11 @@ jobs:
 | `model-pro` | Review model that double-checks uncertain plans. | `gemini-3-flash-preview` |
 | `model-fast-temperature` | Sampling temperature for fast model (`0` deterministic -> `2` exploratory). | `0.0` |
 | `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3 recommends `1.0`. | `1.0` |
-| `max-timeline-events` | Maximum recent timeline events included in the prompt. | `40` |
+| `budget-scale` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
+| `context-caching` | Enable Gemini context caching. | `"false"` |
 | `skip-unchanged` | Skip re-processing issues already in the database that haven't changed since the last run. | `"false"` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
 
