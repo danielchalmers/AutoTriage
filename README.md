@@ -56,11 +56,6 @@ jobs:
 | `skip-unchanged` | Skip re-processing issues already in the database that haven't changed since the last run. | `"false"` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
 
-### Fast vs Pro context presets
-
-- **Cost-sensitive preset**: keep defaults (`budget-scale: 1`).
-- **Quality-sensitive preset**: increase the dial, for example `budget-scale: 1.5` or `2`.
-
 ## Example Workflows
 
 See ready-to-use workflow files in [`examples/workflows`](./examples/workflows/):
