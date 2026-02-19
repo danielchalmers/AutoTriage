@@ -47,6 +47,7 @@ export type TimelineEvent = {
   merged?: boolean;
   milestone?: string | null;
   project?: string | null;
+  path?: string;
 };
 
 export class GitHubClient {
@@ -141,7 +142,7 @@ export class GitHubClient {
       .filter((l: any): l is { name: string; description: string | null } => !!l);
   }
 
-  async listTimelineEvents(issue_number: number, limit: number): Promise<{ raw: any[]; filtered: TimelineEvent[] }> {
+  async listTimelineEvents(issue_number: number, limit: number, isPullRequest?: boolean): Promise<{ raw: any[]; filtered: TimelineEvent[] }> {
     this.incrementApiCalls();
     const events = await this.octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
       owner: this.owner,
@@ -198,10 +199,43 @@ export class GitHubClient {
           return base;
       }
     });
+
+    const timelineEvents = mapped.filter((ev): ev is TimelineEvent => ev !== null);
+
+    if (isPullRequest) {
+      const reviewComments = await this.listReviewComments(issue_number);
+      timelineEvents.push(...reviewComments);
+      timelineEvents.sort((a, b) => {
+        const aTime = a.created_at ? Date.parse(a.created_at) : 0;
+        const bTime = b.created_at ? Date.parse(b.created_at) : 0;
+        return aTime - bTime;
+      });
+    }
+
     return {
       raw: events,
-      filtered: mapped.filter((ev): ev is TimelineEvent => ev !== null).slice(-limit),
+      filtered: timelineEvents.slice(-limit),
     };
+  }
+
+  async listReviewComments(pull_number: number): Promise<TimelineEvent[]> {
+    this.incrementApiCalls();
+    const comments = await this.octokit.paginate(this.octokit.rest.pulls.listReviewComments, {
+      owner: this.owner,
+      repo: this.repo,
+      pull_number,
+      per_page: 100,
+    });
+    return (comments as any[]).map<TimelineEvent>((comment: any) => ({
+      id: comment.id,
+      url: comment.url,
+      event: 'review_commented',
+      actor: comment.user?.login,
+      created_at: comment.created_at,
+      updated_at: comment.updated_at,
+      body: comment.body,
+      path: comment.path,
+    }));
   }
 
   async addLabels(issue_number: number, labels: string[]): Promise<void> {
