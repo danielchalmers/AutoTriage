@@ -52,7 +52,7 @@ jobs:
 | `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
-| `context-caching` | Enable Gemini context caching (disabled by default). | `"false"` |
+| `context-caching` | Enable Gemini context caching. | `"false"` |
 | `skip-unchanged` | Skip re-processing issues already in the database that haven't changed since the last run. | `"false"` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
 
