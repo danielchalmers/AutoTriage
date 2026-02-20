@@ -12,36 +12,41 @@ describe('context caching', () => {
     const model = 'gemini-2.5-flash-lite'
 
     it('uses systemInstruction when no cache name is provided', () => {
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0, -1)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1)
       expect(payload.config?.systemInstruction).toBe(systemPrompt)
       expect(payload.config?.cachedContent).toBeUndefined()
     })
 
     it('uses cachedContent and omits systemInstruction when cache name is provided', () => {
       const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0, -1, cacheName)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1, cacheName)
       expect(payload.config?.cachedContent).toBe(cacheName)
       expect(payload.config?.systemInstruction).toBeUndefined()
     })
 
     it('preserves other config settings when using cache', () => {
       const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0.5, 1024, cacheName)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 1024, cacheName)
       expect(payload.config?.cachedContent).toBe(cacheName)
-      expect(payload.config?.temperature).toBe(0.5)
+      expect(payload.config?.temperature).toBe(0)
       expect(payload.config?.responseMimeType).toBe('application/json')
       expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: 1024 })
     })
 
     it('still includes user content in both cached and uncached modes', () => {
-      const uncachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0, -1)
-      const cachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 0, -1, 'cachedContents/abc123')
+      const uncachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1)
+      const cachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1, 'cachedContents/abc123')
 
       expect(uncachedPayload.contents).toEqual(cachedPayload.contents)
       expect(uncachedPayload.contents?.[0]).toEqual({
         role: 'user',
         parts: [{ text: userPrompt }],
       })
+    })
+
+    it('omits temperature for non gemini-2 models', () => {
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3-flash-preview', -1)
+      expect(payload.config?.temperature).toBeUndefined()
     })
   })
 

@@ -5,14 +5,12 @@ export function buildJsonPayload(
   userPrompt: string,
   schema: unknown,
   model: string,
-  temperature: number,
   thinkingBudget?: number,
   cachedContentName?: string
 ): GenerateContentParameters {
   const config: NonNullable<GenerateContentParameters['config']> = {
     responseMimeType: 'application/json',
     responseSchema: schema as any,
-    temperature: temperature,
     thinkingConfig: {
       includeThoughts: true,
       thinkingBudget: thinkingBudget ?? -1
@@ -24,6 +22,9 @@ export function buildJsonPayload(
     config.cachedContent = cachedContentName;
   } else {
     config.systemInstruction = systemPrompt;
+  }
+  if (model.startsWith('gemini-2')) {
+    config.temperature = 0.0;
   }
 
   return {

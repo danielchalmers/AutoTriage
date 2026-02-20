@@ -41,7 +41,7 @@ export function getConfig(): Config {
   if (!token) throw new Error('GITHUB_TOKEN missing (add: secrets.GITHUB_TOKEN).');
   if (!geminiApiKey) throw new Error('GEMINI_API_KEY missing (add it as a repository secret).');
 
-  const enabled = (core.getInput('enabled') || 'true').toLowerCase() === 'true';
+  const dryRun = (core.getInput('dry-run') || 'false').toLowerCase() === 'true';
   const promptPath = core.getInput('prompt-path') || '.github/AutoTriage.prompt';
   const readmePath = core.getInput('readme-path') || 'README.md';
   const dbPath = core.getInput('db-path');
@@ -49,16 +49,6 @@ export function getConfig(): Config {
   const modelFast = modelFastInput || 'gemini-2.5-flash';
   const skipFastPass = modelFastInput === '';
   const modelPro = core.getInput('model-pro') || 'gemini-3-flash-preview';
-  const fastTemperatureInput = core.getInput('model-fast-temperature');
-  const parsedFastTemperature = Number(
-    fastTemperatureInput === undefined || fastTemperatureInput === '' ? '0.0' : fastTemperatureInput
-  );
-  const modelFastTemperature = Number.isFinite(parsedFastTemperature) ? parsedFastTemperature : 0;
-  const proTemperatureInput = core.getInput('model-pro-temperature');
-  const parsedProTemperature = Number(
-    proTemperatureInput === undefined || proTemperatureInput === '' ? '1.0' : proTemperatureInput
-  );
-  const modelProTemperature = Number.isFinite(parsedProTemperature) ? parsedProTemperature : 0;
   const thinkingBudget = -1;
   const budgetScale = Number(core.getInput('budget-scale') || '1');
   const multiplier = Number.isFinite(budgetScale) && budgetScale >= 0 ? budgetScale : 1;
@@ -70,16 +60,14 @@ export function getConfig(): Config {
   const maxProIssueBodyChars = applyMultiplier(20000, multiplier);
   const maxFastTimelineTextChars = applyMultiplier(600, multiplier);
   const maxProTimelineTextChars = applyMultiplier(4000, multiplier);
-  const maxTriages = Number(core.getInput('max-triages') || '20');
+  const maxProRuns = Number(core.getInput('max-pro-runs') || '20');
   const maxFastRuns = Number(core.getInput('max-fast-runs') || '100');
-  const singleIssue = core.getInput('issue-number');
-  const multiIssues = core.getInput('issue-numbers');
-  const issueNumber = singleIssue ? Number(singleIssue) : undefined;
-  const issueNumbers = parseNumbers(multiIssues);
+  const issues = core.getInput('issues');
+  const issueNumbers = parseNumbers(issues);
+  const issueNumber = issueNumbers && issueNumbers.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = core.getInput('additional-instructions') || undefined;
   const contextCaching = (core.getInput('context-caching') || 'false').toLowerCase() === 'true';
-  const skipUnchanged = (core.getInput('skip-unchanged') || 'false').toLowerCase() === 'true';
-  const scanRecentlyClosed = (core.getInput('scan-recently-closed') || 'true').toLowerCase() === 'true';
+  const extended = (core.getInput('extended') || 'false').toLowerCase() === 'true';
   const strictMode = (core.getInput('strict-mode') || 'false').toLowerCase() === 'true';
 
   return {
@@ -87,9 +75,7 @@ export function getConfig(): Config {
     repo,
     token,
     geminiApiKey,
-    modelFastTemperature,
-    modelProTemperature,
-    enabled,
+    dryRun,
     skipFastPass,
     thinkingBudget,
 
@@ -108,12 +94,11 @@ export function getConfig(): Config {
     maxProIssueBodyChars,
     maxFastTimelineTextChars,
     maxProTimelineTextChars,
-    maxTriages: Number.isFinite(maxTriages) && maxTriages > 0 ? Math.floor(maxTriages) : 20,
+    maxProRuns: Number.isFinite(maxProRuns) && maxProRuns > 0 ? Math.floor(maxProRuns) : 20,
     maxFastRuns: Number.isFinite(maxFastRuns) && maxFastRuns > 0 ? Math.floor(maxFastRuns) : 100,
     ...(additionalInstructions ? { additionalInstructions } : {}),
     contextCaching,
-    skipUnchanged,
-    scanRecentlyClosed,
+    extended,
     strictMode,
   } as Config;
 }

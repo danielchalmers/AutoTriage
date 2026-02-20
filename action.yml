@@ -6,27 +6,39 @@ branding:
   icon: "robot"
 
 inputs:
-  issue-number:
-    description: "Single issue or PR number to triage; when omitted the GitHub event target is used."
+  additional-instructions:
+    description: "Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt."
     required: false
-  issue-numbers:
-    description: "Space or comma separated list of issue / PR numbers to triage explicitly, processed in the order provided."
+  budget-scale:
+    description: "Scalar multiplier for internal Fast/Pro context limits. Use values >1 to allow more prompt context."
     required: false
-  prompt-path:
-    description: "Repo-relative path to the prompt template that governs triage behavior (tone, rules, closure policy)."
+    default: "1"
+  context-caching:
+    description: "Set to true to enable Gemini context caching (https://ai.google.dev/gemini-api/docs/caching), which reduces token usage when triaging multiple issues. Requires a paid Gemini plan."
     required: false
-    default: ".github/AutoTriage.prompt"
-  readme-path:
-    description: "Path to an optional Markdown file (e.g., your README) that is bundled into the AI prompt for extra context."
-    required: false
-    default: "README.md"
-  enabled:
-    description: "Set to true to apply labels, comments, and title changes; false performs a dry run and logs the plan only."
-    required: false
-    default: "true"
+    default: "false"
   db-path:
     description: "Optional path to a JSON file that stores per-item history between runs."
     required: false
+  dry-run:
+    description: "Set to true to log the plan only; false applies labels, comments, and title changes."
+    required: false
+    default: "false"
+  extended:
+    description: "Set to true to include unchanged issues and recently closed issues during backlog auto-discovery."
+    required: false
+    default: "false"
+  issues:
+    description: "Space or comma separated list of issue / PR numbers to triage explicitly; when omitted the GitHub event target is used."
+    required: false
+  max-fast-runs:
+    description: "Cap on how many targets can be analyzed with the fast model during this run."
+    required: false
+    default: "100"
+  max-pro-runs:
+    description: "Cap on how many targets can escalate to the review pass during this run."
+    required: false
+    default: "20"
   model-fast:
     description: "Identifier of the fast analysis model used for the first pass (default shown below). Leave blank to skip the fast pass."
     required: false
@@ -35,41 +47,14 @@ inputs:
     description: "Identifier of the deeper review model used when the fast pass asks for confirmation."
     required: false
     default: "gemini-3-flash-preview"
-  model-fast-temperature:
-    description: "Sampling temperature for the fast model (0-2); lower keeps responses deterministic while higher explores alternatives."
+  prompt-path:
+    description: "Repo-relative path to the prompt template that governs triage behavior (tone, rules, closure policy)."
     required: false
-    default: "0.0"
-  model-pro-temperature:
-    description: "Sampling temperature for the pro model (0-2); Gemini 3 recommends 1.0 for optimal performance."
+    default: ".github/AutoTriage.prompt"
+  readme-path:
+    description: "Path to an optional Markdown file (e.g., your README) that is bundled into the AI prompt for extra context."
     required: false
-    default: "1.0"
-  budget-scale:
-    description: "Scalar multiplier for internal Fast/Pro context limits. Use values >1 to allow more prompt context."
-    required: false
-    default: "1"
-  max-triages:
-    description: "Cap on how many targets can escalate to the review pass during this run."
-    required: false
-    default: "20"
-  max-fast-runs:
-    description: "Cap on how many targets can be analyzed with the fast model during this run."
-    required: false
-    default: "100"
-  additional-instructions:
-    description: "Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt."
-    required: false
-  context-caching:
-    description: "Set to true to enable Gemini context caching, which reduces token usage when triaging multiple issues. Requires a paid Gemini plan."
-    required: false
-    default: "false"
-  skip-unchanged:
-    description: "Set to true to skip re-processing issues that are already in the database and haven't changed since the last run."
-    required: false
-    default: "false"
-  scan-recently-closed:
-    description: "Set to false to opt out of scanning recently active closed issues during backlog auto-discovery."
-    required: false
-    default: "true"
+    default: "README.md"
   strict-mode:
     description: "Set to true to fail the overall job if any runs have errors."
     required: false

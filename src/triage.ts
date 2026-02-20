@@ -34,7 +34,7 @@ class UpdateLabelsOp implements TriageOperation {
       const parts = [...tintedUnchanged, ...tintedAdded, ...tintedRemoved];
       const labelLine = parts.length ? parts.join(', ') : chalk.yellow('none');
       console.log(`${chalk.cyan('🏷️ Labels')}: ${labelLine}`);
-      if (cfg.enabled) {
+      if (!cfg.dryRun) {
         if (this.toAdd.length) await client.addLabels(issue.number, this.toAdd);
         for (const name of this.toRemove) await client.removeLabel(issue.number, name);
       }
@@ -54,7 +54,7 @@ class CreateCommentOp implements TriageOperation {
     const preview = this.body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
     console.log(chalk.cyan('💬 Comment:'));
     console.log(chalk.green(preview));
-    if (cfg.enabled) await client.createComment(issue.number, this.body);
+    if (!cfg.dryRun) await client.createComment(issue.number, this.body);
   }
 }
 
@@ -70,7 +70,7 @@ class UpdateTitleOp implements TriageOperation {
     console.log(chalk.cyan('✏️ Title:'));
     console.log(chalk.red(`-"${issue.title}"`));
     console.log(chalk.green(`+"${this.newTitle}"`));
-    if (cfg.enabled) await client.updateTitle(issue.number, this.newTitle);
+    if (!cfg.dryRun) await client.updateTitle(issue.number, this.newTitle);
   }
 }
 
@@ -85,10 +85,10 @@ class UpdateStateOp implements TriageOperation {
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.state === 'open') {
       console.log(`${chalk.cyan('🔄 State')}: Reopening issue`);
-      if (cfg.enabled) await client.updateIssueState(issue.number, 'open');
+      if (!cfg.dryRun) await client.updateIssueState(issue.number, 'open');
     } else {
       console.log(`${chalk.cyan('🔄 State')}: Closing issue as ${this.state}`);
-      if (cfg.enabled) await client.updateIssueState(issue.number, 'closed', this.state);
+      if (!cfg.dryRun) await client.updateIssueState(issue.number, 'closed', this.state);
     }
   }
 }

@@ -18,7 +18,7 @@ jobs:
       - name: Triage comment
         uses: ./
         with:
-          issue-number: ${{ github.event.issue.number }}
+          issues: ${{ github.event.issue.number }}
           prompt-path: examples/AutoTriage.prompt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

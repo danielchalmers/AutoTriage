@@ -18,7 +18,7 @@ jobs:
       - name: AutoTriage - triage issue
         uses: danielchalmers/AutoTriage@main
         with:
-          issue-number: ${{ github.event.issue.number }}
+          issues: ${{ github.event.issue.number }}
           prompt-path: .github/AutoTriage.prompt
           skip-fast-pass: true
         env:
