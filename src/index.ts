@@ -76,14 +76,14 @@ async function run(): Promise<void> {
       
       // Only check fast runs limit if we're not skipping the fast pass
       if (!cfg.skipFastPass && remainingFastRuns <= 0) {
-          console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
-          break;
-        }
+        console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
+        break;
+      }
       
       if (remainingTriages <= 0) {
-          console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
-          break;
-        }
+        console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
+        break;
+      }
 
       try {
         const issue = await gh.getIssue(n);
@@ -291,6 +291,7 @@ async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean
   const issues = await gh.listOpenIssues();
   const recentlyClosedIssues = cfg.extended ? await gh.listRecentlyClosedIssues() : [];
   const closedIssuesToRecheck = filterPreviouslyTriagedClosedIssuesWithNewActivity(recentlyClosedIssues, db);
-  const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, !cfg.extended);
+  const skipUnchanged = !cfg.extended;
+  const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, skipUnchanged);
   return { targets: orderedNumbers, autoDiscover: true };
 }

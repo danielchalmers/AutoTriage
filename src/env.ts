@@ -64,7 +64,7 @@ export function getConfig(): Config {
   const maxFastRuns = Number(core.getInput('max-fast-runs') || '100');
   const issues = core.getInput('issues');
   const issueNumbers = parseNumbers(issues);
-  const issueNumber = issueNumbers && issueNumbers.length === 1 ? issueNumbers[0] : undefined;
+  const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = core.getInput('additional-instructions') || undefined;
   const contextCaching = (core.getInput('context-caching') || 'false').toLowerCase() === 'true';
   const extended = (core.getInput('extended') || 'false').toLowerCase() === 'true';
