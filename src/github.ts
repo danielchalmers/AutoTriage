@@ -123,6 +123,20 @@ export class GitHubClient {
     return issues.map(issue => this.buildMetadata(issue));
   }
 
+  async listRecentlyClosedIssues(limit: number = 100): Promise<Issue[]> {
+    this.incrementApiCalls();
+    const { data } = await this.octokit.rest.issues.listForRepo({
+      owner: this.owner,
+      repo: this.repo,
+      state: 'closed',
+      sort: 'updated',
+      direction: 'desc',
+      per_page: Math.min(Math.max(limit, 1), 100),
+      page: 1,
+    });
+    return data.map(issue => this.buildMetadata(issue));
+  }
+
   async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {
     this.incrementApiCalls();
     const labels = await this.octokit.paginate(this.octokit.rest.issues.listLabelsForRepo, {

@@ -160,5 +160,6 @@ export interface Config {
   additionalInstructions?: string;
   contextCaching: boolean;
   skipUnchanged: boolean;
+  scanRecentlyClosed: boolean;
   strictMode: boolean;
 }

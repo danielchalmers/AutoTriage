@@ -54,6 +54,7 @@ jobs:
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
 | `context-caching` | Enable Gemini context caching. | `"false"` |
 | `skip-unchanged` | Skip re-processing issues already in the database that haven't changed since the last run. | `"false"` |
+| `scan-recently-closed` | Opt in/out of re-checking recently active closed issues during backlog auto-discovery. | `"true"` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
 
 ## Example Workflows

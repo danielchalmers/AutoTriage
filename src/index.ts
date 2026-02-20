@@ -5,7 +5,7 @@ import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResult
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
-import { buildAutoDiscoverQueue } from './autoDiscover';
+import { buildAutoDiscoverQueue, filterPreviouslyTriagedClosedIssuesWithNewActivity } from './autoDiscover';
 import { RunStatistics } from './stats';
 import chalk from 'chalk';
 
@@ -293,6 +293,8 @@ async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean
 
   // Fallback: auto-discover mode prioritizes new/updated work first, then cycles through the rest.
   const issues = await gh.listOpenIssues();
-  const orderedNumbers = buildAutoDiscoverQueue(issues, db, cfg.skipUnchanged);
+  const recentlyClosedIssues = cfg.scanRecentlyClosed ? await gh.listRecentlyClosedIssues() : [];
+  const closedIssuesToRecheck = filterPreviouslyTriagedClosedIssuesWithNewActivity(recentlyClosedIssues, db);
+  const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, cfg.skipUnchanged);
   return { targets: orderedNumbers, autoDiscover: true };
 }
