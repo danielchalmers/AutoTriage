@@ -293,7 +293,7 @@ async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean
 
   // Fallback: auto-discover mode prioritizes new/updated work first, then cycles through the rest.
   const issues = await gh.listOpenIssues();
-  const recentlyClosedIssues = await gh.listRecentlyClosedIssues();
+  const recentlyClosedIssues = cfg.scanRecentlyClosed ? await gh.listRecentlyClosedIssues() : [];
   const closedIssuesToRecheck = filterPreviouslyTriagedClosedIssuesWithNewActivity(recentlyClosedIssues, db);
   const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, cfg.skipUnchanged);
   return { targets: orderedNumbers, autoDiscover: true };

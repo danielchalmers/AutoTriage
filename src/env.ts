@@ -79,6 +79,7 @@ export function getConfig(): Config {
   const additionalInstructions = core.getInput('additional-instructions') || undefined;
   const contextCaching = (core.getInput('context-caching') || 'false').toLowerCase() === 'true';
   const skipUnchanged = (core.getInput('skip-unchanged') || 'false').toLowerCase() === 'true';
+  const scanRecentlyClosed = (core.getInput('scan-recently-closed') || 'true').toLowerCase() === 'true';
   const strictMode = (core.getInput('strict-mode') || 'false').toLowerCase() === 'true';
 
   return {
@@ -112,6 +113,7 @@ export function getConfig(): Config {
     ...(additionalInstructions ? { additionalInstructions } : {}),
     contextCaching,
     skipUnchanged,
+    scanRecentlyClosed,
     strictMode,
   } as Config;
 }

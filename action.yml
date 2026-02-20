@@ -66,6 +66,10 @@ inputs:
     description: "Set to true to skip re-processing issues that are already in the database and haven't changed since the last run."
     required: false
     default: "false"
+  scan-recently-closed:
+    description: "Set to false to opt out of scanning recently active closed issues during backlog auto-discovery."
+    required: false
+    default: "true"
   strict-mode:
     description: "Set to true to fail the overall job if any runs have errors."
     required: false
