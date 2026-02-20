@@ -225,11 +225,11 @@ export class GitHubClient {
     });
     const timelineEvents = mapped.filter((ev): ev is TimelineEvent => ev !== null);
     const reviewComments = isPullRequest ? await this.listReviewComments(issue_number) : [];
-    const filtered = [...timelineEvents, ...reviewComments]
+    const filtered = timelineEvents.concat(reviewComments)
       .sort((a, b) => {
         const aTs = Date.parse(a.created_at ?? '');
         const bTs = Date.parse(b.created_at ?? '');
-        return (Number.isNaN(aTs) ? 0 : aTs) - (Number.isNaN(bTs) ? 0 : bTs);
+        return (Number.isNaN(aTs) ? Number.MAX_SAFE_INTEGER : aTs) - (Number.isNaN(bTs) ? Number.MAX_SAFE_INTEGER : bTs);
       })
       .slice(-limit);
 
