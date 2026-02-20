@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildAutoDiscoverQueue } from '../src/autoDiscover';
+import { buildAutoDiscoverQueue, filterPreviouslyTriagedClosedIssuesWithNewActivity } from '../src/autoDiscover';
 import { Issue } from '../src/github';
 import { TriageDb } from '../src/storage';
 
@@ -25,6 +25,14 @@ function makeIssue(number: number, updatedAt: string): Issue {
     number,
     updated_at: updatedAt,
     created_at: updatedAt,
+  };
+}
+
+function makeClosedIssue(number: number, closedAt: string, updatedAt: string): Issue {
+  return {
+    ...makeIssue(number, updatedAt),
+    state: 'closed',
+    closed_at: closedAt,
   };
 }
 
@@ -183,5 +191,38 @@ describe('buildAutoDiscoverQueue', () => {
       // Default behavior (no skipUnchanged) should be same as skipUnchanged=false
       expect(buildAutoDiscoverQueue(issues, db)).toEqual([5, 3, 4]);
     });
+  });
+});
+
+describe('filterPreviouslyTriagedClosedIssuesWithNewActivity', () => {
+  it('keeps closed issues triaged before that have newer activity', () => {
+    const db: TriageDb = {
+      '1': { lastTriaged: '2024-04-01T00:00:00Z' },
+    };
+    const closedIssues = [
+      makeClosedIssue(1, '2024-04-02T00:00:00Z', '2024-04-03T00:00:00Z'),
+    ];
+
+    expect(filterPreviouslyTriagedClosedIssuesWithNewActivity(closedIssues, db).map(issue => issue.number)).toEqual([1]);
+  });
+
+  it('drops closed issues that were never triaged', () => {
+    const db: TriageDb = {};
+    const closedIssues = [
+      makeClosedIssue(2, '2024-04-02T00:00:00Z', '2024-04-03T00:00:00Z'),
+    ];
+
+    expect(filterPreviouslyTriagedClosedIssuesWithNewActivity(closedIssues, db)).toEqual([]);
+  });
+
+  it('drops closed issues without new activity after close/triage baseline', () => {
+    const db: TriageDb = {
+      '3': { lastTriaged: '2024-04-01T00:00:00Z' },
+    };
+    const closedIssues = [
+      makeClosedIssue(3, '2024-04-02T00:00:00Z', '2024-04-02T00:00:00Z'),
+    ];
+
+    expect(filterPreviouslyTriagedClosedIssuesWithNewActivity(closedIssues, db)).toEqual([]);
   });
 });

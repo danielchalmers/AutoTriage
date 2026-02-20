@@ -33,6 +33,19 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchan
   return prioritized.concat(secondary.map(item => item.number));
 }
 
+// During backlog auto-discovery, include recently updated closed issues only when we've triaged them before.
+export function filterPreviouslyTriagedClosedIssuesWithNewActivity(issues: Issue[], db: TriageDb): Issue[] {
+  return (issues || []).filter(issue => {
+    const entry = getDbEntry(db, issue.number);
+    const triagedMs = safeParseDate(entry?.lastTriaged);
+    if (triagedMs === 0) return false; // Never triaged before (or invalid timestamp)
+    const closedMs = safeParseDate(issue.closed_at);
+    const updatedMs = getLastUpdatedMs(issue);
+    const baselineMs = Math.max(triagedMs, closedMs);
+    return updatedMs > baselineMs;
+  });
+}
+
 function getLastUpdatedMs(issue: Issue): number {
   return safeParseDate(issue.updated_at) || safeParseDate(issue.created_at);
 }
