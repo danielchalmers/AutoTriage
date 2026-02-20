@@ -33,6 +33,7 @@ export type TimelineEvent = {
   submitted_at?: string;
   label?: { name?: string | null };
   body?: string;
+  path?: string;
   from?: string;
   to?: string;
   assignee?: string;
@@ -141,7 +142,31 @@ export class GitHubClient {
       .filter((l: any): l is { name: string; description: string | null } => !!l);
   }
 
-  async listTimelineEvents(issue_number: number, limit: number): Promise<{ raw: any[]; filtered: TimelineEvent[] }> {
+  private async listReviewComments(issue_number: number): Promise<TimelineEvent[]> {
+    this.incrementApiCalls();
+    const comments = await this.octokit.paginate(this.octokit.rest.pulls.listReviewComments, {
+      owner: this.owner,
+      repo: this.repo,
+      pull_number: issue_number,
+      per_page: 100,
+    });
+
+    return (comments as any[]).map((comment: any) => ({
+      event: 'review_commented',
+      actor: comment.user?.login,
+      actor_association: comment.author_association,
+      created_at: comment.created_at,
+      updated_at: comment.updated_at,
+      body: comment.body,
+      path: comment.path,
+    }));
+  }
+
+  async listTimelineEvents(
+    issue_number: number,
+    limit: number,
+    isPullRequest: boolean = false
+  ): Promise<{ raw: any[]; filtered: TimelineEvent[] }> {
     this.incrementApiCalls();
     const events = await this.octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
       owner: this.owner,
@@ -198,9 +223,19 @@ export class GitHubClient {
           return base;
       }
     });
+    const timelineEvents = mapped.filter((ev): ev is TimelineEvent => ev !== null);
+    const reviewComments = isPullRequest ? await this.listReviewComments(issue_number) : [];
+    const filtered = [...timelineEvents, ...reviewComments]
+      .sort((a, b) => {
+        const aTs = Date.parse(a.created_at ?? '');
+        const bTs = Date.parse(b.created_at ?? '');
+        return (Number.isNaN(aTs) ? 0 : aTs) - (Number.isNaN(bTs) ? 0 : bTs);
+      })
+      .slice(-limit);
+
     return {
       raw: events,
-      filtered: mapped.filter((ev): ev is TimelineEvent => ev !== null).slice(-limit),
+      filtered,
     };
   }
 
