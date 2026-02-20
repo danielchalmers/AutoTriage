@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   getOctokit: vi.fn(),
   issuesGet: vi.fn(),
   pullsListFiles: vi.fn(),
+  pullsListReviewComments: vi.fn(),
   paginate: vi.fn(),
 }));
 
@@ -40,7 +41,7 @@ describe('GitHubClient.getIssue', () => {
     mocks.getOctokit.mockReturnValue({
       rest: {
         issues: { get: mocks.issuesGet },
-        pulls: { listFiles: mocks.pullsListFiles },
+        pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments },
       },
       paginate: mocks.paginate,
     });
@@ -85,6 +86,70 @@ describe('GitHubClient.getIssue', () => {
     expect(issue.type).toBe('issue');
     expect(issue.changed_files).toBeUndefined();
     expect(mocks.paginate).not.toHaveBeenCalled();
+    expect(client.getApiCallCount()).toBe(1);
+  });
+});
+
+describe('GitHubClient.listTimelineEvents', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getOctokit.mockReturnValue({
+      rest: {
+        issues: { get: mocks.issuesGet },
+        pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments },
+      },
+      paginate: mocks.paginate,
+    });
+  });
+
+  it('includes review comments for pull requests and sorts chronologically', async () => {
+    mocks.paginate
+      .mockResolvedValueOnce([
+        { event: 'commented', body: 'Issue timeline comment', created_at: '2024-01-01T01:00:00Z' },
+      ])
+      .mockResolvedValueOnce([
+        {
+          user: { login: 'reviewer' },
+          author_association: 'MEMBER',
+          created_at: '2024-01-01T00:30:00Z',
+          updated_at: '2024-01-01T00:30:00Z',
+          body: 'Inline review comment',
+          path: 'src/file.ts',
+        },
+      ]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const { filtered } = await client.listTimelineEvents(42, 10, true);
+
+    expect(filtered).toEqual([
+      expect.objectContaining({
+        event: 'review_commented',
+        actor: 'reviewer',
+        body: 'Inline review comment',
+        path: 'src/file.ts',
+      }),
+      expect.objectContaining({
+        event: 'commented',
+        body: 'Issue timeline comment',
+      }),
+    ]);
+    expect(client.getApiCallCount()).toBe(2);
+  });
+
+  it('does not fetch review comments for issues', async () => {
+    mocks.paginate.mockResolvedValueOnce([
+      { event: 'commented', body: 'Issue timeline comment', created_at: '2024-01-01T01:00:00Z' },
+    ]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const { filtered } = await client.listTimelineEvents(42, 10, false);
+
+    expect(filtered).toEqual([
+      expect.objectContaining({
+        event: 'commented',
+        body: 'Issue timeline comment',
+      }),
+    ]);
     expect(client.getApiCallCount()).toBe(1);
   });
 });
