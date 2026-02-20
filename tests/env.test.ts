@@ -20,30 +20,62 @@ vi.mock('@actions/github', () => ({
 
 import { getConfig } from '../src/env';
 
-describe('getConfig scan-recently-closed input', () => {
+describe('getConfig extended input', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.GITHUB_TOKEN = 'token';
     process.env.GEMINI_API_KEY = 'gemini-key';
     process.env.GITHUB_REPOSITORY = 'danielchalmers/AutoTriage';
     mocks.getInput.mockImplementation((name: string) => {
-      if (name === 'scan-recently-closed') return '';
+      if (name === 'extended') return '';
       return '';
     });
   });
 
-  it('defaults to true when input is not set', () => {
+  it('defaults to false when input is not set', () => {
     const cfg = getConfig();
-    expect(cfg.scanRecentlyClosed).toBe(true);
+    expect(cfg.extended).toBe(false);
   });
 
-  it('parses false when explicitly disabled', () => {
+  it('parses true when explicitly enabled', () => {
     mocks.getInput.mockImplementation((name: string) => {
-      if (name === 'scan-recently-closed') return 'false';
+      if (name === 'extended') return 'true';
       return '';
     });
 
     const cfg = getConfig();
-    expect(cfg.scanRecentlyClosed).toBe(false);
+    expect(cfg.extended).toBe(true);
+  });
+});
+
+describe('getConfig renamed inputs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.GITHUB_TOKEN = 'token';
+    process.env.GEMINI_API_KEY = 'gemini-key';
+    process.env.GITHUB_REPOSITORY = 'danielchalmers/AutoTriage';
+    mocks.getInput.mockImplementation(() => '');
+  });
+
+  it('parses dry-run and issues inputs', () => {
+    mocks.getInput.mockImplementation((name: string) => {
+      if (name === 'dry-run') return 'true';
+      if (name === 'issues') return '12, 34';
+      return '';
+    });
+
+    const cfg = getConfig();
+    expect(cfg.dryRun).toBe(true);
+    expect(cfg.issueNumbers).toEqual([12, 34]);
+  });
+
+  it('uses max-pro-runs', () => {
+    mocks.getInput.mockImplementation((name: string) => {
+      if (name === 'max-pro-runs') return '7';
+      return '';
+    });
+
+    const cfg = getConfig();
+    expect(cfg.maxProRuns).toBe(7);
   });
 });

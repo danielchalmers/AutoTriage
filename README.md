@@ -29,32 +29,28 @@ jobs:
       - name: AutoTriage
         uses: danielchalmers/AutoTriage@main
         with:
-          enabled: false # flip to true once you're comfortable with the plan output
+          dry-run: true # flip to false once you're comfortable with the plan output
 ```
 
-4. Review the artifacts, then set `enabled: true` when you are ready.
+4. Review the artifacts, then set `dry-run: false` when you are ready.
 
 ## Inputs
 
 | Input | Purpose | Default |
 | --- | --- | --- |
-| `issue-number` | Triage a single issue or PR; falls back to the GitHub event target. | event target |
-| `issue-numbers` | Provide an explicit list (space or comma separated). | - |
-| `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
-| `readme-path` | Extra Markdown context uploaded to the AI prompt. | `README.md` |
-| `enabled` | `"true"` applies changes, `"false"` logs the plan only. | `"true"` |
+| `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
+| `budget-scale` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
+| `context-caching` | Enable Gemini context caching ([docs](https://ai.google.dev/gemini-api/docs/caching)). | `"false"` |
 | `db-path` | Persist per-item history between runs. | - |
+| `dry-run` | `"true"` logs the plan only, `"false"` applies changes. | `"false"` |
+| `extended` | When `"true"`, include unchanged issues and recently closed issues in auto-discovery. | `"false"` |
+| `issues` | Explicit issue/PR list (space or comma separated); falls back to the GitHub event target when omitted. | event target |
+| `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
+| `max-pro-runs` | Cap on items that escalate to the review pass per run. | `20` |
 | `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-2.5-flash` |
 | `model-pro` | Review model that double-checks uncertain plans. | `gemini-3-flash-preview` |
-| `model-fast-temperature` | Sampling temperature for fast model (`0` deterministic -> `2` exploratory). | `0.0` |
-| `model-pro-temperature` | Sampling temperature for pro model (`0` deterministic -> `2` exploratory). Gemini 3 recommends `1.0`. | `1.0` |
-| `budget-scale` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
-| `max-triages` | Cap on items that escalate to the review pass per run. | `20` |
-| `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
-| `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
-| `context-caching` | Enable Gemini context caching. | `"false"` |
-| `skip-unchanged` | Skip re-processing issues already in the database that haven't changed since the last run. | `"false"` |
-| `scan-recently-closed` | Opt in/out of re-checking recently active closed issues during backlog auto-discovery. | `"true"` |
+| `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
+| `readme-path` | Extra Markdown context uploaded to the AI prompt. | `README.md` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
 
 ## Example Workflows
@@ -65,7 +61,7 @@ See ready-to-use workflow files in [`examples/workflows`](./examples/workflows/)
 - [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) – run on pull request events.
 - [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) – scheduled/backlog sweep.
 
-Copy one into `.github/workflows/` and adjust `enabled`, schedules, or permissions as needed.
+Copy one into `.github/workflows/` and adjust `dry-run`, schedules, or permissions as needed.
 
 ## Example
 

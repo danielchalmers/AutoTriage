@@ -26,8 +26,8 @@ async function run(): Promise<void> {
   let fastRunsPerformed = 0;
   let consecutiveFailures = 0;
 
-  console.log(`⚙️ Enabled: ${cfg.enabled ? 'yes' : 'dry-run'}`);
-  console.log(`▶️ Triaging up to ${cfg.maxTriages} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
+  console.log(`⚙️ Mode: ${cfg.dryRun ? 'dry-run' : 'live'}`);
+  console.log(`▶️ Triaging up to ${cfg.maxProRuns} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
   console.log(`⚡ Fast runs limited to ${cfg.maxFastRuns} item(s)`);
 
   const fastLimits = getPromptLimits(cfg, 'fast');
@@ -71,7 +71,7 @@ async function run(): Promise<void> {
 
   try {
     for (const n of targets) {
-      const remainingTriages = cfg.maxTriages - triagesPerformed;
+      const remainingTriages = cfg.maxProRuns - triagesPerformed;
       const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
       
       // Only check fast runs limit if we're not skipping the fast pass
@@ -81,7 +81,7 @@ async function run(): Promise<void> {
       }
       
       if (remainingTriages <= 0) {
-        console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
+        console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
         break;
       }
 
@@ -111,12 +111,12 @@ async function run(): Promise<void> {
         throw err;
       }
 
-      if (triagesPerformed >= cfg.maxTriages) {
-        console.log(`⏳ Max triages (${cfg.maxTriages}) reached`);
+      if (triagesPerformed >= cfg.maxProRuns) {
+        console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
         break;
       }
 
-      saveDatabase(db, cfg.dbPath, cfg.enabled);
+      saveDatabase(db, cfg.dbPath, cfg.dryRun);
     }
   } finally {
     // Clean up caches
@@ -175,7 +175,6 @@ async function processIssue(
       const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
         issue,
         cfg.modelFast,
-        cfg.modelFastTemperature,
         cfg.thinkingBudget,
         systemPromptFast,
         fastUserPrompt,
@@ -209,7 +208,6 @@ async function processIssue(
     const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
       issue,
       cfg.modelPro,
-      cfg.modelProTemperature,
       cfg.thinkingBudget,
       systemPromptPro,
       proUserPrompt,
@@ -241,7 +239,6 @@ async function processIssue(
 export async function generateAnalysis(
   issue: Issue,
   model: string,
-  modelTemperature: number,
   thinkingBudget: number,
   systemPrompt: string,
   userPrompt: string,
@@ -255,7 +252,6 @@ export async function generateAnalysis(
     userPrompt,
     schema,
     model,
-    modelTemperature,
     thinkingBudget,
     cachedContentName
   );
@@ -293,8 +289,9 @@ async function listTargets(): Promise<{ targets: number[], autoDiscover: boolean
 
   // Fallback: auto-discover mode prioritizes new/updated work first, then cycles through the rest.
   const issues = await gh.listOpenIssues();
-  const recentlyClosedIssues = cfg.scanRecentlyClosed ? await gh.listRecentlyClosedIssues() : [];
+  const recentlyClosedIssues = cfg.extended ? await gh.listRecentlyClosedIssues() : [];
   const closedIssuesToRecheck = filterPreviouslyTriagedClosedIssuesWithNewActivity(recentlyClosedIssues, db);
-  const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, cfg.skipUnchanged);
+  const skipUnchanged = !cfg.extended;
+  const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, skipUnchanged);
   return { targets: orderedNumbers, autoDiscover: true };
 }

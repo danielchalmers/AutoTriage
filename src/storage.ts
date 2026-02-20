@@ -26,8 +26,8 @@ export function loadDatabase(dbPath?: string): TriageDb {
   }
 }
 
-export function saveDatabase(db: TriageDb, dbPath?: string, enabled?: boolean): void {
-  if (!dbPath || !enabled) return;
+export function saveDatabase(db: TriageDb, dbPath?: string, dryRun?: boolean): void {
+  if (!dbPath || dryRun) return;
 
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -135,9 +135,7 @@ export interface Config {
   repo: string;
   token: string;
   geminiApiKey: string;
-  modelFastTemperature: number;
-  modelProTemperature: number;
-  enabled: boolean;
+  dryRun: boolean;
   thinkingBudget: number;
   issueNumber?: number;
   issueNumbers?: number[];
@@ -155,11 +153,10 @@ export interface Config {
   maxProIssueBodyChars: number;
   maxFastTimelineTextChars: number;
   maxProTimelineTextChars: number;
-  maxTriages: number;
+  maxProRuns: number;
   maxFastRuns: number;
   additionalInstructions?: string;
   contextCaching: boolean;
-  skipUnchanged: boolean;
-  scanRecentlyClosed: boolean;
+  extended: boolean;
   strictMode: boolean;
 }

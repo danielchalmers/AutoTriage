@@ -8,8 +8,8 @@ on:
       issues:
         description: 'Space-separated issue numbers'
         required: false
-      enabled:
-        description: 'Enable writes (false = dry-run)'
+      dry-run:
+        description: 'Dry run (true = no writes)'
         type: boolean
         required: false
       additional-instructions:
@@ -43,9 +43,9 @@ jobs:
       - name: AutoTriage - triage backlog
         uses: danielchalmers/AutoTriage@main
         with:
-          issue-numbers: ${{ github.event.inputs.issues }}
+          issues: ${{ github.event.inputs.issues }}
           prompt-path: .github/AutoTriage.prompt
-          enabled: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.enabled) }}
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry-run || false }}
           db-path: triage-db.json
           additional-instructions: ${{ github.event.inputs.additional-instructions }}
         env:
