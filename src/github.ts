@@ -134,7 +134,7 @@ export class GitHubClient {
       per_page: Math.min(Math.max(limit, 1), 100),
       page: 1,
     });
-    return (data as any[]).map(issue => this.buildMetadata(issue));
+    return data.map(issue => this.buildMetadata(issue));
   }
 
   async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {
