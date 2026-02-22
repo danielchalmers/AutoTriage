@@ -9,10 +9,6 @@ on:
       head-commit:
         description: "End commit SHA"
         required: true
-      branch:
-        description: "Branch name"
-        required: true
-        default: "dev"
       prompt-url:
         description: "Prompt URL (your raw gist/file)"
         required: true
@@ -37,7 +33,7 @@ jobs:
         with:
           base-commit: ${{ inputs.base-commit }}
           head-commit: ${{ inputs.head-commit }}
-          branch: ${{ inputs.branch }}
+          branch: main
           prompt-url: ${{ inputs.prompt-url }}
           model: ${{ inputs.model }}
         env:
