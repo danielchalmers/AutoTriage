@@ -29,7 +29,7 @@ jobs:
   triage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Cache triage DB
         id: cache-db
@@ -41,7 +41,7 @@ jobs:
             ${{ runner.os }}-triage-db-
 
       - name: AutoTriage - triage backlog
-        uses: danielchalmers/AutoTriage@main
+        uses: danielchalmers/AutoTriage@v3
         with:
           issues: ${{ github.event.inputs.issues }}
           prompt-path: .github/AutoTriage.prompt
@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: triage-artifacts-${{ github.run_number }}
           path: |
