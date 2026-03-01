@@ -13,20 +13,20 @@ jobs:
   triage_pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Triage PR
         uses: ./
         with:
           issues: ${{ github.event.pull_request.number }}
           prompt-path: examples/AutoTriage.prompt
-          skip-fast-pass: true
+          model-fast: ""
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: triage-artifacts-${{ github.run_number }}
           path: |

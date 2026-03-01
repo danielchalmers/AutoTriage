@@ -14,9 +14,9 @@ jobs:
     if: ${{ github.event.sender.type != 'Bot' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: AutoTriage - triage comment
-        uses: danielchalmers/AutoTriage@main
+        uses: danielchalmers/AutoTriage@v3
         with:
           issues: ${{ github.event.issue.number }}
           prompt-path: .github/AutoTriage.prompt

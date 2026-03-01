@@ -25,9 +25,9 @@ jobs:
   triage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: AutoTriage
-        uses: danielchalmers/AutoTriage@main
+        uses: danielchalmers/AutoTriage@v3
         with:
           dry-run: true # flip to false once you're comfortable with the plan output
 ```
