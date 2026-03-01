@@ -52,8 +52,8 @@ export function getConfig(): Config {
   const thinkingBudget = -1;
   const budgetScale = Number(core.getInput('budget-scale') || '1');
   const multiplier = Number.isFinite(budgetScale) && budgetScale >= 0 ? budgetScale : 1;
-  const maxFastTimelineEvents = applyMultiplier(12, multiplier);
-  const maxProTimelineEvents = applyMultiplier(40, multiplier);
+  const maxFastTimelineChars = applyMultiplier(8000, multiplier);
+  const maxProTimelineChars = applyMultiplier(40000, multiplier);
   const maxFastReadmeChars = applyMultiplier(0, multiplier);
   const maxProReadmeChars = applyMultiplier(120000, multiplier);
   const maxFastIssueBodyChars = applyMultiplier(4000, multiplier);
@@ -86,8 +86,8 @@ export function getConfig(): Config {
     dbPath,
     modelFast,
     modelPro,
-    maxFastTimelineEvents,
-    maxProTimelineEvents,
+    maxFastTimelineChars,
+    maxProTimelineChars,
     maxFastReadmeChars,
     maxProReadmeChars,
     maxFastIssueBodyChars,

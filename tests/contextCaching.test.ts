@@ -193,7 +193,7 @@ describe('context caching', () => {
 
       const fastPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'fast', {
         issueBodyChars: 5,
-        timelineEvents: 2,
+        timelineChars: 6,
         timelineTextChars: 3,
       })
       expect(fastPrompt).toContain('"body": "xxxxx"')
@@ -203,7 +203,7 @@ describe('context caching', () => {
 
       const proPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'pro', {
         issueBodyChars: 50,
-        timelineEvents: 3,
+        timelineChars: 60,
         timelineTextChars: 50,
       })
       expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')

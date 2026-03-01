@@ -178,7 +178,6 @@ export class GitHubClient {
 
   async listTimelineEvents(
     issue_number: number,
-    limit: number,
     isPullRequest: boolean = false
   ): Promise<{ raw: any[]; filtered: TimelineEvent[] }> {
     this.incrementApiCalls();
@@ -244,8 +243,7 @@ export class GitHubClient {
         const aTs = Date.parse(a.created_at ?? '');
         const bTs = Date.parse(b.created_at ?? '');
         return (Number.isNaN(aTs) ? Number.MAX_SAFE_INTEGER : aTs) - (Number.isNaN(bTs) ? Number.MAX_SAFE_INTEGER : bTs);
-      })
-      .slice(-limit);
+      });
 
     return {
       raw: events,

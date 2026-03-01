@@ -145,8 +145,8 @@ export interface Config {
   skipFastPass: boolean;
   modelFast: string;
   modelPro: string;
-  maxFastTimelineEvents: number;
-  maxProTimelineEvents: number;
+  maxFastTimelineChars: number;
+  maxProTimelineChars: number;
   maxFastReadmeChars: number;
   maxProReadmeChars: number;
   maxFastIssueBodyChars: number;

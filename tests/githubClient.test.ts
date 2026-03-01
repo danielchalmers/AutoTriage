@@ -119,7 +119,7 @@ describe('GitHubClient.listTimelineEvents', () => {
       ]);
 
     const client = new GitHubClient('token', 'owner', 'repo');
-    const { filtered } = await client.listTimelineEvents(42, 10, true);
+    const { filtered } = await client.listTimelineEvents(42, true);
 
     expect(filtered).toEqual([
       expect.objectContaining({
@@ -142,7 +142,7 @@ describe('GitHubClient.listTimelineEvents', () => {
     ]);
 
     const client = new GitHubClient('token', 'owner', 'repo');
-    const { filtered } = await client.listTimelineEvents(42, 10, false);
+    const { filtered } = await client.listTimelineEvents(42, false);
 
     expect(filtered).toEqual([
       expect.objectContaining({

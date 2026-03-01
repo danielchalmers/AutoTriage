@@ -27,7 +27,7 @@ export type PromptPassMode = 'fast' | 'pro';
 type PromptPassLimits = {
   readmeChars: number;
   issueBodyChars: number;
-  timelineEvents: number;
+  timelineChars: number;
   timelineTextChars: number;
 };
 
@@ -44,7 +44,20 @@ function applyIssueLimits(issue: Issue, limits: PromptPassLimits): Issue {
 }
 
 function applyTimelineLimits(events: TimelineEvent[], limits: PromptPassLimits): TimelineEvent[] {
-  return (events || []).slice(-limits.timelineEvents).map((event) => {
+  const allEvents = events || [];
+  const selected: TimelineEvent[] = [];
+  let totalChars = 0;
+  for (let i = allEvents.length - 1; i >= 0; i--) {
+    const event = allEvents[i];
+    if (!event) break;
+    const messageChars = event.message ? Math.min(event.message.length, limits.timelineTextChars) : 0;
+    const bodyChars = event.body ? Math.min(event.body.length, limits.timelineTextChars) : 0;
+    const eventChars = messageChars + bodyChars;
+    if (totalChars + eventChars > limits.timelineChars) break;
+    selected.unshift(event);
+    totalChars += eventChars;
+  }
+  return selected.map((event) => {
     const next = { ...event };
     if (next.message !== undefined) {
       next.message = clampText(next.message, limits.timelineTextChars);
@@ -61,14 +74,14 @@ export function getPromptLimits(config: Config, mode: PromptPassMode): PromptPas
     return {
       readmeChars: config.maxFastReadmeChars,
       issueBodyChars: config.maxFastIssueBodyChars,
-      timelineEvents: config.maxFastTimelineEvents,
+      timelineChars: config.maxFastTimelineChars,
       timelineTextChars: config.maxFastTimelineTextChars,
     };
   }
   return {
     readmeChars: config.maxProReadmeChars,
     issueBodyChars: config.maxProIssueBodyChars,
-    timelineEvents: config.maxProTimelineEvents,
+    timelineChars: config.maxProTimelineChars,
     timelineTextChars: config.maxProTimelineTextChars,
   };
 }
@@ -203,7 +216,7 @@ export function buildUserPrompt(
   const resolvedLimits: PromptPassLimits = {
     readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
     issueBodyChars: limits?.issueBodyChars ?? Number.MAX_SAFE_INTEGER,
-    timelineEvents: limits?.timelineEvents ?? Number.MAX_SAFE_INTEGER,
+    timelineChars: limits?.timelineChars ?? Number.MAX_SAFE_INTEGER,
     timelineTextChars: limits?.timelineTextChars ?? Number.MAX_SAFE_INTEGER,
   };
   const promptIssue = applyIssueLimits(issue, resolvedLimits);

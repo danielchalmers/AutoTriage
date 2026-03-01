@@ -145,16 +145,12 @@ async function processIssue(
   cacheNames: Map<'fast' | 'pro', string>
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const dbEntry = getDbEntry(db, issue.number);
-  const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
     issue.number,
-    timelineFetchLimit,
     issue.type === 'pull request'
   );
   const fastLimits = getPromptLimits(cfg, 'fast');
   const proLimits = getPromptLimits(cfg, 'pro');
-  const fastTimelineEvents = timelineEvents.slice(-fastLimits.timelineEvents);
-  const proTimelineEvents = timelineEvents.slice(-proLimits.timelineEvents);
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
@@ -165,7 +161,7 @@ async function processIssue(
     if (!cfg.skipFastPass) {
       const fastUserPrompt = buildUserPrompt(
         issue,
-        fastTimelineEvents,
+        timelineEvents,
         '',
         'fast',
         fastLimits
@@ -198,7 +194,7 @@ async function processIssue(
     // Pass 2: pro model (or only pass if skip-fast-pass is enabled)
     const proUserPrompt = buildUserPrompt(
       issue,
-      proTimelineEvents,
+      timelineEvents,
       dbEntry.thoughts || '',
       'pro',
       proLimits
