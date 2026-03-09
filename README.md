@@ -79,4 +79,4 @@ See MudBlazor's [workflows](https://github.com/MudBlazor/MudBlazor/actions) to b
 
 ## License
 
-MIT
+[MIT](./LICENSE)
