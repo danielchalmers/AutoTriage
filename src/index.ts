@@ -180,7 +180,8 @@ async function processIssue(
         fastUserPrompt,
         repoLabels,
         true, // isFastModel
-        cacheNames.get('fast')
+        cacheNames.get('fast'),
+        cfg.contextCaching
       );
       
       fastRunUsed = true;
@@ -213,7 +214,8 @@ async function processIssue(
       proUserPrompt,
       repoLabels,
       false, // isFastModel
-      cacheNames.get('pro')
+      cacheNames.get('pro'),
+      cfg.contextCaching
     );
 
     if (proOps.length === 0) {
@@ -244,7 +246,8 @@ export async function generateAnalysis(
   userPrompt: string,
   repoLabels: Array<{ name: string; description?: string | null }>,
   isFastModel: boolean = false,
-  cachedContentName?: string
+  cachedContentName?: string,
+  useFlexTier: boolean = false
 ): Promise<{ data: AnalysisResult; thoughts: string, ops: TriageOperation[] }> {
   const schema = buildAnalysisResultSchema(repoLabels);
   const payload = buildJsonPayload(
@@ -253,7 +256,8 @@ export async function generateAnalysis(
     schema,
     model,
     thinkingBudget,
-    cachedContentName
+    cachedContentName,
+    useFlexTier
   );
 
   console.log(chalk.blue(`💭 Thinking with ${model}${cachedContentName ? ' (cached)' : ''}...`));

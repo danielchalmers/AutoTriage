@@ -15,6 +15,7 @@ describe('context caching', () => {
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1)
       expect(payload.config?.systemInstruction).toBe(systemPrompt)
       expect(payload.config?.cachedContent).toBeUndefined()
+      expect(payload.config?.httpOptions).toBeUndefined()
     })
 
     it('uses cachedContent and omits systemInstruction when cache name is provided', () => {
@@ -47,6 +48,13 @@ describe('context caching', () => {
     it('omits temperature for non gemini-2 models', () => {
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3-flash-preview', -1)
       expect(payload.config?.temperature).toBeUndefined()
+    })
+
+    it('opts into flex service tier with long timeout when enabled', () => {
+      const cacheName = 'cachedContents/abc123'
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1, cacheName, true)
+      expect(payload.config?.httpOptions?.timeout).toBe(600000)
+      expect(payload.config?.httpOptions?.extraBody).toEqual({ service_tier: 'flex' })
     })
   })
 

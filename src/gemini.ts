@@ -6,7 +6,8 @@ export function buildJsonPayload(
   schema: unknown,
   model: string,
   thinkingBudget?: number,
-  cachedContentName?: string
+  cachedContentName?: string,
+  useFlexTier?: boolean
 ): GenerateContentParameters {
   const config: NonNullable<GenerateContentParameters['config']> = {
     responseMimeType: 'application/json',
@@ -25,6 +26,14 @@ export function buildJsonPayload(
   }
   if (model.startsWith('gemini-2')) {
     config.temperature = 0.0;
+  }
+  if (useFlexTier) {
+    config.httpOptions = {
+      timeout: 600000,
+      extraBody: {
+        service_tier: 'flex',
+      },
+    };
   }
 
   return {

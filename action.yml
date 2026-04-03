@@ -14,7 +14,7 @@ inputs:
     required: false
     default: "1"
   context-caching:
-    description: "Set to true to enable Gemini context caching (https://ai.google.dev/gemini-api/docs/caching), which reduces token usage when triaging multiple issues. Requires a paid Gemini plan."
+    description: "Set to true to enable Gemini context caching (https://ai.google.dev/gemini-api/docs/caching), which reduces token usage when triaging multiple issues. AutoTriage also requests Gemini Flex tier (`service_tier=flex`) with a longer timeout window for these calls. Requires a paid Gemini plan."
     required: false
     default: "false"
   db-path:
