@@ -40,7 +40,7 @@ jobs:
 | --- | --- | --- |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
 | `budget-scale` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
-| `context-caching` | Enable Gemini context caching ([docs](https://ai.google.dev/gemini-api/docs/caching)); AutoTriage also requests Gemini Flex tier (`service_tier=flex`) with a 600s timeout window for these calls. | `"false"` |
+| `context-caching` | Enable Gemini [context caching](https://ai.google.dev/gemini-api/docs/caching) and [flex inference](https://ai.google.dev/gemini-api/docs/flex-inference) to reduce costs. | `"false"` |
 | `db-path` | Persist per-item history between runs. | - |
 | `dry-run` | `"true"` logs the plan only, `"false"` applies changes. | `"false"` |
 | `extended` | When `"true"`, include unchanged issues and recently closed issues in auto-discovery. | `"false"` |
