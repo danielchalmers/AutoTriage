@@ -41,8 +41,8 @@
     "vitest": "^4.1.2"
   },
   "dependencies": {
-    "@actions/core": "^3.0.0",
-    "@actions/github": "^9.0.0",
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^8.0.1",
     "@google/genai": "^1.48.0",
     "chalk": "^5.6.2"
   }
