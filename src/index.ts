@@ -55,7 +55,6 @@ async function run(): Promise<void> {
       try {
         const cacheName = await gemini.createCache(cfg.modelFast, systemPromptFast, `autotriage-fast-${cfg.owner}/${cfg.repo}`);
         cacheNames.set('fast', cacheName);
-        console.log(`📦 Created context cache for ${cfg.modelFast}`);
       } catch (err) {
         console.warn(`⚠️ Context caching unavailable for ${cfg.modelFast}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -63,7 +62,6 @@ async function run(): Promise<void> {
     try {
       const cacheName = await gemini.createCache(cfg.modelPro, systemPromptPro, `autotriage-pro-${cfg.owner}/${cfg.repo}`);
       cacheNames.set('pro', cacheName);
-      console.log(`📦 Created context cache for ${cfg.modelPro}`);
     } catch (err) {
       console.warn(`⚠️ Context caching unavailable for ${cfg.modelPro}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -122,7 +120,6 @@ async function run(): Promise<void> {
     // Clean up caches
     for (const [passMode, name] of cacheNames) {
       await gemini.deleteCache(name);
-      console.log(`🗑️ Deleted context cache for ${passMode}`);
     }
   }
 
