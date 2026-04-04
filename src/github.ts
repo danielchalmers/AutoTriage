@@ -120,7 +120,7 @@ export class GitHubClient {
       direction: 'desc',
       per_page: 100,
     });
-    return issues.map(issue => this.buildMetadata(issue));
+    return issues.map((issue: any) => this.buildMetadata(issue));
   }
 
   async listRecentlyClosedIssues(limit: number = 100): Promise<Issue[]> {
@@ -134,7 +134,7 @@ export class GitHubClient {
       per_page: Math.min(Math.max(limit, 1), 100),
       page: 1,
     });
-    return data.map(issue => this.buildMetadata(issue));
+    return data.map((issue: any) => this.buildMetadata(issue));
   }
 
   async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {
