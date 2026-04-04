@@ -1,7 +1,7 @@
 name: Dependabot Dist Update
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize]
 
 permissions:
@@ -14,7 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
 
       - uses: actions/setup-node@v4
@@ -27,7 +26,7 @@ jobs:
           set -euo pipefail
           changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
           echo "$changed"
-          if [ -n "$changed" ] && echo "$changed" | grep -Ev '^(package\.json|package-lock\.json|\.github/workflows/.*\.yml|\.github/workflows/.*\.yaml)$' >/dev/null; then
+          if [ -n "$changed" ] && echo "$changed" | grep -Ev '^(package\.json|package-lock\.json|\.github/dependabot\.yml|\.github/workflows/.*\.yml|\.github/workflows/.*\.yaml)$' >/dev/null; then
             echo "Dependabot dist updater only supports dependency/workflow-only PRs."
             exit 1
           fi
