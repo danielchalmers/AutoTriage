@@ -26,9 +26,9 @@ async function run(): Promise<void> {
   let fastRunsPerformed = 0;
   let consecutiveFailures = 0;
 
-  console.log(`⚙️ Mode: ${cfg.dryRun ? 'dry-run' : 'live'}`);
-  console.log(`▶️ Triaging up to ${cfg.maxProRuns} item(s) out of ${targets.length} from ${cfg.owner}/${cfg.repo} (${autoDiscover ? "auto-discover" : targets.map(t => `#${t}`).join(', ')})`);
-  console.log(`⚡ Fast runs limited to ${cfg.maxFastRuns} item(s)`);
+  console.log(`⚙️ Running in ${cfg.dryRun ? 'dry-run' : 'live'} mode (strict: ${cfg.strictMode})`);
+  console.log(`▶️ Discovered ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (extended: ${cfg.extended})`);
+  console.log(`⏳ Fast runs limited to ${cfg.maxFastRuns} item(s), Pro runs limited to ${cfg.maxProRuns} item(s)`);
 
   const fastLimits = getPromptLimits(cfg, 'fast');
   const proLimits = getPromptLimits(cfg, 'pro');
