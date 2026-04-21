@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
-import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits } from './analysis';
+import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, buildTriageRunContext, getPromptLimits } from './analysis';
 import { GitHubClient, Issue } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -152,6 +152,7 @@ async function processIssue(
   const proLimits = getPromptLimits(cfg, 'pro');
   const fastTimelineEvents = timelineEvents.slice(-fastLimits.timelineEvents);
   const proTimelineEvents = timelineEvents.slice(-proLimits.timelineEvents);
+  const runContext = buildTriageRunContext(issue, timelineEvents, dbEntry, autoDiscover);
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
@@ -165,7 +166,8 @@ async function processIssue(
         fastTimelineEvents,
         '',
         'fast',
-        fastLimits
+        fastLimits,
+        runContext
       );
       saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
 
@@ -199,7 +201,8 @@ async function processIssue(
       proTimelineEvents,
       dbEntry.thoughts || '',
       'pro',
-      proLimits
+      proLimits,
+      runContext
     );
     saveArtifact(issue.number, `prompt-user.md`, proUserPrompt);
 

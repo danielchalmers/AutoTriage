@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildJsonPayload } from '../src/gemini'
-import { buildSystemPrompt, buildUserPrompt } from '../src/analysis'
+import { buildSystemPrompt, buildTriageRunContext, buildUserPrompt } from '../src/analysis'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -117,58 +117,44 @@ describe('context caching', () => {
   })
 
   describe('buildUserPrompt', () => {
-    it('includes issue-specific content', () => {
-      const issue = {
-        number: 42,
-        title: 'Test issue',
-        body: 'Body text',
-        state: 'open',
-        type: 'issue',
-        author: 'testuser',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
+    const baseIssue = {
+      number: 42,
+      title: 'Test issue',
+      body: 'Body text',
+      state: 'open',
+      type: 'issue',
+      author: 'testuser',
+      user_type: 'User',
+      draft: false,
+      locked: false,
+      milestone: null,
+      comments: 0,
+      reactions: 0,
+      labels: [],
+      assignees: [],
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    } as any
 
+    it('includes issue-specific content', () => {
       const timelineEvents = [
         { event: 'commented', body: 'A comment', created_at: '2024-01-01T00:00:00Z' },
       ] as any[]
 
-      const userPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts')
+      const userPrompt = buildUserPrompt(baseIssue, timelineEvents, 'prior thoughts')
 
       expect(userPrompt).toContain('Test issue')
       expect(userPrompt).toContain('A comment')
       expect(userPrompt).toContain('prior thoughts')
       expect(userPrompt).toContain('=== SECTION: RUNTIME CONTEXT ===')
+      expect(userPrompt).toContain('=== SECTION: TRIAGE RUN CONTEXT ===')
       expect(userPrompt).toContain('=== SECTION: ISSUE METADATA (JSON) ===')
       expect(userPrompt).toContain('=== SECTION: ISSUE TIMELINE EVENTS (JSON) ===')
       expect(userPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
     })
 
     it('does not contain static repo content', () => {
-      const issue = {
-        number: 1,
-        title: 'Issue',
-        body: '',
-        state: 'open',
-        type: 'issue',
-        author: 'user',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
-
-      const userPrompt = buildUserPrompt(issue, [], '')
+      const userPrompt = buildUserPrompt({ ...baseIssue, number: 1, title: 'Issue', body: '' }, [], '')
 
       expect(userPrompt).not.toContain('=== SECTION: REPOSITORY LABELS')
       expect(userPrompt).not.toContain('=== SECTION: PROJECT README')
@@ -176,22 +162,7 @@ describe('context caching', () => {
     })
 
     it('uses pass-specific truncation limits and thought gating', () => {
-      const issue = {
-        number: 2,
-        title: 'Issue',
-        body: 'x'.repeat(20),
-        state: 'open',
-        type: 'issue',
-        author: 'user',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
+      const issue = { ...baseIssue, number: 2, title: 'Issue', body: 'x'.repeat(20) } as any
 
       const timelineEvents = [
         { event: 'commented', body: 'a'.repeat(20), created_at: '2024-01-01T00:00:00Z' },
@@ -216,6 +187,62 @@ describe('context caching', () => {
       })
       expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
       expect(proPrompt).toContain('prior thoughts')
+    })
+
+    it('includes first-run triage context in dynamic user content', () => {
+      const runContext = buildTriageRunContext(baseIssue, [], {}, true)
+      const userPrompt = buildUserPrompt(baseIssue, [], '', 'pro', undefined, runContext)
+
+      expect(userPrompt).toContain('"runReason": "first_known_triage"')
+      expect(userPrompt).toContain('"isFirstKnownTriage": true')
+      expect(userPrompt).toContain('"lastTriagedAt": null')
+      expect(userPrompt).toContain('"previousSummary": null')
+      expect(userPrompt).toContain('This is the first known AutoTriage run for this item.')
+    })
+
+    it('includes rerun context with prior summary and new activity details', () => {
+      const issue = {
+        ...baseIssue,
+        updated_at: '2024-01-05T00:00:00Z',
+      } as any
+      const timelineEvents = [
+        { event: 'commented', body: 'new comment', created_at: '2024-01-04T00:00:00Z' },
+        { event: 'labeled', created_at: '2024-01-05T00:00:00Z', label: { name: 'bug' } },
+      ] as any[]
+
+      const runContext = buildTriageRunContext(issue, timelineEvents, {
+        lastTriaged: '2024-01-03T00:00:00Z',
+        summary: 'Earlier summary',
+      }, true)
+      const userPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'pro', undefined, runContext)
+
+      expect(userPrompt).toContain('"runReason": "updated_since_last_triage"')
+      expect(userPrompt).toContain('"lastTriagedAt": "2024-01-03T00:00:00Z"')
+      expect(userPrompt).toContain('"previousSummary": "Earlier summary"')
+      expect(userPrompt).toContain('"count": 2')
+      expect(userPrompt).toContain('"eventTypes": [')
+      expect(userPrompt).toContain('"commented"')
+      expect(userPrompt).toContain('"labeled"')
+      expect(userPrompt).toContain('"latestEventAt": "2024-01-05T00:00:00Z"')
+    })
+
+    it('marks unchanged auto-discover reruns as backlog rechecks', () => {
+      const issue = {
+        ...baseIssue,
+        updated_at: '2024-01-02T00:00:00Z',
+      } as any
+
+      const runContext = buildTriageRunContext(issue, [], {
+        lastTriaged: '2024-01-03T00:00:00Z',
+        summary: 'Earlier summary',
+      }, true)
+
+      expect(runContext.runReason).toBe('unchanged_backlog_recheck')
+      expect(runContext.newActivitySinceLastTriage).toEqual({
+        count: 0,
+        eventTypes: [],
+        latestEventAt: null,
+      })
     })
   })
 })

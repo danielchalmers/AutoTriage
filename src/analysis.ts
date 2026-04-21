@@ -1,6 +1,6 @@
 import { loadPrompt, loadReadme } from './storage';
 import type { Issue, TimelineEvent } from './github';
-import type { Config } from './storage';
+import type { Config, TriageDbEntry } from './storage';
 
 export type AnalysisResult = {
   summary: string;
@@ -23,6 +23,27 @@ export const AnalysisResultSchema = {
 } as const;
 
 export type PromptPassMode = 'fast' | 'pro';
+
+export type TriageRunReason =
+  | 'first_known_triage'
+  | 'updated_since_last_triage'
+  | 'unchanged_backlog_recheck'
+  | 'manual_or_event_target'
+  | 'closed_item_recheck';
+
+export type TriageRunContext = {
+  runReason: TriageRunReason;
+  isFirstKnownTriage: boolean;
+  lastTriagedAt: string | null;
+  issueUpdatedAt: string | null;
+  previousSummary: string | null;
+  newActivitySinceLastTriage?: {
+    count: number;
+    eventTypes: string[];
+    latestEventAt: string | null;
+  };
+  instruction: string;
+};
 
 type PromptPassLimits = {
   readmeChars: number;
@@ -70,6 +91,85 @@ export function getPromptLimits(config: Config, mode: PromptPassMode): PromptPas
     issueBodyChars: config.maxProIssueBodyChars,
     timelineEvents: config.maxProTimelineEvents,
     timelineTextChars: config.maxProTimelineTextChars,
+  };
+}
+
+function getEventTimestamp(event: TimelineEvent): number {
+  const values = [event.created_at, event.updated_at, event.submitted_at]
+    .map((value) => (value ? Date.parse(value) : Number.NaN))
+    .filter((value) => Number.isFinite(value));
+  return values.length > 0 ? Math.max(...values) : 0;
+}
+
+function getInstructionForRunReason(reason: TriageRunReason): string {
+  switch (reason) {
+    case 'first_known_triage':
+      return 'This is the first known AutoTriage run for this item.';
+    case 'updated_since_last_triage':
+      return 'This is a recheck. Prefer validating whether the new activity changes the previous triage decision instead of re-triaging the item from scratch.';
+    case 'unchanged_backlog_recheck':
+      return 'This item is being revisited during a backlog recheck with no known changes since the last triage. Reuse prior conclusions unless the current state now suggests a different decision.';
+    case 'manual_or_event_target':
+      return 'This run was triggered by an explicit target or event. Use the previous triage result as context, but focus on whether the current request or latest state requires any change.';
+    case 'closed_item_recheck':
+      return 'This closed item is being rechecked because there was activity after AutoTriage last processed it. Focus on whether that new activity changes the previous conclusion.';
+  }
+}
+
+export function buildTriageRunContext(
+  issue: Issue,
+  timelineEvents: TimelineEvent[],
+  dbEntry: TriageDbEntry,
+  autoDiscover: boolean
+): TriageRunContext {
+  const lastTriagedAt = dbEntry.lastTriaged || null;
+  const isFirstKnownTriage = !lastTriagedAt;
+  const lastTriagedMs = lastTriagedAt ? Date.parse(lastTriagedAt) : Number.NaN;
+  const issueUpdatedAt = issue.updated_at || issue.created_at || null;
+  const issueUpdatedMs = issueUpdatedAt ? Date.parse(issueUpdatedAt) : Number.NaN;
+  const newActivity = Number.isFinite(lastTriagedMs)
+    ? timelineEvents.filter((event) => getEventTimestamp(event) > lastTriagedMs)
+    : [];
+
+  let runReason: TriageRunReason;
+  if (isFirstKnownTriage) {
+    runReason = 'first_known_triage';
+  } else if (!autoDiscover) {
+    runReason = 'manual_or_event_target';
+  } else if (issue.state !== 'open') {
+    runReason = 'closed_item_recheck';
+  } else if ((Number.isFinite(issueUpdatedMs) && issueUpdatedMs > lastTriagedMs) || newActivity.length > 0) {
+    runReason = 'updated_since_last_triage';
+  } else {
+    runReason = 'unchanged_backlog_recheck';
+  }
+
+  const latestEventAt = newActivity.reduce<string | null>((latest, event) => {
+    const candidates = [event.created_at, event.updated_at, event.submitted_at].filter((value): value is string => !!value);
+    if (candidates.length === 0) return latest;
+    const candidate = candidates.reduce((max, value) => {
+      if (!max) return value;
+      return Date.parse(value) > Date.parse(max) ? value : max;
+    }, candidates[0] ?? null);
+    if (!candidate) return latest;
+    if (!latest) return candidate;
+    return Date.parse(candidate) > Date.parse(latest) ? candidate : latest;
+  }, null);
+
+  const activityContext = isFirstKnownTriage ? undefined : {
+    count: newActivity.length,
+    eventTypes: Array.from(new Set(newActivity.map((event) => event.event))),
+    latestEventAt,
+  };
+
+  return {
+    runReason,
+    isFirstKnownTriage,
+    lastTriagedAt,
+    issueUpdatedAt,
+    previousSummary: dbEntry.summary || null,
+    ...(activityContext ? { newActivitySinceLastTriage: activityContext } : {}),
+    instruction: getInstructionForRunReason(runReason),
   };
 }
 
@@ -199,6 +299,7 @@ export function buildUserPrompt(
   lastThoughts: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
+  runContext?: TriageRunContext,
 ): string {
   const resolvedLimits: PromptPassLimits = {
     readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
@@ -209,10 +310,14 @@ export function buildUserPrompt(
   const promptIssue = applyIssueLimits(issue, resolvedLimits);
   const promptTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
   const promptThoughts = mode === 'pro' ? lastThoughts : '';
+  const promptRunContext = runContext || buildTriageRunContext(issue, timelineEvents, {}, false);
 
   return `
 === SECTION: RUNTIME CONTEXT ===
 Current date/time (UTC ISO 8601): ${new Date().toISOString()}
+
+=== SECTION: TRIAGE RUN CONTEXT ===
+${JSON.stringify(promptRunContext, null, 2)}
 
 === SECTION: ISSUE METADATA (JSON) ===
 ${JSON.stringify(promptIssue, null, 2)}
@@ -233,8 +338,9 @@ export async function buildPrompt(
   additionalInstructions?: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
+  runContext?: TriageRunContext,
 ) {
   const systemPrompt = buildSystemPrompt(promptPath, readmePath, repoLabels, additionalInstructions, mode, limits);
-  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts, mode, limits);
+  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts, mode, limits, runContext);
   return { systemPrompt, userPrompt };
 }
