@@ -2,7 +2,7 @@ import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
 import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits } from './analysis';
-import { GitHubClient, Issue } from './github';
+import { GitHubClient, Issue, TimelineEvent } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 import { buildAutoDiscoverQueue, filterPreviouslyTriagedClosedIssuesWithNewActivity } from './autoDiscover';
@@ -152,6 +152,7 @@ async function processIssue(
   const proLimits = getPromptLimits(cfg, 'pro');
   const fastTimelineEvents = timelineEvents.slice(-fastLimits.timelineEvents);
   const proTimelineEvents = timelineEvents.slice(-proLimits.timelineEvents);
+  const runContext = buildRunContext(issue, rawTimelineEvents, dbEntry.lastTriaged, autoDiscover);
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
@@ -165,7 +166,8 @@ async function processIssue(
         fastTimelineEvents,
         '',
         'fast',
-        fastLimits
+        fastLimits,
+        runContext
       );
       saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
 
@@ -199,7 +201,8 @@ async function processIssue(
       proTimelineEvents,
       dbEntry.thoughts || '',
       'pro',
-      proLimits
+      proLimits,
+      runContext
     );
     saveArtifact(issue.number, `prompt-user.md`, proUserPrompt);
 
@@ -233,6 +236,28 @@ async function processIssue(
     updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
     return { triageUsed: true, fastRunUsed };
   });
+}
+
+function buildRunContext(
+  issue: Issue,
+  timelineEvents: TimelineEvent[],
+  lastTriagedAt: string | undefined,
+  autoDiscover: boolean
+): string {
+  if (!lastTriagedAt) {
+    return 'This item has no previous triage record, so treat this as the first review.';
+  }
+
+  const latestUpdateMs = gh.lastUpdated(issue, timelineEvents);
+  const triagedMs = Date.parse(lastTriagedAt);
+  const hasNewActivity = Number.isFinite(triagedMs) && latestUpdateMs > triagedMs;
+  const selectionReason = hasNewActivity
+    ? 'it has new activity since then and needs to be re-checked'
+    : autoDiscover
+      ? 'it is being revisited during another automated triage sweep'
+      : 'the workflow explicitly asked for another review';
+
+  return `This item was triaged before at ${lastTriagedAt}; it is being triaged again because ${selectionReason}. Review the current state and timeline, not as a first-time triage.`;
 }
 
 export async function generateAnalysis(
