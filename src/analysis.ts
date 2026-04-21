@@ -24,15 +24,8 @@ export const AnalysisResultSchema = {
 
 export type PromptPassMode = 'fast' | 'pro';
 
-export type TriageRunReason =
-  | 'first_known_triage'
-  | 'updated_since_last_triage'
-  | 'unchanged_backlog_recheck'
-  | 'manual_or_event_target'
-  | 'closed_item_recheck';
-
 export type TriageRunContext = {
-  runReason: TriageRunReason;
+  runReason: string;
   isFirstKnownTriage: boolean;
   lastTriagedAt: string | null;
   issueUpdatedAt: string | null;
@@ -101,21 +94,6 @@ function getEventTimestamp(event: TimelineEvent): number {
   return values.length > 0 ? Math.max(...values) : 0;
 }
 
-function getInstructionForRunReason(reason: TriageRunReason): string {
-  switch (reason) {
-    case 'first_known_triage':
-      return 'This is the first known AutoTriage run for this item.';
-    case 'updated_since_last_triage':
-      return 'This is a recheck. Prefer validating whether the new activity changes the previous triage decision instead of re-triaging the item from scratch.';
-    case 'unchanged_backlog_recheck':
-      return 'This item is being revisited during a backlog recheck with no known changes since the last triage. Reuse prior conclusions unless the current state now suggests a different decision.';
-    case 'manual_or_event_target':
-      return 'This run was triggered by an explicit target or event. Use the previous triage result as context, but focus on whether the current request or latest state requires any change.';
-    case 'closed_item_recheck':
-      return 'This closed item is being rechecked because there was activity after AutoTriage last processed it. Focus on whether that new activity changes the previous conclusion.';
-  }
-}
-
 export function buildTriageRunContext(
   issue: Issue,
   timelineEvents: TimelineEvent[],
@@ -131,17 +109,23 @@ export function buildTriageRunContext(
     ? timelineEvents.filter((event) => getEventTimestamp(event) > lastTriagedMs)
     : [];
 
-  let runReason: TriageRunReason;
+  let runReason = 'first_known_triage';
+  let instruction = 'This is the first known AutoTriage run for this item.';
   if (isFirstKnownTriage) {
     runReason = 'first_known_triage';
+    instruction = 'This is the first known AutoTriage run for this item.';
   } else if (!autoDiscover) {
     runReason = 'manual_or_event_target';
+    instruction = 'This run was triggered by an explicit target or event. Use the previous triage result as context, but focus on whether the current request or latest state requires any change.';
   } else if (issue.state !== 'open') {
     runReason = 'closed_item_recheck';
+    instruction = 'This closed item is being rechecked because there was activity after AutoTriage last processed it. Focus on whether that new activity changes the previous conclusion.';
   } else if ((Number.isFinite(issueUpdatedMs) && issueUpdatedMs > lastTriagedMs) || newActivity.length > 0) {
     runReason = 'updated_since_last_triage';
+    instruction = 'This is a recheck. Prefer validating whether the new activity changes the previous triage decision instead of re-triaging the item from scratch.';
   } else {
     runReason = 'unchanged_backlog_recheck';
+    instruction = 'This item is being revisited during a backlog recheck with no known changes since the last triage. Reuse prior conclusions unless the current state now suggests a different decision.';
   }
 
   const latestEventAt = newActivity.reduce<string | null>((latest, event) => {
@@ -169,7 +153,7 @@ export function buildTriageRunContext(
     issueUpdatedAt,
     previousSummary: dbEntry.summary || null,
     ...(activityContext ? { newActivitySinceLastTriage: activityContext } : {}),
-    instruction: getInstructionForRunReason(runReason),
+    instruction,
   };
 }
 
