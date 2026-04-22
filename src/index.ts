@@ -1,12 +1,13 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
-import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
+import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry, type TriageDbEntry } from './storage';
 import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits } from './analysis';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 import { buildAutoDiscoverQueue, filterPreviouslyTriagedClosedIssuesWithNewActivity } from './autoDiscover';
 import { RunStatistics } from './stats';
+import { selectTriagePassSelection, type TriagePassSelection } from './passSelection';
 import chalk from 'chalk';
 
 chalk.level = 3;
@@ -70,14 +71,7 @@ async function run(): Promise<void> {
   try {
     for (const n of targets) {
       const remainingTriages = cfg.maxProRuns - triagesPerformed;
-      const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
-      
-      // Only check fast runs limit if we're not skipping the fast pass
-      if (!cfg.skipFastPass && remainingFastRuns <= 0) {
-        console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
-        break;
-      }
-      
+
       if (remainingTriages <= 0) {
         console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
         break;
@@ -85,7 +79,23 @@ async function run(): Promise<void> {
 
       try {
         const issue = await gh.getIssue(n);
-        const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheNames);
+        const issueContext = await loadIssueContext(issue, autoDiscover);
+        const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
+        const needsFastRun = issueContext.passSelection.strategy === 'fast-then-pro' && !cfg.skipFastPass;
+
+        if (needsFastRun && remainingFastRuns <= 0) {
+          console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
+          break;
+        }
+
+        const { triageUsed, fastRunUsed } = await processIssue(
+          issue,
+          repoLabels,
+          systemPromptFast,
+          systemPromptPro,
+          cacheNames,
+          issueContext
+        );
         if (triageUsed) {
           triagesPerformed++;
           stats.incrementTriaged();
@@ -133,14 +143,14 @@ async function run(): Promise<void> {
 
 run();
 
-async function processIssue(
-  issue: Issue,
-  repoLabels: Array<{ name: string; description?: string | null }>,
-  autoDiscover: boolean,
-  systemPromptFast: string,
-  systemPromptPro: string,
-  cacheNames: Map<'fast' | 'pro', string>
-): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
+type ProcessIssueContext = {
+  dbEntry: TriageDbEntry;
+  rawTimelineEvents: TimelineEvent[];
+  timelineEvents: TimelineEvent[];
+  passSelection: TriagePassSelection;
+};
+
+async function loadIssueContext(issue: Issue, autoDiscover: boolean): Promise<ProcessIssueContext> {
   const dbEntry = getDbEntry(db, issue.number);
   const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
@@ -148,19 +158,44 @@ async function processIssue(
     timelineFetchLimit,
     issue.type === 'pull request'
   );
+  const passSelection = selectTriagePassSelection({
+    lastTriagedAt: dbEntry.lastTriaged,
+    latestUpdateMs: gh.lastUpdated(issue, rawTimelineEvents),
+    autoDiscover,
+  });
+
+  return {
+    dbEntry,
+    rawTimelineEvents,
+    timelineEvents,
+    passSelection,
+  };
+}
+
+async function processIssue(
+  issue: Issue,
+  repoLabels: Array<{ name: string; description?: string | null }>,
+  systemPromptFast: string,
+  systemPromptPro: string,
+  cacheNames: Map<'fast' | 'pro', string>,
+  issueContext: ProcessIssueContext
+): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
+  const { dbEntry, rawTimelineEvents, timelineEvents, passSelection } = issueContext;
   const fastLimits = getPromptLimits(cfg, 'fast');
   const proLimits = getPromptLimits(cfg, 'pro');
   const fastTimelineEvents = timelineEvents.slice(-fastLimits.timelineEvents);
   const proTimelineEvents = timelineEvents.slice(-proLimits.timelineEvents);
-  const runContext = buildRunContext(issue, rawTimelineEvents, dbEntry.lastTriaged, autoDiscover);
+  const runContext = buildRunContext(dbEntry.lastTriaged, passSelection);
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
     let fastRunUsed = false;
+    const useFastPass = passSelection.strategy === 'fast-then-pro' && !cfg.skipFastPass;
+    const passLabel = useFastPass ? 'fast → pro' : 'pro';
+    console.log(chalk.blue(`Selected pass strategy: ${passLabel} (${passSelection.scenario})`));
 
-    // Pass 1: fast model (unless skip-fast-pass is enabled)
-    if (!cfg.skipFastPass) {
+    if (useFastPass) {
       const fastUserPrompt = buildUserPrompt(
         issue,
         fastTimelineEvents,
@@ -182,20 +217,13 @@ async function processIssue(
         cacheNames.get('fast'),
         cfg.contextCaching
       );
-      
-      fastRunUsed = true;
 
-      // Fast pass produced no work: skip expensive pass.
-      if (quickOps.length === 0) {
-        console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
-        updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title, quickThoughts);
-        return { triageUsed: false, fastRunUsed };
-      }
-    } else {
-      console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
+      fastRunUsed = true;
+      console.log(chalk.dim(`Fast pass completed with ${quickOps.length} proposed operation(s); continuing to pro review.`));
+    } else if (passSelection.strategy === 'fast-then-pro' && cfg.skipFastPass) {
+      console.log(chalk.blue('Fast pass selected but disabled by configuration; using pro model directly.'));
     }
 
-    // Pass 2: pro model (or only pass if skip-fast-pass is enabled)
     const proUserPrompt = buildUserPrompt(
       issue,
       proTimelineEvents,
@@ -239,21 +267,16 @@ async function processIssue(
 }
 
 function buildRunContext(
-  issue: Issue,
-  timelineEvents: TimelineEvent[],
   lastTriagedAt: string | undefined,
-  autoDiscover: boolean
+  passSelection: TriagePassSelection
 ): string {
   if (!lastTriagedAt) {
     return 'This item has no previous triage record, so treat this as the first review.';
   }
 
-  const latestUpdateMs = gh.lastUpdated(issue, timelineEvents);
-  const triagedMs = Date.parse(lastTriagedAt);
-  const hasNewActivity = Number.isFinite(triagedMs) && latestUpdateMs > triagedMs;
-  const selectionReason = hasNewActivity
+  const selectionReason = passSelection.scenario === 'new-context'
     ? 'it has new activity since then and needs to be re-checked'
-    : autoDiscover
+    : passSelection.scenario === 'no-new-context-extended'
       ? 'it is being revisited during another automated triage sweep'
       : 'the workflow explicitly asked for another review';
 
