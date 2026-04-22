@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
-import { AnalysisResult, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits } from './analysis';
+import { AnalysisResult, FastPassPlan, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits } from './analysis';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -158,6 +158,7 @@ async function processIssue(
     saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
     let fastRunUsed = false;
+    let fastPassPlan: FastPassPlan | undefined;
 
     // Pass 1: fast model (unless skip-fast-pass is enabled)
     if (!cfg.skipFastPass) {
@@ -171,7 +172,7 @@ async function processIssue(
       );
       saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
 
-      const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
+      const { data: quickAnalysis, ops: quickOps } = await generateAnalysis(
         issue,
         cfg.modelFast,
         cfg.thinkingBudget,
@@ -184,6 +185,10 @@ async function processIssue(
       );
       
       fastRunUsed = true;
+      fastPassPlan = {
+        analysis: quickAnalysis,
+        operations: quickOps.map((op) => op.toJSON()),
+      };
 
       // Fast pass produced no work: skip expensive pass.
       if (quickOps.length === 0) {
@@ -202,7 +207,8 @@ async function processIssue(
       dbEntry.thoughts || '',
       'pro',
       proLimits,
-      runContext
+      runContext,
+      fastPassPlan
     );
     saveArtifact(issue.number, `prompt-user.md`, proUserPrompt);
 

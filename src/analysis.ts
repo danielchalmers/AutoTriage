@@ -10,6 +10,11 @@ export type AnalysisResult = {
   newTitle?: string;
 };
 
+export type FastPassPlan = {
+  analysis: AnalysisResult;
+  operations: unknown[];
+};
+
 export const AnalysisResultSchema = {
   type: 'OBJECT',
   properties: {
@@ -200,6 +205,7 @@ export function buildUserPrompt(
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
   runContext?: string,
+  fastPassPlan?: FastPassPlan,
 ): string {
   const resolvedLimits: PromptPassLimits = {
     readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
@@ -221,6 +227,9 @@ ${JSON.stringify(promptIssue, null, 2)}
 
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(promptTimelineEvents, null, 2)}
+${mode === 'pro' && fastPassPlan ? `\n=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===
+The following plan was produced by a faster preliminary model. Treat it as a draft to verify against the issue, timeline, repository policy, and output contract. You may accept, modify, or reject it.
+${JSON.stringify(fastPassPlan, null, 2)}` : ''}
 ${mode === 'pro' ? `\n=== SECTION: THOUGHTS FROM LAST RUN ===\n${promptThoughts || 'none'}` : ''}
 `;
 }
