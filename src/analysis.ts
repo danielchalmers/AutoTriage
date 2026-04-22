@@ -199,6 +199,7 @@ export function buildUserPrompt(
   lastThoughts: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
+  runContext?: string,
 ): string {
   const resolvedLimits: PromptPassLimits = {
     readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
@@ -213,6 +214,7 @@ export function buildUserPrompt(
   return `
 === SECTION: RUNTIME CONTEXT ===
 Current date/time (UTC ISO 8601): ${new Date().toISOString()}
+${runContext ? `Reason this run is happening: ${runContext}\n` : ''}
 
 === SECTION: ISSUE METADATA (JSON) ===
 ${JSON.stringify(promptIssue, null, 2)}

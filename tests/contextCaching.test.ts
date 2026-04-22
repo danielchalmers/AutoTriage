@@ -139,12 +139,13 @@ describe('context caching', () => {
         { event: 'commented', body: 'A comment', created_at: '2024-01-01T00:00:00Z' },
       ] as any[]
 
-      const userPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts')
+      const userPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'pro', undefined, 'This item was triaged before at 2024-01-01T00:00:00Z and is being checked again.')
 
       expect(userPrompt).toContain('Test issue')
       expect(userPrompt).toContain('A comment')
       expect(userPrompt).toContain('prior thoughts')
       expect(userPrompt).toContain('=== SECTION: RUNTIME CONTEXT ===')
+      expect(userPrompt).toContain('Reason this run is happening: This item was triaged before at 2024-01-01T00:00:00Z and is being checked again.')
       expect(userPrompt).toContain('=== SECTION: ISSUE METADATA (JSON) ===')
       expect(userPrompt).toContain('=== SECTION: ISSUE TIMELINE EVENTS (JSON) ===')
       expect(userPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
@@ -213,9 +214,10 @@ describe('context caching', () => {
         issueBodyChars: 50,
         timelineEvents: 3,
         timelineTextChars: 50,
-      })
+      }, 'Re-check this item because it has new activity since the last triage.')
       expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
       expect(proPrompt).toContain('prior thoughts')
+      expect(proPrompt).toContain('Reason this run is happening: Re-check this item because it has new activity since the last triage.')
     })
   })
 })
