@@ -1,18 +1,23 @@
 /// <reference types="vitest" />
-import { buildAnalysisResultSchema } from '../src/analysis';
+import { buildOperationPlanSchema } from '../src/analysis';
 
-describe('buildAnalysisResultSchema', () => {
-  it('creates schema with label enum when repository labels are provided', () => {
+describe('buildOperationPlanSchema', () => {
+  it('creates label enums for label operations when repository labels are provided', () => {
     const repoLabels = [
       { name: 'breaking change', description: 'Breaking change' },
       { name: 'awaiting triage', description: 'Needs triage' },
       { name: 'bug', description: null },
     ];
 
-    const schema = buildAnalysisResultSchema(repoLabels);
+    const schema = buildOperationPlanSchema(repoLabels);
+    const [addLabels, removeLabels] = schema.properties.operations.items.anyOf;
 
-    expect(schema.properties.labels.items).toHaveProperty('enum');
-    expect(schema.properties.labels.items.enum).toEqual([
+    expect(addLabels.properties.labels.items.enum).toEqual([
+      'breaking change',
+      'awaiting triage',
+      'bug',
+    ]);
+    expect(removeLabels.properties.labels.items.enum).toEqual([
       'breaking change',
       'awaiting triage',
       'bug',
@@ -25,33 +30,49 @@ describe('buildAnalysisResultSchema', () => {
       { name: 'good first issue', description: 'Good for newcomers' },
     ];
 
-    const schema = buildAnalysisResultSchema(repoLabels);
+    const schema = buildOperationPlanSchema(repoLabels);
+    const [addLabels] = schema.properties.operations.items.anyOf;
 
-    expect(schema.properties.labels.items.enum).toEqual([
+    expect(addLabels.properties.labels.items.enum).toEqual([
       'help wanted',
       'good first issue',
     ]);
   });
 
-  it('falls back to unconstrained schema when no labels provided', () => {
-    const schema = buildAnalysisResultSchema([]);
+  it('falls back to unconstrained label strings when no labels are provided', () => {
+    const schema = buildOperationPlanSchema([]);
+    const [addLabels] = schema.properties.operations.items.anyOf;
 
-    expect(schema.properties.labels.items).not.toHaveProperty('enum');
-    expect(schema.properties.labels.items.type).toBe('STRING');
+    expect(addLabels.properties.labels.items).not.toHaveProperty('enum');
+    expect(addLabels.properties.labels.items.type).toBe('STRING');
   });
 
-  it('preserves other schema properties', () => {
-    const repoLabels = [{ name: 'test', description: null }];
-    const schema = buildAnalysisResultSchema(repoLabels);
+  it('requires summary and operations and preserves operation enums', () => {
+    const schema = buildOperationPlanSchema([{ name: 'test', description: null }]);
+    const [, , commentOp, stateOp, titleOp] = schema.properties.operations.items.anyOf;
 
     expect(schema.type).toBe('OBJECT');
-    expect(schema.required).toEqual(['summary', 'labels']);
+    expect(schema.required).toEqual(['summary', 'operations']);
     expect(schema.properties.summary).toEqual({ type: 'STRING' });
-    expect(schema.properties.comment).toEqual({ type: 'STRING' });
-    expect(schema.properties.state).toEqual({
+    expect(commentOp).toMatchObject({
+      properties: {
+        kind: { type: 'STRING', enum: ['comment'] },
+        body: { type: 'STRING' },
+        authorization: { type: 'STRING' },
+      },
+      required: ['kind', 'body', 'authorization'],
+    });
+    expect(stateOp.properties.state).toEqual({
       type: 'STRING',
       enum: ['open', 'completed', 'not_planned'],
     });
-    expect(schema.properties.newTitle).toEqual({ type: 'STRING' });
+    expect(titleOp).toMatchObject({
+      properties: {
+        kind: { type: 'STRING', enum: ['set_title'] },
+        title: { type: 'STRING' },
+        authorization: { type: 'STRING' },
+      },
+      required: ['kind', 'title', 'authorization'],
+    });
   });
 });

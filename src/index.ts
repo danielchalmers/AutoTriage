@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
-import { AnalysisResult, FastPassPlan, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits } from './analysis';
+import { FastPassPlan, OperationPlanResult, buildSystemPrompt, buildUserPrompt, buildOperationPlanSchema, getPromptLimits } from './analysis';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
@@ -276,8 +276,8 @@ export async function generateAnalysis(
   isFastModel: boolean = false,
   cachedContentName?: string,
   useFlexTier: boolean = false
-): Promise<{ data: AnalysisResult; thoughts: string, ops: TriageOperation[] }> {
-  const schema = buildAnalysisResultSchema(repoLabels);
+): Promise<{ data: OperationPlanResult; thoughts: string, ops: TriageOperation[] }> {
+  const schema = buildOperationPlanSchema(repoLabels);
   const artifactPrefix = isFastModel ? 'fast' : 'pro';
   const payload = buildJsonPayload(
     systemPrompt,
@@ -291,7 +291,7 @@ export async function generateAnalysis(
 
   console.log(chalk.blue(`💭 Thinking with ${model}${cachedContentName ? ' (cached)' : ''}...`));
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, outputTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  const { data, thoughts, inputTokens, outputTokens } = await gemini.generateJson<OperationPlanResult>(payload, 2, 5000);
   const endTime = Date.now();
   
   // Track model run stats

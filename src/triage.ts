@@ -1,5 +1,5 @@
-import type { Config } from "./storage";
-import type { AnalysisResult } from "./analysis";
+import type { Config } from './storage';
+import type { OperationPlan, OperationPlanResult, TriageState } from './analysis';
 import type { GitHubClient } from './github';
 import chalk from 'chalk';
 
@@ -25,8 +25,6 @@ class UpdateLabelsOp implements TriageOperation {
   }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     if (this.toAdd.length || this.toRemove.length) {
-      // Build log line showing: unchanged labels, +added labels, -removed labels.
-      // Example: 🏷️ Labels: docs, +bug, -enhancement
       const unchanged = this.merged.filter(l => !this.toAdd.includes(l));
       const tintedUnchanged = unchanged.map(label => chalk.dim(label));
       const tintedAdded = this.toAdd.map(label => chalk.green(`+${label}`));
@@ -61,23 +59,23 @@ class CreateCommentOp implements TriageOperation {
 // Retitle the issue / PR when model proposes a more canonical, specific title.
 class UpdateTitleOp implements TriageOperation {
   kind: 'title' = 'title';
-  constructor(public newTitle: string) { }
-  toJSON() { return { kind: this.kind, newTitle: this.newTitle }; }
+  constructor(public title: string) { }
+  toJSON() { return { kind: this.kind, title: this.title }; }
   getActionDetails(): string {
     return 'title change';
   }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
     console.log(chalk.cyan('✏️ Title:'));
     console.log(chalk.red(`-"${issue.title}"`));
-    console.log(chalk.green(`+"${this.newTitle}"`));
-    if (!cfg.dryRun) await client.updateTitle(issue.number, this.newTitle);
+    console.log(chalk.green(`+"${this.title}"`));
+    if (!cfg.dryRun) await client.updateTitle(issue.number, this.title);
   }
 }
 
 // Update the issue state (open, completed, not_planned) where completed/not_planned map to closed + reason.
 class UpdateStateOp implements TriageOperation {
   kind: 'state' = 'state';
-  constructor(public state: 'open' | 'completed' | 'not_planned') { }
+  constructor(public state: TriageState) { }
   toJSON() { return { kind: this.kind, state: this.state }; }
   getActionDetails(): string {
     return `state: ${this.state}`;
@@ -93,7 +91,6 @@ class UpdateStateOp implements TriageOperation {
   }
 }
 
-// Compute minimal label add/remove set while preserving proposed order for merged preview.
 function diffLabels(current: string[] = [], proposed: string[] = []) {
   const cur = new Set(current);
   const prop = new Set(proposed);
@@ -108,7 +105,6 @@ function diffLabels(current: string[] = [], proposed: string[] = []) {
   return { toAdd, toRemove, merged };
 }
 
-// Ensure proposed labels exist in the repository; silently drop unknown labels.
 function filterLabels(labels: string[] | undefined, repoLabels: string[] | undefined): string[] | undefined {
   if (!labels || labels.length === 0) return labels;
   if (!repoLabels || repoLabels.length === 0) return labels;
@@ -116,51 +112,107 @@ function filterLabels(labels: string[] | undefined, repoLabels: string[] | undef
   return labels.filter(l => allowed.has(l));
 }
 
+function getAuthorization(operation: Record<string, unknown>): string | undefined {
+  if (typeof operation.authorization !== 'string') return undefined;
+  const authorization = operation.authorization.trim();
+  return authorization.length > 0 && authorization.length <= 500 ? authorization : undefined;
+}
+
+function isKnownState(value: unknown): value is TriageState {
+  return value === 'open' || value === 'completed' || value === 'not_planned';
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function normalizeOperation(operation: unknown): OperationPlan | undefined {
+  if (!operation || typeof operation !== 'object') return undefined;
+  const candidate = operation as Record<string, unknown>;
+  const authorization = getAuthorization(candidate);
+  if (!authorization) return undefined;
+
+  switch (candidate.kind) {
+    case 'add_labels':
+    case 'remove_labels': {
+      const labels = asStringArray(candidate.labels);
+      if (!labels) return undefined;
+      return { kind: candidate.kind, labels, authorization };
+    }
+    case 'comment':
+      if (typeof candidate.body !== 'string') return undefined;
+      return { kind: 'comment', body: candidate.body, authorization };
+    case 'set_state':
+      if (!isKnownState(candidate.state)) return undefined;
+      return { kind: 'set_state', state: candidate.state, authorization };
+    case 'set_title':
+      if (typeof candidate.title !== 'string') return undefined;
+      return { kind: 'set_title', title: candidate.title, authorization };
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Translate model output into a concrete ordered list of operations.
- * Each optional field must be explicitly present and valid to produce an op.
+ * Each explicit operation must be present, valid, and internally authorized to produce an op.
  */
 export function planOperations(
   issue: any,
-  analysis: AnalysisResult,
+  analysis: OperationPlanResult,
   metadata: any,
   repoLabels?: string[],
   thoughts?: string
 ): TriageOperation[] {
   const ops: TriageOperation[] = [];
+  let currentLabels = Array.isArray(metadata.labels) ? [...metadata.labels as string[]] : [];
 
-  // Title change
-  if (analysis.newTitle && analysis.newTitle.trim() && analysis.newTitle !== issue.title) {
-    ops.push(new UpdateTitleOp(analysis.newTitle));
-  }
+  for (const rawOperation of analysis.operations || []) {
+    const operation = normalizeOperation(rawOperation);
+    if (!operation) continue;
 
-  // Labels
-  if (Array.isArray(analysis.labels)) {
-    const filtered = filterLabels(analysis.labels, repoLabels) || [];
-    const current = Array.isArray(metadata.labels) ? (metadata.labels as string[]) : [];
-    const { toAdd, toRemove, merged } = diffLabels(current, filtered);
-    if (toAdd.length || toRemove.length) ops.push(new UpdateLabelsOp(toAdd, toRemove, merged));
-  }
+    if (operation.kind === 'set_title') {
+      const nextTitle = operation.title.trim();
+      if (nextTitle && nextTitle !== issue.title) {
+        ops.push(new UpdateTitleOp(nextTitle));
+      }
+      continue;
+    }
 
-  // Comment
-  if (typeof analysis.comment === 'string' && analysis.comment.trim().length > 0) {
-    const thoughtLog = (thoughts ?? '').trim();
-    const hiddenBlock = thoughtLog.length ? thoughtLog : 'No thoughts provided';
-    const body = `${analysis.comment}\n\n<!--\n${hiddenBlock}\n-->`;
-    ops.push(new CreateCommentOp(body));
-  }
+    if (operation.kind === 'add_labels' || operation.kind === 'remove_labels') {
+      const filtered = [...new Set(filterLabels(operation.labels, repoLabels) || [])];
+      if (filtered.length === 0) continue;
 
-  // State change (open|completed|not_planned). Only act if different from current state/reason.
-  if (analysis.state === 'open' || analysis.state === 'completed' || analysis.state === 'not_planned') {
-    const desired = analysis.state;
+      const removalSet = new Set(filtered);
+      const proposed = operation.kind === 'add_labels'
+        ? [...currentLabels, ...filtered]
+        : currentLabels.filter((label) => !removalSet.has(label));
+      const merged = [...new Set(proposed)];
+      const { toAdd, toRemove } = diffLabels(currentLabels, merged);
+      if (toAdd.length || toRemove.length) {
+        ops.push(new UpdateLabelsOp(toAdd, toRemove, merged));
+        currentLabels = merged;
+      }
+      continue;
+    }
+
+    if (operation.kind === 'comment') {
+      if (operation.body.trim().length === 0) continue;
+      const thoughtLog = (thoughts ?? '').trim();
+      const hiddenBlock = thoughtLog.length ? thoughtLog : 'No thoughts provided';
+      const body = `${operation.body}\n\n<!--\n${hiddenBlock}\n-->`;
+      ops.push(new CreateCommentOp(body));
+      continue;
+    }
+
+    const desired = operation.state;
     const currentState: 'open' | 'closed' = issue.state;
-    const currentReason: string | undefined = issue.state_reason; // may be undefined
+    const currentReason: string | undefined = issue.state_reason;
     if (desired === 'open') {
       if (currentState !== 'open') ops.push(new UpdateStateOp('open'));
-    } else {
-      if (currentState !== 'closed' || currentReason !== desired) {
-        ops.push(new UpdateStateOp(desired));
-      }
+    } else if (currentState !== 'closed' || currentReason !== desired) {
+      ops.push(new UpdateStateOp(desired));
     }
   }
 
