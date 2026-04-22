@@ -188,7 +188,7 @@ async function processIssue(
       // Fast pass produced no work: skip expensive pass.
       if (quickOps.length === 0) {
         console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
-        updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title, quickThoughts);
+        updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title);
         return { triageUsed: false, fastRunUsed };
       }
     } else {
@@ -233,7 +233,7 @@ async function processIssue(
       }
     }
 
-    updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
+    updateDbEntry(db, issue.number, proAnalysis.summary || issue.title);
     return { triageUsed: true, fastRunUsed };
   });
 }

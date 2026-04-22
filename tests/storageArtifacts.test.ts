@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
-import { saveArtifact } from '../src/storage'
+import { saveArtifact, updateDbEntry } from '../src/storage'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import type { TriageDb } from '../src/storage'
 
 describe('saveArtifact', () => {
   it('stores prompt-system.md as a single shared artifact file', () => {
@@ -36,5 +37,36 @@ describe('saveArtifact', () => {
       cwdSpy.mockRestore()
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('updateDbEntry', () => {
+  it('does not persist thoughts for new triage entries', () => {
+    const db: TriageDb = {}
+
+    updateDbEntry(db, 42, 'summary')
+
+    expect(db['42']).toMatchObject({
+      summary: 'summary',
+    })
+    expect(db['42']?.thoughts).toBeUndefined()
+    expect(db['42']?.lastTriaged).toEqual(expect.any(String))
+  })
+
+  it('preserves legacy thoughts already present in existing entries', () => {
+    const db: TriageDb = {
+      '42': {
+        thoughts: 'legacy thoughts',
+        lastTriaged: '2024-01-01T00:00:00.000Z',
+      },
+    }
+
+    updateDbEntry(db, 42, 'updated summary')
+
+    expect(db['42']).toMatchObject({
+      summary: 'updated summary',
+      thoughts: 'legacy thoughts',
+    })
+    expect(db['42']?.lastTriaged).not.toBe('2024-01-01T00:00:00.000Z')
   })
 })
