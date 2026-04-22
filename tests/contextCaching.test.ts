@@ -209,6 +209,7 @@ describe('context caching', () => {
       expect(fastPrompt).toContain('"message": "bbb"')
       expect(fastPrompt).toContain('"body": "ccc"')
       expect(fastPrompt).not.toContain('THOUGHTS FROM LAST RUN')
+      expect(fastPrompt).not.toContain('FAST PASS PROPOSED PLAN')
 
       const proPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'pro', {
         issueBodyChars: 50,
@@ -218,6 +219,79 @@ describe('context caching', () => {
       expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
       expect(proPrompt).toContain('prior thoughts')
       expect(proPrompt).toContain('Reason this run is happening: Re-check this item because it has new activity since the last triage.')
+      expect(proPrompt).not.toContain('FAST PASS PROPOSED PLAN')
+    })
+
+    it('includes fast pass structured plan only in pro prompts', () => {
+      const issue = {
+        number: 3,
+        title: 'Issue',
+        body: 'Body text',
+        state: 'open',
+        type: 'issue',
+        author: 'user',
+        user_type: 'User',
+        draft: false,
+        locked: false,
+        milestone: null,
+        comments: 0,
+        reactions: 0,
+        labels: [],
+        assignees: [],
+      } as any
+
+      const fastPassPlan = {
+        analysis: {
+          summary: 'Summarized issue',
+          labels: ['bug'],
+          comment: 'Need follow-up',
+        },
+        operations: [
+          { kind: 'labels', toAdd: ['bug'], toRemove: [], merged: ['bug'] },
+          { kind: 'comment', body: 'Need follow-up' },
+        ],
+      }
+
+      const proPrompt = buildUserPrompt(
+        issue,
+        [],
+        'prior thoughts',
+        'pro',
+        undefined,
+        'Re-checking this item after fast pass.',
+        fastPassPlan,
+      )
+
+      expect(proPrompt).toContain('=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===')
+      expect(proPrompt).toContain('The following plan was produced by a faster preliminary model.')
+      expect(proPrompt).toContain('"summary": "Summarized issue"')
+      expect(proPrompt).toContain('"kind": "labels"')
+      expect(proPrompt).toContain('"kind": "comment"')
+    })
+
+    it('keeps pro prompts working without a fast pass plan', () => {
+      const issue = {
+        number: 4,
+        title: 'Issue',
+        body: 'Body text',
+        state: 'open',
+        type: 'issue',
+        author: 'user',
+        user_type: 'User',
+        draft: false,
+        locked: false,
+        milestone: null,
+        comments: 0,
+        reactions: 0,
+        labels: [],
+        assignees: [],
+      } as any
+
+      const proPrompt = buildUserPrompt(issue, [], 'prior thoughts', 'pro')
+
+      expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
+      expect(proPrompt).toContain('prior thoughts')
+      expect(proPrompt).not.toContain('FAST PASS PROPOSED PLAN')
     })
   })
 })
