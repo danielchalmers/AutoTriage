@@ -3,7 +3,6 @@ import * as path from 'path';
 
 export interface TriageDbEntry {
   lastTriaged?: string;   // ISO timestamp of when triage was completed
-  thoughts?: string;      // Raw model "thoughts" / chain-of-thought output
   summary?: string;       // One-line summary from analysis
 }
 
@@ -16,7 +15,7 @@ export function loadDatabase(dbPath?: string): TriageDb {
     if (!fs.existsSync(dbPath)) return {};
 
     const contents = fs.readFileSync(dbPath, 'utf8');
-    const db = contents ? JSON.parse(contents) : {};
+    const db = contents ? sanitizeDatabase(JSON.parse(contents)) : {};
     console.info(`📊 Loaded ${dbPath} with ${Object.keys(db).length} entries`);
     return db;
   } catch (err) {
@@ -31,7 +30,7 @@ export function saveDatabase(db: TriageDb, dbPath?: string, dryRun?: boolean): v
 
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+    fs.writeFileSync(dbPath, JSON.stringify(sanitizeDatabase(db), null, 2));
   } catch (err) {
     const message = getErrorMessage(err);
     console.error(`⚠️ Failed to save ${dbPath}: ${message}`);
@@ -39,24 +38,45 @@ export function saveDatabase(db: TriageDb, dbPath?: string, dryRun?: boolean): v
 }
 
 export function getDbEntry(db: TriageDb, issueNumber: number): TriageDbEntry {
-  return db[String(issueNumber)] || {};
+  return sanitizeDbEntry(db[String(issueNumber)]);
 }
 
 export function updateDbEntry(
   db: TriageDb,
   issueNumber: number,
-  summary: string,
-  thoughts: string
+  summary: string
 ): void {
   const key = String(issueNumber);
-  const existing = db[key] || {};
-  const entry: TriageDbEntry = { ...existing };
+  db[key] = {
+    summary,
+    lastTriaged: new Date().toISOString(),
+  };
+}
 
-  entry.summary = summary;
-  entry.thoughts = thoughts;
-  entry.lastTriaged = new Date().toISOString();
+function sanitizeDatabase(db: unknown): TriageDb {
+  if (!db || typeof db !== 'object' || Array.isArray(db)) return {};
 
-  db[key] = entry;
+  const sanitized: TriageDb = {};
+  for (const [key, value] of Object.entries(db as Record<string, unknown>)) {
+    sanitized[key] = sanitizeDbEntry(value);
+  }
+  return sanitized;
+}
+
+function sanitizeDbEntry(entry: unknown): TriageDbEntry {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return {};
+
+  const value = entry as Record<string, unknown>;
+  const sanitized: TriageDbEntry = {};
+
+  if (typeof value.summary === 'string') {
+    sanitized.summary = value.summary;
+  }
+  if (typeof value.lastTriaged === 'string') {
+    sanitized.lastTriaged = value.lastTriaged;
+  }
+
+  return sanitized;
 }
 
 function getErrorMessage(error: unknown): string {
