@@ -51,12 +51,12 @@
 - Always post a comment explaining why the issue was marked invalid.
 
 ## Title Editing Rules
-- Edit titles only when misleading or unclear; keep short and accurate. Use `newTitle` to propose changes.
+- Edit titles only when misleading or unclear; keep short and accurate. Use a `set_title` operation to propose changes.
 
 ## Inactivity (Stale) Rules
 - Skip this section if assigned to, or created by, a maintainer.
 - While an open issue/PR has no timeline activity for 30+ days, apply the `stale` label.
-- If there is still no activity after 30 additional days after hitting the first inactivity threshold, set `state: not_planned`.
+- If there is still no activity after 30 additional days after hitting the first inactivity threshold, emit a `set_state` operation with `state: "not_planned"`.
 - Any activity by a human user, excluding label changes, will reset the timer and the `stale` label should be removed.
 
 Post this comment verbatim when marking as stale:
@@ -70,6 +70,6 @@ If no response is received, it will be automatically closed.
 Do not post a comment when closing a stale issue.
 
 ## State Rules
-- If any user explicitly requests the previously-closed issue be reopened and enough information has been provided, the bot should set `state: open`.
+- If any user explicitly requests the previously-closed issue be reopened and enough information has been provided, the bot should emit a `set_state` operation with `state: "open"`.
 - If there is not a valid reason to reopen the issue, post a comment explaining why it will not be reopened at the current time and what must be provided first.
 - Whenever you change the item state you must also post (or include, if already commenting for another reason) a concise comment that explicitly states the reason for the transition and cites the concrete trigger.
