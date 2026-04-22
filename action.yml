@@ -32,19 +32,19 @@ inputs:
     description: "Space or comma separated list of issue / PR numbers to triage explicitly; when omitted the GitHub event target is used."
     required: false
   max-fast-runs:
-    description: "Cap on how many targets can be analyzed with the fast model during this run."
+    description: "Cap on how many unchanged follow-up reviews can use the fast model during this run."
     required: false
     default: "100"
   max-pro-runs:
-    description: "Cap on how many targets can escalate to the review pass during this run."
+    description: "Cap on how many first-time or updated reviews can use the pro model during this run."
     required: false
     default: "20"
   model-fast:
-    description: "Identifier of the fast analysis model used for the first pass (default shown below). Leave blank to skip the fast pass."
+    description: "Identifier of the fast analysis model used for already-triaged items with no new context. Leave blank to use the pro model instead."
     required: false
     default: "gemini-2.5-flash"
   model-pro:
-    description: "Identifier of the deeper review model used when the fast pass asks for confirmation."
+    description: "Identifier of the deeper review model used for first-time triage and items with new context."
     required: false
     default: "gemini-3-flash-preview"
   prompt-path:

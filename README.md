@@ -45,10 +45,10 @@ jobs:
 | `dry-run` | `"true"` logs the plan only, `"false"` applies changes. | `"false"` |
 | `extended` | When `"true"`, include unchanged issues and recently closed issues in auto-discovery. | `"false"` |
 | `issues` | Explicit issue/PR list (space or comma separated); falls back to the GitHub event target when omitted. | event target |
-| `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
-| `max-pro-runs` | Cap on items that escalate to the review pass per run. | `20` |
-| `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-2.5-flash` |
-| `model-pro` | Review model that double-checks uncertain plans. | `gemini-3-flash-preview` |
+| `max-fast-runs` | Cap on unchanged follow-up reviews analyzed with the fast model per run. | `100` |
+| `max-pro-runs` | Cap on first-time or updated reviews analyzed with the pro model per run. | `20` |
+| `model-fast` | Fast analysis model used for already-triaged items with no new context. Leave blank to use the pro model instead. | `gemini-2.5-flash` |
+| `model-pro` | Deeper review model used for first-time triage and items with new context. | `gemini-3-flash-preview` |
 | `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
 | `readme-path` | Extra Markdown context uploaded to the AI prompt. | `README.md` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
