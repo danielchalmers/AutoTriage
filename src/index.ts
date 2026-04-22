@@ -272,6 +272,7 @@ export async function generateAnalysis(
   useFlexTier: boolean = false
 ): Promise<{ data: AnalysisResult; thoughts: string, ops: TriageOperation[] }> {
   const schema = buildAnalysisResultSchema(repoLabels);
+  const artifactPrefix = isFastModel ? 'fast' : 'pro';
   const payload = buildJsonPayload(
     systemPrompt,
     userPrompt,
@@ -296,8 +297,11 @@ export async function generateAnalysis(
   }
   
   console.log(chalk.magenta(thoughts));
-  saveArtifact(issue.number, `${model}-analysis.json`, JSON.stringify(data, null, 2));
-  saveArtifact(issue.number, `${model}-thoughts.txt`, thoughts);
+  saveArtifact(
+    issue.number,
+    `${artifactPrefix}-analysis.json`,
+    JSON.stringify({ ...data, thoughts }, null, 2)
+  );
 
   const ops: TriageOperation[] = planOperations(issue, data, issue, repoLabels.map(l => l.name), thoughts);
 
