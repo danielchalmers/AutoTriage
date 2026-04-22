@@ -196,7 +196,6 @@ ${mode === 'pro' && readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${re
 export function buildUserPrompt(
   issue: Issue,
   timelineEvents: TimelineEvent[],
-  lastThoughts: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
   runContext?: string,
@@ -209,7 +208,6 @@ export function buildUserPrompt(
   };
   const promptIssue = applyIssueLimits(issue, resolvedLimits);
   const promptTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
-  const promptThoughts = mode === 'pro' ? lastThoughts : '';
 
   return `
 === SECTION: RUNTIME CONTEXT ===
@@ -221,7 +219,6 @@ ${JSON.stringify(promptIssue, null, 2)}
 
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(promptTimelineEvents, null, 2)}
-${mode === 'pro' ? `\n=== SECTION: THOUGHTS FROM LAST RUN ===\n${promptThoughts || 'none'}` : ''}
 `;
 }
 
@@ -231,12 +228,11 @@ export async function buildPrompt(
   readmePath: string,
   timelineEvents: TimelineEvent[],
   repoLabels: Array<{ name: string; description?: string | null; }>,
-  lastThoughts: string,
   additionalInstructions?: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
 ) {
   const systemPrompt = buildSystemPrompt(promptPath, readmePath, repoLabels, additionalInstructions, mode, limits);
-  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts, mode, limits);
+  const userPrompt = buildUserPrompt(issue, timelineEvents, mode, limits);
   return { systemPrompt, userPrompt };
 }

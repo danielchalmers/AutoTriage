@@ -164,14 +164,13 @@ async function processIssue(
       const fastUserPrompt = buildUserPrompt(
         issue,
         fastTimelineEvents,
-        '',
         'fast',
         fastLimits,
         runContext
       );
       saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
 
-      const { data: quickAnalysis, thoughts: quickThoughts, ops: quickOps } = await generateAnalysis(
+      const { data: quickAnalysis, ops: quickOps } = await generateAnalysis(
         issue,
         cfg.modelFast,
         cfg.thinkingBudget,
@@ -188,7 +187,7 @@ async function processIssue(
       // Fast pass produced no work: skip expensive pass.
       if (quickOps.length === 0) {
         console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
-        updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title, quickThoughts);
+        updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title);
         return { triageUsed: false, fastRunUsed };
       }
     } else {
@@ -199,14 +198,13 @@ async function processIssue(
     const proUserPrompt = buildUserPrompt(
       issue,
       proTimelineEvents,
-      dbEntry.thoughts || '',
       'pro',
       proLimits,
       runContext
     );
     saveArtifact(issue.number, `prompt-user.md`, proUserPrompt);
 
-    const { data: proAnalysis, thoughts: proThoughts, ops: proOps } = await generateAnalysis(
+    const { data: proAnalysis, ops: proOps } = await generateAnalysis(
       issue,
       cfg.modelPro,
       cfg.thinkingBudget,
@@ -233,7 +231,7 @@ async function processIssue(
       }
     }
 
-    updateDbEntry(db, issue.number, proAnalysis.summary || issue.title, proThoughts);
+    updateDbEntry(db, issue.number, proAnalysis.summary || issue.title);
     return { triageUsed: true, fastRunUsed };
   });
 }
