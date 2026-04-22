@@ -159,7 +159,7 @@ async function loadIssueContext(issue: Issue, autoDiscover: boolean): Promise<Pr
     issue.type === 'pull request'
   );
   const passSelection = selectTriagePassSelection({
-    lastTriagedAt: dbEntry.lastTriaged,
+    ...(dbEntry.lastTriaged ? { lastTriagedAt: dbEntry.lastTriaged } : {}),
     latestUpdateMs: gh.lastUpdated(issue, rawTimelineEvents),
     autoDiscover,
   });
