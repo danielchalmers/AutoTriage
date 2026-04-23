@@ -5,8 +5,8 @@ Keep issues and pull requests moving: reads the latest context, drafts the next 
 ## How it works
 
 - The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
-- A reviewing AI pass (default: `gemini-3-flash-preview`) replays the plan and confirms labels, comments, etc, before anything is written.
-- Defaults use the free-tier models (`gemini-2.5-flash` + `gemini-3-flash-preview`) rather than `gemini-3-pro`.
+- A reviewing AI pass (default: `gemini-3.1-pro-preview`) replays the plan and confirms labels, comments, etc, before anything is written.
+- Defaults use the free-tier models (`gemini-3.1-flash-lite-preview` + `gemini-3.1-pro-preview`) rather than `gemini-3-pro`.
 - The full thought process along with all actions can be inspected in the workflow artifacts.
 - It will keep going until it runs out of issues or tokens, or reaches the specified limit.
 
@@ -47,8 +47,8 @@ jobs:
 | `issues` | Explicit issue/PR list (space or comma separated); falls back to the GitHub event target when omitted. | event target |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `max-pro-runs` | Cap on items that escalate to the review pass per run. | `20` |
-| `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-2.5-flash` |
-| `model-pro` | Review model that double-checks uncertain plans. | `gemini-3-flash-preview` |
+| `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-3.1-flash-lite-preview` |
+| `model-pro` | Review model that double-checks uncertain plans. | `gemini-3.1-pro-preview` |
 | `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
 | `readme-path` | Extra Markdown context uploaded to the AI prompt. | `README.md` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |

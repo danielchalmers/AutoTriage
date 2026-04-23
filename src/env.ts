@@ -46,9 +46,9 @@ export function getConfig(): Config {
   const readmePath = core.getInput('readme-path') || 'README.md';
   const dbPath = core.getInput('db-path');
   const modelFastInput = core.getInput('model-fast');
-  const modelFast = modelFastInput || 'gemini-2.5-flash';
+  const modelFast = modelFastInput || 'gemini-3.1-flash-lite-preview';
   const skipFastPass = modelFastInput === '';
-  const modelPro = core.getInput('model-pro') || 'gemini-3-flash-preview';
+  const modelPro = core.getInput('model-pro') || 'gemini-3.1-pro-preview';
   const thinkingBudget = -1;
   const budgetScale = Number(core.getInput('budget-scale') || '1');
   const multiplier = Number.isFinite(budgetScale) && budgetScale >= 0 ? budgetScale : 1;
