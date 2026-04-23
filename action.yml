@@ -42,11 +42,11 @@ inputs:
   model-fast:
     description: "Identifier of the fast analysis model used for the first pass (default shown below). Leave blank to skip the fast pass."
     required: false
-    default: "gemini-2.5-flash"
+    default: "gemini-3.1-flash-lite-preview"
   model-pro:
     description: "Identifier of the deeper review model used when the fast pass asks for confirmation."
     required: false
-    default: "gemini-3-flash-preview"
+    default: "gemini-3.1-pro-preview"
   prompt-path:
     description: "Repo-relative path to the prompt template that governs triage behavior (tone, rules, closure policy)."
     required: false

@@ -37,8 +37,8 @@ jobs:
           issues: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '3 6' }}
           prompt-path: examples/AutoTriage.prompt
           dry-run: true
-          model-fast: gemini-2.5-flash
-          model-pro: gemini-3-flash-preview
+          model-fast: gemini-3.1-flash-lite-preview
+          model-pro: gemini-3.1-pro-preview
           strict-mode: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
