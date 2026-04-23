@@ -5,8 +5,9 @@
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
-    "build": "npm run typecheck && rimraf dist && ncc build src/index.ts -o dist --minify --source-map --license licenses.txt && npm run copy-assets",
+    "build": "npm run typecheck && rimraf dist && ncc build src/index.ts -o dist --minify --source-map --license licenses.txt && npm run copy-assets && npm run normalize-eol",
     "copy-assets": "copyfiles -f examples/AutoTriage.prompt dist",
+    "normalize-eol": "node scripts/normalize-eol.js",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
     "dev": "tsc -w",
