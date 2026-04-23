@@ -4,11 +4,11 @@ This document provides comprehensive instructions for AI agents and developers w
 
 ## Project Overview
 
-AutoTriage is a GitHub Action that uses AI to automatically triage issues and pull requests. It's built with TypeScript and requires Node.js 22+ for development, and runs on Node.js 24 in GitHub Actions.
+AutoTriage is a GitHub Action that uses AI to automatically triage issues and pull requests. It's built with TypeScript and requires Node.js 24+ for development, and runs on Node.js 24 in GitHub Actions.
 
 ## Prerequisites
 
-- **Node.js**: Version 22 or higher (specified in `package.json` engines)
+- **Node.js**: Version 24 or higher (specified in `package.json` engines)
 - **npm**: Comes bundled with Node.js
 - **Git**: For version control
 - **GitHub Token**: Required for testing (set as `GITHUB_TOKEN` environment variable)
@@ -217,7 +217,7 @@ These are gitignored but uploaded as workflow artifacts in CI.
 ### Build Failures
 
 **Issue**: `npm run build` fails
-- Check Node.js version: `node --version` (must be 22+)
+- Check Node.js version: `node --version` (must be 24+)
 - Clear node_modules: `rm -rf node_modules && npm ci`
 - Check TypeScript errors: `npm run typecheck`
 

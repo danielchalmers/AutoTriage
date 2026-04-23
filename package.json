@@ -23,7 +23,7 @@
   "author": "Daniel Chalmers",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "files": [
     "action.yml",
@@ -32,7 +32,7 @@
   ],
   "sideEffects": false,
   "devDependencies": {
-    "@types/node": "^25.5.2",
+    "@types/node": "^24.0.0",
     "@vercel/ncc": "^0.38.4",
     "copyfiles": "^2.4.1",
     "dotenv": "^17.4.0",
