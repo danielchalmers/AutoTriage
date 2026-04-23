@@ -9,7 +9,7 @@ export interface ModelRunStats {
 
 export interface ActionDetail {
   issueNumber: number;
-  type: 'labels' | 'comment' | 'title' | 'state';
+  type: 'add_labels' | 'remove_labels' | 'comment' | 'set_title' | 'set_state';
   details: string;
 }
 

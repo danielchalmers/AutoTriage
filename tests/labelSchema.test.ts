@@ -10,9 +10,10 @@ describe('buildAnalysisResultSchema', () => {
     ];
 
     const schema = buildAnalysisResultSchema(repoLabels);
+    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
 
-    expect(schema.properties.labels.items).toHaveProperty('enum');
-    expect(schema.properties.labels.items.enum).toEqual([
+    expect(labelOperationSchema.properties.labels.items).toHaveProperty('enum');
+    expect(labelOperationSchema.properties.labels.items.enum).toEqual([
       'breaking change',
       'awaiting triage',
       'bug',
@@ -26,8 +27,9 @@ describe('buildAnalysisResultSchema', () => {
     ];
 
     const schema = buildAnalysisResultSchema(repoLabels);
+    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
 
-    expect(schema.properties.labels.items.enum).toEqual([
+    expect(labelOperationSchema.properties.labels.items.enum).toEqual([
       'help wanted',
       'good first issue',
     ]);
@@ -35,9 +37,10 @@ describe('buildAnalysisResultSchema', () => {
 
   it('falls back to unconstrained schema when no labels provided', () => {
     const schema = buildAnalysisResultSchema([]);
+    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
 
-    expect(schema.properties.labels.items).not.toHaveProperty('enum');
-    expect(schema.properties.labels.items.type).toBe('STRING');
+    expect(labelOperationSchema.properties.labels.items).not.toHaveProperty('enum');
+    expect(labelOperationSchema.properties.labels.items.type).toBe('STRING');
   });
 
   it('preserves other schema properties', () => {
@@ -45,13 +48,15 @@ describe('buildAnalysisResultSchema', () => {
     const schema = buildAnalysisResultSchema(repoLabels);
 
     expect(schema.type).toBe('OBJECT');
-    expect(schema.required).toEqual(['summary', 'labels']);
+    expect(schema.required).toEqual(['summary', 'operations']);
     expect(schema.properties.summary).toEqual({ type: 'STRING' });
-    expect(schema.properties.comment).toEqual({ type: 'STRING' });
-    expect(schema.properties.state).toEqual({
+    expect(schema.properties.operations.type).toBe('ARRAY');
+    expect(schema.properties.operations.items.anyOf).toHaveLength(4);
+    expect(schema.properties.operations.items.anyOf[1].properties.body).toEqual({ type: 'STRING' });
+    expect(schema.properties.operations.items.anyOf[2].properties.state).toEqual({
       type: 'STRING',
       enum: ['open', 'completed', 'not_planned'],
     });
-    expect(schema.properties.newTitle).toEqual({ type: 'STRING' });
+    expect(schema.properties.operations.items.anyOf[3].properties.title).toEqual({ type: 'STRING' });
   });
 });
