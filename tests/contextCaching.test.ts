@@ -243,12 +243,14 @@ describe('context caching', () => {
       const fastPassPlan = {
         analysis: {
           summary: 'Summarized issue',
-          labels: ['bug'],
-          comment: 'Need follow-up',
+          operations: [
+            { kind: 'add_labels', labels: ['bug'], authorization: 'policy allows bug label' },
+            { kind: 'comment', body: 'Need follow-up', authorization: 'policy requires follow-up' },
+          ],
         },
         operations: [
-          { kind: 'labels', toAdd: ['bug'], toRemove: [], merged: ['bug'] },
-          { kind: 'comment', body: 'Need follow-up' },
+          { kind: 'add_labels', labels: ['bug'], authorization: 'policy allows bug label' },
+          { kind: 'comment', body: 'Need follow-up', authorization: 'policy requires follow-up' },
         ],
       }
 
@@ -265,7 +267,7 @@ describe('context caching', () => {
       expect(proPrompt).toContain('=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===')
       expect(proPrompt).toContain('The following plan was produced by a faster preliminary model.')
       expect(proPrompt).toContain('"summary": "Summarized issue"')
-      expect(proPrompt).toContain('"kind": "labels"')
+      expect(proPrompt).toContain('"kind": "add_labels"')
       expect(proPrompt).toContain('"kind": "comment"')
     })
 

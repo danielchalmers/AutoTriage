@@ -60,7 +60,7 @@ describe('RunStatistics', () => {
     it('tracks label actions', () => {
       stats.trackAction({
         issueNumber: 42,
-        type: 'labels',
+        type: 'add_labels',
         details: 'labels: +bug, -enhancement',
       });
 
@@ -80,7 +80,7 @@ describe('RunStatistics', () => {
     it('tracks title actions', () => {
       stats.trackAction({
         issueNumber: 15,
-        type: 'title',
+        type: 'set_title',
         details: 'title change',
       });
 
@@ -90,7 +90,7 @@ describe('RunStatistics', () => {
     it('tracks state actions', () => {
       stats.trackAction({
         issueNumber: 99,
-        type: 'state',
+        type: 'set_state',
         details: 'state: completed',
       });
 
@@ -100,7 +100,7 @@ describe('RunStatistics', () => {
     it('groups actions by issue number', () => {
       stats.trackAction({
         issueNumber: 42,
-        type: 'labels',
+        type: 'add_labels',
         details: 'labels: +bug',
       });
       stats.trackAction({
@@ -205,7 +205,7 @@ describe('RunStatistics', () => {
       // Actions
       stats.trackAction({
         issueNumber: 42,
-        type: 'labels',
+        type: 'add_labels',
         details: 'labels: +bug, +enhancement',
       });
       stats.trackAction({
@@ -215,12 +215,12 @@ describe('RunStatistics', () => {
       });
       stats.trackAction({
         issueNumber: 15,
-        type: 'title',
+        type: 'set_title',
         details: 'title change',
       });
       stats.trackAction({
         issueNumber: 99,
-        type: 'state',
+        type: 'set_state',
         details: 'state: completed',
       });
 
