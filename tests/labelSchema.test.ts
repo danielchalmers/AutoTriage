@@ -12,6 +12,21 @@ function findOperationSchema(schema: ReturnType<typeof buildAnalysisResultSchema
   return operationSchema;
 }
 
+function isStringItemSchema(value: unknown): value is { type: string; enum?: string[] } {
+  return typeof value === 'object' && value !== null && 'type' in value;
+}
+
+function getLabelItems(schema: ReturnType<typeof buildAnalysisResultSchema>): { type: string; enum?: string[] } {
+  const labelOperationSchema = findOperationSchema(schema, 'labels');
+  if (!('labels' in labelOperationSchema.properties)) {
+    throw new Error('Expected labels property');
+  }
+  if (!isStringItemSchema(labelOperationSchema.properties.labels.items)) {
+    throw new Error('Expected string label item schema');
+  }
+  return labelOperationSchema.properties.labels.items;
+}
+
 describe('buildAnalysisResultSchema', () => {
   it('creates schema with label enum when repository labels are provided', () => {
     const repoLabels = [
@@ -21,11 +36,7 @@ describe('buildAnalysisResultSchema', () => {
     ];
 
     const schema = buildAnalysisResultSchema(repoLabels);
-    const labelOperationSchema = findOperationSchema(schema, 'labels');
-    if (!('labels' in labelOperationSchema.properties)) {
-      throw new Error('Expected labels property');
-    }
-    const labelItems = labelOperationSchema.properties.labels.items as { type: string; enum?: string[] };
+    const labelItems = getLabelItems(schema);
 
     expect(labelItems).toHaveProperty('enum');
     expect(labelItems.enum).toEqual([
@@ -42,11 +53,7 @@ describe('buildAnalysisResultSchema', () => {
     ];
 
     const schema = buildAnalysisResultSchema(repoLabels);
-    const labelOperationSchema = findOperationSchema(schema, 'labels');
-    if (!('labels' in labelOperationSchema.properties)) {
-      throw new Error('Expected labels property');
-    }
-    const labelItems = labelOperationSchema.properties.labels.items as { type: string; enum?: string[] };
+    const labelItems = getLabelItems(schema);
 
     expect(labelItems.enum).toEqual([
       'good first issue',
@@ -56,11 +63,7 @@ describe('buildAnalysisResultSchema', () => {
 
   it('falls back to unconstrained schema when no labels provided', () => {
     const schema = buildAnalysisResultSchema([]);
-    const labelOperationSchema = findOperationSchema(schema, 'labels');
-    if (!('labels' in labelOperationSchema.properties)) {
-      throw new Error('Expected labels property');
-    }
-    const labelItems = labelOperationSchema.properties.labels.items as { type: string; enum?: string[] };
+    const labelItems = getLabelItems(schema);
 
     expect(labelItems).not.toHaveProperty('enum');
     expect(labelItems.type).toBe('STRING');
