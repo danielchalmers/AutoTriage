@@ -1,5 +1,16 @@
-/// <reference types="vitest" />
 import { buildAnalysisResultSchema } from '../src/analysis';
+
+function getOperationSchemaWithProperty<T extends string>(schema: ReturnType<typeof buildAnalysisResultSchema>, propertyName: T) {
+  const operationSchema = schema.properties.operations.items.anyOf.find(
+    candidate => propertyName in candidate.properties
+  );
+
+  if (!operationSchema || !(propertyName in operationSchema.properties)) {
+    throw new Error(`Expected operation schema with property ${propertyName}`);
+  }
+
+  return operationSchema.properties[propertyName];
+}
 
 describe('buildAnalysisResultSchema', () => {
   it('creates schema with label enum when repository labels are provided', () => {
@@ -10,10 +21,10 @@ describe('buildAnalysisResultSchema', () => {
     ];
 
     const schema = buildAnalysisResultSchema(repoLabels);
-    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
+    const labelsSchema = getOperationSchemaWithProperty(schema, 'labels');
 
-    expect(labelOperationSchema.properties.labels.items).toHaveProperty('enum');
-    expect(labelOperationSchema.properties.labels.items.enum).toEqual([
+    expect(labelsSchema.items).toHaveProperty('enum');
+    expect(labelsSchema.items.enum).toEqual([
       'awaiting triage',
       'breaking change',
       'bug',
@@ -27,9 +38,9 @@ describe('buildAnalysisResultSchema', () => {
     ];
 
     const schema = buildAnalysisResultSchema(repoLabels);
-    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
+    const labelsSchema = getOperationSchemaWithProperty(schema, 'labels');
 
-    expect(labelOperationSchema.properties.labels.items.enum).toEqual([
+    expect(labelsSchema.items.enum).toEqual([
       'good first issue',
       'help wanted',
     ]);
@@ -37,10 +48,10 @@ describe('buildAnalysisResultSchema', () => {
 
   it('falls back to unconstrained schema when no labels provided', () => {
     const schema = buildAnalysisResultSchema([]);
-    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
+    const labelsSchema = getOperationSchemaWithProperty(schema, 'labels');
 
-    expect(labelOperationSchema.properties.labels.items).not.toHaveProperty('enum');
-    expect(labelOperationSchema.properties.labels.items.type).toBe('STRING');
+    expect(labelsSchema.items).not.toHaveProperty('enum');
+    expect(labelsSchema.items.type).toBe('STRING');
   });
 
   it('preserves other schema properties', () => {
@@ -52,11 +63,11 @@ describe('buildAnalysisResultSchema', () => {
     expect(schema.properties.summary).toEqual({ type: 'STRING' });
     expect(schema.properties.operations.type).toBe('ARRAY');
     expect(schema.properties.operations.items.anyOf).toHaveLength(4);
-    expect(schema.properties.operations.items.anyOf[1].properties.body).toEqual({ type: 'STRING' });
-    expect(schema.properties.operations.items.anyOf[2].properties.state).toEqual({
+    expect(getOperationSchemaWithProperty(schema, 'body')).toEqual({ type: 'STRING' });
+    expect(getOperationSchemaWithProperty(schema, 'state')).toEqual({
       type: 'STRING',
       enum: ['open', 'completed', 'not_planned'],
     });
-    expect(schema.properties.operations.items.anyOf[3].properties.title).toEqual({ type: 'STRING' });
+    expect(getOperationSchemaWithProperty(schema, 'title')).toEqual({ type: 'STRING' });
   });
 });
