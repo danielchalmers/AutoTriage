@@ -61,8 +61,6 @@ async function run(): Promise<void> {
           model: cfg.modelFast,
           name: cacheInfo.name,
           tokenCount: cacheInfo.tokenCount,
-          ...(cacheInfo.createTime ? { createTime: cacheInfo.createTime } : {}),
-          ...(cacheInfo.expireTime ? { expireTime: cacheInfo.expireTime } : {}),
         });
       } catch (err) {
         console.warn(`⚠️ Context caching unavailable for ${cfg.modelFast}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
@@ -76,8 +74,6 @@ async function run(): Promise<void> {
         model: cfg.modelPro,
         name: cacheInfo.name,
         tokenCount: cacheInfo.tokenCount,
-        ...(cacheInfo.createTime ? { createTime: cacheInfo.createTime } : {}),
-        ...(cacheInfo.expireTime ? { expireTime: cacheInfo.expireTime } : {}),
       });
     } catch (err) {
       console.warn(`⚠️ Context caching unavailable for ${cfg.modelPro}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
@@ -316,7 +312,6 @@ export async function generateAnalysis(
   const endTime = Date.now();
   
   // Track model run stats
-  const createMs = cacheInfo?.createTime ? Date.parse(cacheInfo.createTime) : NaN;
   const modelRunStats = {
     startTime,
     endTime,
@@ -324,7 +319,6 @@ export async function generateAnalysis(
     cachedInputTokens,
     outputTokens,
     ...(cacheInfo ? { cacheName: cacheInfo.name } : {}),
-    ...(Number.isFinite(createMs) ? { cacheAgeMs: Math.max(0, endTime - createMs) } : {}),
   };
   if (isFastModel) {
     stats.trackFastRun(modelRunStats);

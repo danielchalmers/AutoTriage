@@ -7,7 +7,6 @@ export interface ModelRunStats {
   cachedInputTokens?: number;
   outputTokens: number;
   cacheName?: string;
-  cacheAgeMs?: number;
 }
 
 export interface CacheCreateStats {
@@ -15,8 +14,6 @@ export interface CacheCreateStats {
   model: string;
   name: string;
   tokenCount: number;
-  createTime?: string;
-  expireTime?: string;
 }
 
 export interface ActionDetail {
@@ -99,6 +96,13 @@ export class RunStatistics {
     return `${(count / 1000000).toFixed(1)}M`;
   }
 
+  private formatPercent(value: number): string {
+    const percent = Math.max(0, Math.min(100, value * 100));
+    const rounded = Math.round(percent);
+    if (Math.abs(percent - rounded) < 0.05) return `${rounded}%`;
+    return `${percent.toFixed(1)}%`;
+  }
+
   private calculateStats(runs: ModelRunStats[]): {
     total: number;
     avg: number;
@@ -108,8 +112,6 @@ export class RunStatistics {
     cachedInputTokens: number;
     cacheHitRuns: number;
     cacheReferencedRuns: number;
-    avgCacheAge: number;
-    maxCacheAge: number;
   } {
     if (runs.length === 0) {
       return {
@@ -121,8 +123,6 @@ export class RunStatistics {
         cachedInputTokens: 0,
         cacheHitRuns: 0,
         cacheReferencedRuns: 0,
-        avgCacheAge: 0,
-        maxCacheAge: 0,
       };
     }
 
@@ -137,13 +137,6 @@ export class RunStatistics {
     const outputTokens = runs.reduce((sum, r) => sum + r.outputTokens, 0);
     const cacheHitRuns = runs.filter(r => (r.cachedInputTokens ?? 0) > 0).length;
     const cacheReferencedRuns = runs.filter(r => r.cacheName).length;
-    const cacheAges = runs
-      .map(r => r.cacheAgeMs)
-      .filter((age): age is number => typeof age === 'number' && Number.isFinite(age));
-    const avgCacheAge = cacheAges.length
-      ? cacheAges.reduce((sum, age) => sum + age, 0) / cacheAges.length
-      : 0;
-    const maxCacheAge = cacheAges.length ? Math.max(...cacheAges) : 0;
 
     return {
       total,
@@ -154,8 +147,6 @@ export class RunStatistics {
       cachedInputTokens,
       cacheHitRuns,
       cacheReferencedRuns,
-      avgCacheAge,
-      maxCacheAge,
     };
   }
 
@@ -180,24 +171,24 @@ export class RunStatistics {
     );
     console.log(
       `    Tokens used: ${this.formatTokens(stats.inputTokens)} input ` +
-      `(${this.formatTokens(stats.cachedInputTokens)} cached), ` +
+      `(${this.formatTokens(stats.cachedInputTokens)} cached` +
+      `${stats.inputTokens > 0 && stats.cachedInputTokens > 0
+        ? `, ${this.formatPercent(stats.cachedInputTokens / stats.inputTokens)}`
+        : ''}), ` +
       `${this.formatTokens(stats.outputTokens)} output`
     );
 
     const cacheCreate = this.getCacheCreateStats(mode);
     if (cacheCreate.count > 0 || stats.cacheHitRuns > 0 || stats.cacheReferencedRuns > 0) {
+      const cacheAttempts = stats.cacheReferencedRuns || runs.length;
       const cacheParts = [
-        `${stats.cacheHitRuns}/${runs.length} hit(s)`,
+        `${this.formatPercent(stats.cacheHitRuns / cacheAttempts)} hit rate (${stats.cacheHitRuns}/${cacheAttempts})`,
       ];
-      if (stats.cacheReferencedRuns > 0) {
-        cacheParts.push(`${stats.cacheReferencedRuns} explicit reuse(s)`);
+      if (stats.cachedInputTokens > 0) {
+        cacheParts.push(`${this.formatTokens(stats.cachedInputTokens)} reused`);
       }
       if (cacheCreate.count > 0) {
-        cacheParts.push(`${this.formatTokens(cacheCreate.tokenCount)} create tokens`);
-      }
-      if (stats.maxCacheAge > 0) {
-        cacheParts.push(`avg age ${this.formatDuration(stats.avgCacheAge)}`);
-        cacheParts.push(`max age ${this.formatDuration(stats.maxCacheAge)}`);
+        cacheParts.push(`${this.formatTokens(cacheCreate.tokenCount)} created`);
       }
       console.log(`    Cache: ${cacheParts.join(' • ')}`);
     }
