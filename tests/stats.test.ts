@@ -4,6 +4,19 @@ import { RunStatistics } from '../src/stats';
 describe('RunStatistics', () => {
   let stats: RunStatistics;
 
+  function captureSummaryOutput(print: () => void): string[] {
+    const lines: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      lines.push(args.join(' '));
+    });
+    try {
+      print();
+    } finally {
+      logSpy.mockRestore();
+    }
+    return lines;
+  }
+
   beforeEach(() => {
     stats = new RunStatistics();
   });
@@ -255,6 +268,33 @@ describe('RunStatistics', () => {
       });
 
       expect(() => stats.printSummary()).not.toThrow();
+    });
+
+    it('summarizes cache usage with hit rate and cached percentage', () => {
+      stats.setModelNames('gemini-2.5-flash-lite', 'gemini-3-flash-preview');
+      stats.trackCacheCreate({
+        mode: 'pro',
+        model: 'gemini-3-flash-preview',
+        name: 'cache/pro',
+        tokenCount: 8200,
+      });
+      stats.trackProRun({
+        startTime: 0,
+        endTime: 25700,
+        inputTokens: 10800,
+        cachedInputTokens: 8200,
+        outputTokens: 257,
+        cacheName: 'cache/pro',
+      });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+      const tokenLine = lines.find(line => line.includes('Tokens used:'));
+      const cacheLine = lines.find(line => line.includes('Cache:'));
+
+      expect(tokenLine).toContain('Tokens used: 10.8k input (8.2k cached, 75.9%), 257 output');
+      expect(cacheLine).toContain('Cache: 100% hit rate (1/1) • 8.2k reused • 8.2k created');
+      expect(cacheLine).not.toContain('explicit reuse');
+      expect(cacheLine).not.toContain('age');
     });
   });
 });
