@@ -11,7 +11,8 @@ import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics } from './stats';
 import { TriageOperation, planOperations } from './triage';
-import { Config, TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
+import type { Config } from './config';
+import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
 
 type RepoLabel = { name: string; description?: string | null };
 type LastUpdatedFn = (issue: Issue, timelineEvents: TimelineEvent[]) => number;
