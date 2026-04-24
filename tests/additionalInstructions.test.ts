@@ -10,12 +10,18 @@ describe('additional instructions', () => {
     title: 'Test Issue',
     body: 'This is a test issue',
     state: 'open',
-    user: { login: 'testuser', type: 'User' },
+    type: 'issue',
+    author: 'testuser',
+    user_type: 'User',
+    draft: false,
+    locked: false,
+    milestone: null,
+    comments: 0,
+    reactions: 0,
     labels: [],
+    assignees: [],
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
-    html_url: 'https://github.com/test/repo/issues/123',
-    pull_request: undefined,
   }
 
   const mockTimelineEvents: TimelineEvent[] = []

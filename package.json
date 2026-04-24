@@ -9,6 +9,7 @@
     "copy-assets": "node -e \"require('fs').cpSync('examples/AutoTriage.prompt', 'dist/AutoTriage.prompt')\"",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive:true, force:true})\"",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json",
     "dev": "tsc -w",
     "test": "vitest run",
     "test:watch": "vitest"

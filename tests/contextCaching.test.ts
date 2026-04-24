@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildJsonPayload } from '../src/gemini'
-import { buildSystemPrompt, buildUserPrompt } from '../src/analysis'
+import { buildSystemPrompt, buildUserPrompt, type FastPassPlan } from '../src/analysis'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -39,10 +39,10 @@ describe('context caching', () => {
       const cachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1, 'cachedContents/abc123')
 
       expect(uncachedPayload.contents).toEqual(cachedPayload.contents)
-      expect(uncachedPayload.contents?.[0]).toEqual({
+      expect(uncachedPayload.contents).toEqual([{
         role: 'user',
         parts: [{ text: userPrompt }],
-      })
+      }])
     })
 
     it('omits temperature for non gemini-2 models', () => {
@@ -262,7 +262,7 @@ describe('context caching', () => {
         assignees: [],
       } as any
 
-      const fastPassPlan = {
+      const fastPassPlan: FastPassPlan = {
         analysis: {
           summary: 'Summarized issue',
           operations: [

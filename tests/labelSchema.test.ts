@@ -1,5 +1,31 @@
-/// <reference types="vitest" />
 import { buildAnalysisResultSchema } from '../src/analysis';
+
+function findOperationSchema(schema: ReturnType<typeof buildAnalysisResultSchema>, propertyName: string) {
+  const operationSchema = schema.properties.operations.items.anyOf.find(
+    candidate => propertyName in candidate.properties
+  );
+
+  if (!operationSchema) {
+    throw new Error(`Expected operation schema with property ${propertyName}`);
+  }
+
+  return operationSchema;
+}
+
+function isStringItemSchema(value: unknown): value is { type: string; enum?: string[] } {
+  return typeof value === 'object' && value !== null && 'type' in value;
+}
+
+function getLabelItems(schema: ReturnType<typeof buildAnalysisResultSchema>): { type: string; enum?: string[] } {
+  const labelOperationSchema = findOperationSchema(schema, 'labels');
+  if (!('labels' in labelOperationSchema.properties)) {
+    throw new Error('Expected labels property');
+  }
+  if (!isStringItemSchema(labelOperationSchema.properties.labels.items)) {
+    throw new Error('Expected string label item schema');
+  }
+  return labelOperationSchema.properties.labels.items;
+}
 
 describe('buildAnalysisResultSchema', () => {
   it('creates schema with label enum when repository labels are provided', () => {
@@ -10,10 +36,10 @@ describe('buildAnalysisResultSchema', () => {
     ];
 
     const schema = buildAnalysisResultSchema(repoLabels);
-    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
+    const labelItems = getLabelItems(schema);
 
-    expect(labelOperationSchema.properties.labels.items).toHaveProperty('enum');
-    expect(labelOperationSchema.properties.labels.items.enum).toEqual([
+    expect(labelItems).toHaveProperty('enum');
+    expect(labelItems.enum).toEqual([
       'awaiting triage',
       'breaking change',
       'bug',
@@ -27,9 +53,9 @@ describe('buildAnalysisResultSchema', () => {
     ];
 
     const schema = buildAnalysisResultSchema(repoLabels);
-    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
+    const labelItems = getLabelItems(schema);
 
-    expect(labelOperationSchema.properties.labels.items.enum).toEqual([
+    expect(labelItems.enum).toEqual([
       'good first issue',
       'help wanted',
     ]);
@@ -37,10 +63,10 @@ describe('buildAnalysisResultSchema', () => {
 
   it('falls back to unconstrained schema when no labels provided', () => {
     const schema = buildAnalysisResultSchema([]);
-    const labelOperationSchema = schema.properties.operations.items.anyOf[0];
+    const labelItems = getLabelItems(schema);
 
-    expect(labelOperationSchema.properties.labels.items).not.toHaveProperty('enum');
-    expect(labelOperationSchema.properties.labels.items.type).toBe('STRING');
+    expect(labelItems).not.toHaveProperty('enum');
+    expect(labelItems.type).toBe('STRING');
   });
 
   it('preserves other schema properties', () => {
@@ -52,11 +78,25 @@ describe('buildAnalysisResultSchema', () => {
     expect(schema.properties.summary).toEqual({ type: 'STRING' });
     expect(schema.properties.operations.type).toBe('ARRAY');
     expect(schema.properties.operations.items.anyOf).toHaveLength(4);
-    expect(schema.properties.operations.items.anyOf[1].properties.body).toEqual({ type: 'STRING' });
-    expect(schema.properties.operations.items.anyOf[2].properties.state).toEqual({
+    const commentOperationSchema = findOperationSchema(schema, 'body');
+    if (!('body' in commentOperationSchema.properties)) {
+      throw new Error('Expected body property');
+    }
+    expect(commentOperationSchema.properties.body).toEqual({ type: 'STRING' });
+
+    const stateOperationSchema = findOperationSchema(schema, 'state');
+    if (!('state' in stateOperationSchema.properties)) {
+      throw new Error('Expected state property');
+    }
+    expect(stateOperationSchema.properties.state).toEqual({
       type: 'STRING',
       enum: ['open', 'completed', 'not_planned'],
     });
-    expect(schema.properties.operations.items.anyOf[3].properties.title).toEqual({ type: 'STRING' });
+
+    const titleOperationSchema = findOperationSchema(schema, 'title');
+    if (!('title' in titleOperationSchema.properties)) {
+      throw new Error('Expected title property');
+    }
+    expect(titleOperationSchema.properties.title).toEqual({ type: 'STRING' });
   });
 });
