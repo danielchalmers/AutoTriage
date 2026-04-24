@@ -87,6 +87,8 @@ type PromptPassLimits = {
   timelineTextChars: number;
 };
 
+type RepoLabel = { name: string; description?: string | null };
+
 function clampText(value: string | null | undefined, maxChars: number): string {
   if (!value || maxChars <= 0) return '';
   return value.length > maxChars ? value.slice(0, maxChars) : value;
@@ -129,6 +131,14 @@ export function getPromptLimits(config: Config, mode: PromptPassMode): PromptPas
   };
 }
 
+export function normalizeRepoLabels<T extends { name: string; description?: string | null }>(repoLabels: T[]): T[] {
+  return [...repoLabels].sort((a, b) => {
+    const nameOrder = a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+    if (nameOrder !== 0) return nameOrder;
+    return (a.description ?? '').localeCompare(b.description ?? '', 'en', { sensitivity: 'base' });
+  });
+}
+
 /**
  * Build a schema that constrains label values to actual repository labels.
  * This ensures the AI returns labels in the exact format they exist in the repository,
@@ -140,7 +150,7 @@ export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
     return AnalysisResultSchema;
   }
   
-  const labelNames = repoLabels.map(l => l.name);
+  const labelNames = normalizeRepoLabels(repoLabels).map(l => l.name);
   const labelOperationSchema = {
     ...LabelOperationSchema,
     properties: {
@@ -181,7 +191,7 @@ export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
 export function buildSystemPrompt(
   promptPath: string,
   readmePath: string,
-  repoLabels: Array<{ name: string; description?: string | null; }>,
+  repoLabels: RepoLabel[],
   additionalInstructions?: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
@@ -189,6 +199,7 @@ export function buildSystemPrompt(
   const basePrompt = loadPrompt(promptPath);
   const readmeLimit = limits?.readmeChars ?? Number.MAX_SAFE_INTEGER;
   const readme = readmeLimit > 0 ? clampText(loadReadme(readmePath), readmeLimit) : '';
+  const normalizedRepoLabels = normalizeRepoLabels(repoLabels);
   return `
 === SECTION: OUTPUT FORMAT ===
 JSON OUTPUT CONTRACT:
@@ -263,7 +274,7 @@ INSTRUCTION HIERARCHY & ENFORCEMENT:
 ${basePrompt}
 ${additionalInstructions ? `\n=== SECTION: ADDITIONAL INSTRUCTIONS ===\n${additionalInstructions}\n` : ''}
 === SECTION: REPOSITORY LABELS (JSON) ===
-${JSON.stringify(repoLabels, null, 2)}
+${JSON.stringify(normalizedRepoLabels, null, 2)}
 ${mode === 'pro' && readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${readme}` : ''}
 `;
 }
@@ -279,6 +290,7 @@ export function buildUserPrompt(
   limits?: Partial<PromptPassLimits>,
   runContext?: string,
   fastPassPlan?: FastPassPlan,
+  runTimestamp?: string,
 ): string {
   const resolvedLimits: PromptPassLimits = {
     readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
@@ -292,7 +304,7 @@ export function buildUserPrompt(
 
   return `
 === SECTION: RUNTIME CONTEXT ===
-Current date/time (UTC ISO 8601): ${new Date().toISOString()}
+Current date/time (UTC ISO 8601): ${runTimestamp ?? new Date().toISOString()}
 ${runContext ? `Reason this run is happening: ${runContext}\n` : ''}
 
 === SECTION: ISSUE METADATA (JSON) ===
@@ -312,13 +324,14 @@ export async function buildPrompt(
   promptPath: string,
   readmePath: string,
   timelineEvents: TimelineEvent[],
-  repoLabels: Array<{ name: string; description?: string | null; }>,
+  repoLabels: RepoLabel[],
   lastThoughts: string,
   additionalInstructions?: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
+  runTimestamp?: string,
 ) {
   const systemPrompt = buildSystemPrompt(promptPath, readmePath, repoLabels, additionalInstructions, mode, limits);
-  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts, mode, limits);
+  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts, mode, limits, undefined, undefined, runTimestamp);
   return { systemPrompt, userPrompt };
 }

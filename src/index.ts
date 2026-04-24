@@ -1,9 +1,9 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry, getDbEntry } from './storage';
-import { AnalysisResult, FastPassPlan, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits } from './analysis';
+import { AnalysisResult, FastPassPlan, buildSystemPrompt, buildUserPrompt, buildAnalysisResultSchema, getPromptLimits, normalizeRepoLabels } from './analysis';
 import { GitHubClient, Issue, TimelineEvent } from './github';
-import { buildJsonPayload, GeminiClient, GeminiResponseError } from './gemini';
+import { buildJsonPayload, GeminiCacheInfo, GeminiClient, GeminiResponseError } from './gemini';
 import { TriageOperation, planOperations } from './triage';
 import { buildAutoDiscoverQueue, filterPreviouslyTriagedClosedIssuesWithNewActivity } from './autoDiscover';
 import { RunStatistics } from './stats';
@@ -20,8 +20,9 @@ stats.setRepository(cfg.owner, cfg.repo);
 stats.setModelNames(cfg.modelFast, cfg.modelPro);
 
 async function run(): Promise<void> {
-  const repoLabels = await gh.listRepoLabels();
+  const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets();
+  const runTimestamp = new Date().toISOString();
   let triagesPerformed = 0;
   let fastRunsPerformed = 0;
   let consecutiveFailures = 0;
@@ -49,19 +50,35 @@ async function run(): Promise<void> {
   saveArtifact(0, 'prompt-system.md', systemPromptPro);
 
   // Create context caches for models that will be used (only when enabled)
-  const cacheNames: Map<'fast' | 'pro', string> = new Map();
+  const cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo> = new Map();
   if (cfg.contextCaching) {
     if (!cfg.skipFastPass) {
       try {
-        const cacheName = await gemini.createCache(cfg.modelFast, systemPromptFast, `autotriage-fast-${cfg.owner}/${cfg.repo}`);
-        cacheNames.set('fast', cacheName);
+        const cacheInfo = await gemini.createCache(cfg.modelFast, systemPromptFast, `autotriage-fast-${cfg.owner}/${cfg.repo}`);
+        cacheInfos.set('fast', cacheInfo);
+        stats.trackCacheCreate({
+          mode: 'fast',
+          model: cfg.modelFast,
+          name: cacheInfo.name,
+          tokenCount: cacheInfo.tokenCount,
+          ...(cacheInfo.createTime ? { createTime: cacheInfo.createTime } : {}),
+          ...(cacheInfo.expireTime ? { expireTime: cacheInfo.expireTime } : {}),
+        });
       } catch (err) {
         console.warn(`⚠️ Context caching unavailable for ${cfg.modelFast}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     try {
-      const cacheName = await gemini.createCache(cfg.modelPro, systemPromptPro, `autotriage-pro-${cfg.owner}/${cfg.repo}`);
-      cacheNames.set('pro', cacheName);
+      const cacheInfo = await gemini.createCache(cfg.modelPro, systemPromptPro, `autotriage-pro-${cfg.owner}/${cfg.repo}`);
+      cacheInfos.set('pro', cacheInfo);
+      stats.trackCacheCreate({
+        mode: 'pro',
+        model: cfg.modelPro,
+        name: cacheInfo.name,
+        tokenCount: cacheInfo.tokenCount,
+        ...(cacheInfo.createTime ? { createTime: cacheInfo.createTime } : {}),
+        ...(cacheInfo.expireTime ? { expireTime: cacheInfo.expireTime } : {}),
+      });
     } catch (err) {
       console.warn(`⚠️ Context caching unavailable for ${cfg.modelPro}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -85,7 +102,7 @@ async function run(): Promise<void> {
 
       try {
         const issue = await gh.getIssue(n);
-        const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheNames);
+        const { triageUsed, fastRunUsed } = await processIssue(issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp);
         if (triageUsed) {
           triagesPerformed++;
           stats.incrementTriaged();
@@ -118,8 +135,8 @@ async function run(): Promise<void> {
     }
   } finally {
     // Clean up caches
-    for (const [passMode, name] of cacheNames) {
-      await gemini.deleteCache(name);
+    for (const [passMode, cacheInfo] of cacheInfos) {
+      await gemini.deleteCache(cacheInfo.name);
     }
   }
 
@@ -139,7 +156,8 @@ async function processIssue(
   autoDiscover: boolean,
   systemPromptFast: string,
   systemPromptPro: string,
-  cacheNames: Map<'fast' | 'pro', string>
+  cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo>,
+  runTimestamp: string
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const dbEntry = getDbEntry(db, issue.number);
   const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents);
@@ -168,7 +186,9 @@ async function processIssue(
         '',
         'fast',
         fastLimits,
-        runContext
+        runContext,
+        undefined,
+        runTimestamp
       );
       saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
 
@@ -180,7 +200,7 @@ async function processIssue(
         fastUserPrompt,
         repoLabels,
         true, // isFastModel
-        cacheNames.get('fast'),
+        cacheInfos.get('fast'),
         cfg.contextCaching
       );
       
@@ -208,7 +228,8 @@ async function processIssue(
       'pro',
       proLimits,
       runContext,
-      fastPassPlan
+      fastPassPlan,
+      runTimestamp
     );
     saveArtifact(issue.number, `prompt-user.md`, proUserPrompt);
 
@@ -220,7 +241,7 @@ async function processIssue(
       proUserPrompt,
       repoLabels,
       false, // isFastModel
-      cacheNames.get('pro'),
+      cacheInfos.get('pro'),
       cfg.contextCaching
     );
 
@@ -274,7 +295,7 @@ export async function generateAnalysis(
   userPrompt: string,
   repoLabels: Array<{ name: string; description?: string | null }>,
   isFastModel: boolean = false,
-  cachedContentName?: string,
+  cacheInfo?: GeminiCacheInfo,
   useFlexTier: boolean = false
 ): Promise<{ data: AnalysisResult; thoughts: string, ops: TriageOperation[] }> {
   const schema = buildAnalysisResultSchema(repoLabels);
@@ -285,17 +306,26 @@ export async function generateAnalysis(
     schema,
     model,
     thinkingBudget,
-    cachedContentName,
+    cacheInfo?.name,
     useFlexTier
   );
 
-  console.log(chalk.blue(`💭 Thinking with ${model}${cachedContentName ? ' (cached)' : ''}...`));
+  console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, outputTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
   const endTime = Date.now();
   
   // Track model run stats
-  const modelRunStats = { startTime, endTime, inputTokens, outputTokens };
+  const createMs = cacheInfo?.createTime ? Date.parse(cacheInfo.createTime) : NaN;
+  const modelRunStats = {
+    startTime,
+    endTime,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    ...(cacheInfo ? { cacheName: cacheInfo.name } : {}),
+    ...(Number.isFinite(createMs) ? { cacheAgeMs: Math.max(0, endTime - createMs) } : {}),
+  };
   if (isFastModel) {
     stats.trackFastRun(modelRunStats);
   } else {

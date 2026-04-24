@@ -114,6 +114,28 @@ describe('context caching', () => {
         fs.unlinkSync(customPromptPath)
       }
     })
+
+    it('sorts repository labels for stable cache keys', () => {
+      const customPromptPath = path.join(__dirname, 'test-cache-prompt-sort.txt')
+      fs.writeFileSync(customPromptPath, 'Stable prompt')
+
+      try {
+        const labelsA = [
+          { name: 'zeta', description: null },
+          { name: 'alpha', description: 'First' },
+        ]
+        const labelsB = [
+          { name: 'alpha', description: 'First' },
+          { name: 'zeta', description: null },
+        ]
+        const promptA = buildSystemPrompt(customPromptPath, '', labelsA)
+        const promptB = buildSystemPrompt(customPromptPath, '', labelsB)
+        expect(promptA).toBe(promptB)
+        expect(promptA.indexOf('"alpha"')).toBeLessThan(promptA.indexOf('"zeta"'))
+      } finally {
+        fs.unlinkSync(customPromptPath)
+      }
+    })
   })
 
   describe('buildUserPrompt', () => {
@@ -294,6 +316,30 @@ describe('context caching', () => {
       expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
       expect(proPrompt).toContain('prior thoughts')
       expect(proPrompt).not.toContain('FAST PASS PROPOSED PLAN')
+    })
+
+    it('uses a provided run timestamp instead of generating a per-prompt timestamp', () => {
+      const issue = {
+        number: 5,
+        title: 'Issue',
+        body: 'Body text',
+        state: 'open',
+        type: 'issue',
+        author: 'user',
+        user_type: 'User',
+        draft: false,
+        locked: false,
+        milestone: null,
+        comments: 0,
+        reactions: 0,
+        labels: [],
+        assignees: [],
+      } as any
+
+      const runTimestamp = '2026-04-24T12:00:00.000Z'
+      const proPrompt = buildUserPrompt(issue, [], '', 'pro', undefined, undefined, undefined, runTimestamp)
+
+      expect(proPrompt).toContain(`Current date/time (UTC ISO 8601): ${runTimestamp}`)
     })
   })
 })

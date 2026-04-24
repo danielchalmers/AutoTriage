@@ -1,5 +1,21 @@
 import { GenerateContentResponse, GoogleGenAI, type GenerateContentParameters } from '@google/genai';
 
+export interface GeminiCacheInfo {
+  name: string;
+  tokenCount: number;
+  createTime?: string;
+  expireTime?: string;
+  displayName?: string;
+}
+
+export interface GeminiJsonResult<T> {
+  data: T;
+  thoughts: string;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+}
+
 export function buildJsonPayload(
   systemPrompt: string,
   userPrompt: string,
@@ -70,7 +86,7 @@ export class GeminiClient {
    * Create a context cache for the given system prompt and model.
    * Returns the cache resource name to be used in subsequent generateContent calls.
    */
-  async createCache(model: string, systemPrompt: string, displayName?: string): Promise<string> {
+  async createCache(model: string, systemPrompt: string, displayName?: string): Promise<GeminiCacheInfo> {
     const cache = await this.client.caches.create({
       model,
       config: {
@@ -82,7 +98,13 @@ export class GeminiClient {
     if (!cache.name) {
       throw new GeminiResponseError('Failed to create context cache: no name returned');
     }
-    return cache.name;
+    return {
+      name: cache.name,
+      tokenCount: cache.usageMetadata?.totalTokenCount ?? 0,
+      ...(cache.createTime ? { createTime: cache.createTime } : {}),
+      ...(cache.expireTime ? { expireTime: cache.expireTime } : {}),
+      ...(cache.displayName ? { displayName: cache.displayName } : {}),
+    };
   }
 
   /**
@@ -96,7 +118,7 @@ export class GeminiClient {
     }
   }
 
-  private async parseJson<T>(response: GenerateContentResponse): Promise<{ data: T; thoughts: string; inputTokens: number; outputTokens: number }> {
+  private async parseJson<T>(response: GenerateContentResponse): Promise<GeminiJsonResult<T>> {
     // Manually extract text from parts to avoid warnings about non-text parts (e.g., thoughtSignature)
     // when using Gemini 3 models with thinking enabled
     const thoughts: string[] = [];
@@ -128,9 +150,10 @@ export class GeminiClient {
 
       // Extract token usage from response metadata
       const inputTokens = response.usageMetadata?.promptTokenCount ?? 0;
+      const cachedInputTokens = response.usageMetadata?.cachedContentTokenCount ?? 0;
       const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
 
-      return { data, thoughts: collapsedThoughts, inputTokens, outputTokens };
+      return { data, thoughts: collapsedThoughts, inputTokens, cachedInputTokens, outputTokens };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
@@ -140,7 +163,7 @@ export class GeminiClient {
     payload: GenerateContentParameters,
     maxRetries: number,
     initialBackoffMs: number
-  ): Promise<{ data: T; thoughts: string; inputTokens: number; outputTokens: number }> {
+  ): Promise<GeminiJsonResult<T>> {
     let attempt = 0;
     let lastError: unknown = undefined;
     const totalAttempts = (maxRetries | 0) + 1;
