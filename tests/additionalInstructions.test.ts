@@ -36,7 +36,6 @@ describe('additional instructions', () => {
         '',
         mockTimelineEvents,
         mockRepoLabels,
-        '',
         additionalInstructions
       )
 
@@ -70,7 +69,6 @@ describe('additional instructions', () => {
         '',
         mockTimelineEvents,
         mockRepoLabels,
-        '',
         undefined
       )
 
@@ -92,7 +90,6 @@ describe('additional instructions', () => {
         '',
         mockTimelineEvents,
         mockRepoLabels,
-        '',
         ''
       )
 

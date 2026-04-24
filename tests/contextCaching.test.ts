@@ -161,16 +161,14 @@ describe('context caching', () => {
         { event: 'commented', body: 'A comment', created_at: '2024-01-01T00:00:00Z' },
       ] as any[]
 
-      const userPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'pro', undefined, 'This item was triaged before at 2024-01-01T00:00:00Z and is being checked again.')
+      const userPrompt = buildUserPrompt(issue, timelineEvents, 'pro', undefined, 'This item was triaged before at 2024-01-01T00:00:00Z and is being checked again.')
 
       expect(userPrompt).toContain('Test issue')
       expect(userPrompt).toContain('A comment')
-      expect(userPrompt).toContain('prior thoughts')
       expect(userPrompt).toContain('=== SECTION: RUNTIME CONTEXT ===')
       expect(userPrompt).toContain('Reason this run is happening: This item was triaged before at 2024-01-01T00:00:00Z and is being checked again.')
       expect(userPrompt).toContain('=== SECTION: ISSUE METADATA (JSON) ===')
       expect(userPrompt).toContain('=== SECTION: ISSUE TIMELINE EVENTS (JSON) ===')
-      expect(userPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
     })
 
     it('does not contain static repo content', () => {
@@ -191,7 +189,7 @@ describe('context caching', () => {
         assignees: [],
       } as any
 
-      const userPrompt = buildUserPrompt(issue, [], '')
+      const userPrompt = buildUserPrompt(issue, [])
 
       expect(userPrompt).not.toContain('=== SECTION: REPOSITORY LABELS')
       expect(userPrompt).not.toContain('=== SECTION: PROJECT README')
@@ -222,7 +220,7 @@ describe('context caching', () => {
         { event: 'reviewed', body: 'c'.repeat(20), created_at: '2024-01-03T00:00:00Z' },
       ] as any[]
 
-      const fastPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'fast', {
+      const fastPrompt = buildUserPrompt(issue, timelineEvents, 'fast', {
         issueBodyChars: 5,
         timelineEvents: 2,
         timelineTextChars: 3,
@@ -230,16 +228,13 @@ describe('context caching', () => {
       expect(fastPrompt).toContain('"body": "xxxxx"')
       expect(fastPrompt).toContain('"message": "bbb"')
       expect(fastPrompt).toContain('"body": "ccc"')
-      expect(fastPrompt).not.toContain('THOUGHTS FROM LAST RUN')
       expect(fastPrompt).not.toContain('FAST PASS PROPOSED PLAN')
 
-      const proPrompt = buildUserPrompt(issue, timelineEvents, 'prior thoughts', 'pro', {
+      const proPrompt = buildUserPrompt(issue, timelineEvents, 'pro', {
         issueBodyChars: 50,
         timelineEvents: 3,
         timelineTextChars: 50,
       }, 'Re-check this item because it has new activity since the last triage.')
-      expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
-      expect(proPrompt).toContain('prior thoughts')
       expect(proPrompt).toContain('Reason this run is happening: Re-check this item because it has new activity since the last triage.')
       expect(proPrompt).not.toContain('FAST PASS PROPOSED PLAN')
     })
@@ -279,7 +274,6 @@ describe('context caching', () => {
       const proPrompt = buildUserPrompt(
         issue,
         [],
-        'prior thoughts',
         'pro',
         undefined,
         'Re-checking this item after fast pass.',
@@ -311,10 +305,9 @@ describe('context caching', () => {
         assignees: [],
       } as any
 
-      const proPrompt = buildUserPrompt(issue, [], 'prior thoughts', 'pro')
+      const proPrompt = buildUserPrompt(issue, [], 'pro')
 
-      expect(proPrompt).toContain('=== SECTION: THOUGHTS FROM LAST RUN ===')
-      expect(proPrompt).toContain('prior thoughts')
+      expect(proPrompt).not.toContain('THOUGHTS FROM LAST RUN')
       expect(proPrompt).not.toContain('FAST PASS PROPOSED PLAN')
     })
 
@@ -337,7 +330,7 @@ describe('context caching', () => {
       } as any
 
       const runTimestamp = '2026-04-24T12:00:00.000Z'
-      const proPrompt = buildUserPrompt(issue, [], '', 'pro', undefined, undefined, undefined, runTimestamp)
+      const proPrompt = buildUserPrompt(issue, [], 'pro', undefined, undefined, undefined, runTimestamp)
 
       expect(proPrompt).toContain(`Current date/time (UTC ISO 8601): ${runTimestamp}`)
     })

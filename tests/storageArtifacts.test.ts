@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { saveArtifact, updateDbEntry } from '../src/storage'
+import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry } from '../src/storage'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -49,24 +49,72 @@ describe('updateDbEntry', () => {
     expect(db['42']).toMatchObject({
       summary: 'summary',
     })
-    expect(db['42']?.thoughts).toBeUndefined()
+    expect((db['42'] as any)?.thoughts).toBeUndefined()
     expect(db['42']?.lastTriaged).toEqual(expect.any(String))
   })
 
-  it('preserves legacy thoughts already present in existing entries', () => {
-    const db: TriageDb = {
+  it('removes legacy thoughts from existing entries', () => {
+    const db = {
       '42': {
         thoughts: 'legacy thoughts',
         lastTriaged: '2024-01-01T00:00:00.000Z',
       },
-    }
+    } as unknown as TriageDb
 
     updateDbEntry(db, 42, 'updated summary')
 
     expect(db['42']).toMatchObject({
       summary: 'updated summary',
-      thoughts: 'legacy thoughts',
     })
+    expect((db['42'] as any)?.thoughts).toBeUndefined()
     expect(db['42']?.lastTriaged).not.toBe('2024-01-01T00:00:00.000Z')
+  })
+})
+
+describe('database thought sanitization', () => {
+  it('drops legacy thoughts when loading the database', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-db-'))
+    const dbPath = path.join(tempDir, 'triage-db.json')
+    fs.writeFileSync(dbPath, JSON.stringify({
+      '42': {
+        thoughts: 'legacy thoughts',
+        summary: 'kept summary',
+        lastTriaged: '2024-01-01T00:00:00.000Z',
+      },
+    }))
+
+    try {
+      const db = loadDatabase(dbPath)
+      expect(db['42']).toEqual({
+        summary: 'kept summary',
+        lastTriaged: '2024-01-01T00:00:00.000Z',
+      })
+      expect((db['42'] as any)?.thoughts).toBeUndefined()
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not write legacy thoughts back to disk', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-db-'))
+    const dbPath = path.join(tempDir, 'triage-db.json')
+    const db = {
+      '42': {
+        thoughts: 'legacy thoughts',
+        summary: 'kept summary',
+      },
+    } as unknown as TriageDb
+
+    try {
+      saveDatabase(db, dbPath, false)
+      const saved = JSON.parse(fs.readFileSync(dbPath, 'utf8'))
+      expect(saved).toEqual({
+        '42': {
+          summary: 'kept summary',
+        },
+      })
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 })

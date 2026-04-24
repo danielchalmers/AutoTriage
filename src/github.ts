@@ -274,20 +274,6 @@ export class GitHubClient {
     await this.octokit.rest.issues.update({ owner: this.owner, repo: this.repo, issue_number, title });
   }
 
-  async closeIssue(
-    issue_number: number,
-    reason: 'completed' | 'not_planned' | 'reopened' | undefined = 'not_planned'
-  ): Promise<void> {
-    this.incrementApiCalls();
-    await this.octokit.rest.issues.update({
-      owner: this.owner,
-      repo: this.repo,
-      issue_number,
-      state: 'closed',
-      state_reason: reason,
-    });
-  }
-
   async updateIssueState(
     issue_number: number,
     state: 'open' | 'closed',
@@ -320,15 +306,5 @@ export class GitHubClient {
     }, 0);
 
     return issueUpdatedMs > latestEventMs ? issueUpdatedMs : latestEventMs;
-  }
-
-  hasUpdated(
-    issue: Issue,
-    timelineEvents: Array<TimelineEvent>,
-    lastTriaged: Date | undefined
-  ): boolean {
-    if (!lastTriaged) return true; // No prior triage => treat as updated.
-    const latestUpdateMs = this.lastUpdated(issue, timelineEvents);
-    return latestUpdateMs > lastTriaged.getTime();
   }
 }

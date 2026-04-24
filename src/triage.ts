@@ -46,22 +46,19 @@ class RemoveLabelsOp implements TriageOperation {
   }
 }
 
-// Post a model-suggested comment (includes hidden thoughts log for traceability).
+// Post a model-suggested comment.
 class CreateCommentOp implements TriageOperation {
   kind: 'comment' = 'comment';
-  constructor(public body: string, public authorization: string, private thoughts?: string) { }
+  constructor(public body: string, public authorization: string) { }
   toJSON() { return { kind: this.kind, body: this.body, authorization: this.authorization }; }
   getActionDetails(): string {
     return 'comment';
   }
   async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    const preview = this.body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
-    const thoughtLog = (this.thoughts ?? '').trim();
-    const hiddenBlock = thoughtLog.length ? thoughtLog : 'No thoughts provided';
-    const body = `${this.body}\n\n<!--\n${hiddenBlock}\n-->`;
+    const preview = this.body.replace(/^/gm, '> ');
     console.log(chalk.cyan('💬 Comment:'));
     console.log(chalk.green(preview));
-    if (!cfg.dryRun) await client.createComment(issue.number, body);
+    if (!cfg.dryRun) await client.createComment(issue.number, this.body);
   }
 }
 
@@ -128,8 +125,7 @@ export function planOperations(
   issue: any,
   analysis: AnalysisResult,
   metadata: any,
-  repoLabels?: string[],
-  thoughts?: string
+  repoLabels?: string[]
 ): TriageOperation[] {
   const ops: TriageOperation[] = [];
   const modelOps: unknown[] = Array.isArray(analysis.operations) ? analysis.operations : [];
@@ -157,7 +153,7 @@ export function planOperations(
       }
       case 'comment':
         if (typeof op.body === 'string' && op.body.trim().length > 0) {
-          ops.push(new CreateCommentOp(op.body, op.authorization, thoughts));
+          ops.push(new CreateCommentOp(op.body, op.authorization));
         }
         break;
       case 'set_title':

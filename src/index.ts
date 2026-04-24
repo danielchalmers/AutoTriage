@@ -183,7 +183,6 @@ async function processIssue(
       const fastUserPrompt = buildUserPrompt(
         issue,
         fastTimelineEvents,
-        '',
         'fast',
         fastLimits,
         runContext,
@@ -224,7 +223,6 @@ async function processIssue(
     const proUserPrompt = buildUserPrompt(
       issue,
       proTimelineEvents,
-      dbEntry.thoughts || '',
       'pro',
       proLimits,
       runContext,
@@ -339,7 +337,7 @@ export async function generateAnalysis(
     JSON.stringify({ ...data, thoughts }, null, 2)
   );
 
-  const ops: TriageOperation[] = planOperations(issue, data, issue, repoLabels.map(l => l.name), thoughts);
+  const ops: TriageOperation[] = planOperations(issue, data, issue, repoLabels.map(l => l.name));
 
   return { data, thoughts, ops };
 }

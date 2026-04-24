@@ -3,7 +3,6 @@ import * as path from 'path';
 
 export interface TriageDbEntry {
   lastTriaged?: string;   // ISO timestamp of when triage was completed
-  thoughts?: string;      // Raw model "thoughts" / chain-of-thought output
   summary?: string;       // One-line summary from analysis
 }
 
@@ -16,7 +15,8 @@ export function loadDatabase(dbPath?: string): TriageDb {
     if (!fs.existsSync(dbPath)) return {};
 
     const contents = fs.readFileSync(dbPath, 'utf8');
-    const db = contents ? JSON.parse(contents) : {};
+    const rawDb = contents ? JSON.parse(contents) : {};
+    const db = sanitizeDatabase(rawDb);
     console.info(`📊 Loaded ${dbPath} with ${Object.keys(db).length} entries`);
     return db;
   } catch (err) {
@@ -31,7 +31,7 @@ export function saveDatabase(db: TriageDb, dbPath?: string, dryRun?: boolean): v
 
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+    fs.writeFileSync(dbPath, JSON.stringify(sanitizeDatabase(db), null, 2));
   } catch (err) {
     const message = getErrorMessage(err);
     console.error(`⚠️ Failed to save ${dbPath}: ${message}`);
@@ -49,7 +49,7 @@ export function updateDbEntry(
 ): void {
   const key = String(issueNumber);
   const existing = db[key] || {};
-  const entry: TriageDbEntry = { ...existing };
+  const { thoughts: _thoughts, ...entry } = existing as TriageDbEntry & { thoughts?: unknown };
 
   entry.summary = summary;
   entry.lastTriaged = new Date().toISOString();
@@ -59,6 +59,18 @@ export function updateDbEntry(
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function sanitizeDatabase(db: unknown): TriageDb {
+  if (!db || typeof db !== 'object') return {};
+
+  return Object.fromEntries(
+    Object.entries(db).map(([key, value]) => {
+      const entry = value && typeof value === 'object' ? value as TriageDbEntry & { thoughts?: unknown } : {};
+      const { thoughts: _thoughts, ...sanitized } = entry;
+      return [key, sanitized];
+    })
+  );
 }
 
 export function saveArtifact(issueNumber: number, name: string, contents: string): void {
