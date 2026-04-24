@@ -1,0 +1,30 @@
+export interface Config {
+  owner: string;
+  repo: string;
+  token: string;
+  geminiApiKey: string;
+  dryRun: boolean;
+  thinkingBudget: number;
+  issueNumber?: number;
+  issueNumbers?: number[];
+  promptPath: string;
+  readmePath: string;
+  dbPath?: string;
+  skipFastPass: boolean;
+  modelFast: string;
+  modelPro: string;
+  maxFastTimelineEvents: number;
+  maxProTimelineEvents: number;
+  maxFastReadmeChars: number;
+  maxProReadmeChars: number;
+  maxFastIssueBodyChars: number;
+  maxProIssueBodyChars: number;
+  maxFastTimelineTextChars: number;
+  maxProTimelineTextChars: number;
+  maxProRuns: number;
+  maxFastRuns: number;
+  additionalInstructions?: string;
+  contextCaching: boolean;
+  extended: boolean;
+  strictMode: boolean;
+}

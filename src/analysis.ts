@@ -1,6 +1,6 @@
 import { loadPrompt, loadReadme } from './storage';
 import type { Issue, TimelineEvent } from './github';
-import type { Config } from './storage';
+import type { Config } from './config';
 
 export type AnalysisResult = {
   summary: string;

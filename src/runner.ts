@@ -13,7 +13,8 @@ import { GeminiCacheInfo, GeminiClient, GeminiResponseError } from './gemini';
 import { GitHubClient } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import { RunStatistics } from './stats';
-import { Config, TriageDb, saveArtifact, saveDatabase } from './storage';
+import type { Config } from './config';
+import { TriageDb, saveArtifact, saveDatabase } from './storage';
 
 export interface AutoTriageDeps extends IssueProcessorDeps {
   cfg: Config;

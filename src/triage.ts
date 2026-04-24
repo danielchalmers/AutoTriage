@@ -1,5 +1,5 @@
-import type { Config } from "./storage";
-import type { AnalysisResult, ModelOperation } from "./analysis";
+import type { Config } from './config';
+import type { AnalysisResult, ModelOperation } from './analysis';
 import type { GitHubClient } from './github';
 import chalk from 'chalk';
 

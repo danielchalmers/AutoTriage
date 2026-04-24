@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { listTargets } from '../src/runner';
 import { Issue } from '../src/github';
-import { Config, TriageDb } from '../src/storage';
+import type { Config } from '../src/config';
+import { TriageDb } from '../src/storage';
 
 const baseConfig: Config = {
   owner: 'owner',
