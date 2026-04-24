@@ -22,8 +22,8 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: autotriage-backlog
-  cancel-in-progress: true
+  group: autotriage-shared-db
+  cancel-in-progress: false
 
 jobs:
   triage:
@@ -31,14 +31,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Cache triage DB
-        id: cache-db
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: triage-db.json
-          key: ${{ runner.os }}-triage-db-${{ github.run_id }}
-          restore-keys: |
-            ${{ runner.os }}-triage-db-
+          key: triage-db-${{ github.run_id }}
+          restore-keys: triage-db-
 
       - name: AutoTriage - triage backlog
         uses: ./

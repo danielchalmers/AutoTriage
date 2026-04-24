@@ -9,17 +9,29 @@ permissions:
   issues: write
   pull-requests: write
 
+concurrency:
+  group: autotriage-shared-db
+  cancel-in-progress: false
+
 jobs:
   triage_pr:
     if: ${{ github.event.sender.type != 'Bot' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - uses: actions/cache@v4
+        with:
+          path: triage-db.json
+          key: triage-db-${{ github.run_id }}
+          restore-keys: triage-db-
+
       - name: AutoTriage - triage PR
         uses: danielchalmers/AutoTriage@v3
         with:
           issues: ${{ github.event.pull_request.number }}
           prompt-path: .github/AutoTriage.prompt
+          db-path: triage-db.json
           model-fast: ""
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
