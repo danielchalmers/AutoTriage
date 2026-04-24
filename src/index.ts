@@ -179,7 +179,6 @@ async function processIssue(
       const fastUserPrompt = buildUserPrompt(
         issue,
         fastTimelineEvents,
-        '',
         'fast',
         fastLimits,
         runContext,
@@ -220,7 +219,6 @@ async function processIssue(
     const proUserPrompt = buildUserPrompt(
       issue,
       proTimelineEvents,
-      dbEntry.thoughts || '',
       'pro',
       proLimits,
       runContext,

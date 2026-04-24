@@ -285,7 +285,6 @@ ${mode === 'pro' && readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${re
 export function buildUserPrompt(
   issue: Issue,
   timelineEvents: TimelineEvent[],
-  lastThoughts: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
   runContext?: string,
@@ -300,7 +299,6 @@ export function buildUserPrompt(
   };
   const promptIssue = applyIssueLimits(issue, resolvedLimits);
   const promptTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
-  const promptThoughts = mode === 'pro' ? lastThoughts : '';
 
   return `
 === SECTION: RUNTIME CONTEXT ===
@@ -315,7 +313,6 @@ ${JSON.stringify(promptTimelineEvents, null, 2)}
 ${mode === 'pro' && fastPassPlan ? `\n=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===
 The following plan was produced by a faster preliminary model. Treat it as a draft to verify against the issue, timeline, repository policy, and output contract. You may accept, modify, or reject it.
 ${JSON.stringify(fastPassPlan, null, 2)}` : ''}
-${mode === 'pro' ? `\n=== SECTION: THOUGHTS FROM LAST RUN ===\n${promptThoughts || 'none'}` : ''}
 `;
 }
 
@@ -325,13 +322,12 @@ export async function buildPrompt(
   readmePath: string,
   timelineEvents: TimelineEvent[],
   repoLabels: RepoLabel[],
-  lastThoughts: string,
   additionalInstructions?: string,
   mode: PromptPassMode = 'pro',
   limits?: Partial<PromptPassLimits>,
   runTimestamp?: string,
 ) {
   const systemPrompt = buildSystemPrompt(promptPath, readmePath, repoLabels, additionalInstructions, mode, limits);
-  const userPrompt = buildUserPrompt(issue, timelineEvents, lastThoughts, mode, limits, undefined, undefined, runTimestamp);
+  const userPrompt = buildUserPrompt(issue, timelineEvents, mode, limits, undefined, undefined, runTimestamp);
   return { systemPrompt, userPrompt };
 }
