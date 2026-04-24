@@ -14,8 +14,8 @@ describe('buildAnalysisResultSchema', () => {
 
     expect(labelOperationSchema.properties.labels.items).toHaveProperty('enum');
     expect(labelOperationSchema.properties.labels.items.enum).toEqual([
-      'breaking change',
       'awaiting triage',
+      'breaking change',
       'bug',
     ]);
   });
@@ -30,8 +30,8 @@ describe('buildAnalysisResultSchema', () => {
     const labelOperationSchema = schema.properties.operations.items.anyOf[0];
 
     expect(labelOperationSchema.properties.labels.items.enum).toEqual([
-      'help wanted',
       'good first issue',
+      'help wanted',
     ]);
   });
 

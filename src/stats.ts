@@ -4,7 +4,19 @@ export interface ModelRunStats {
   startTime: number;
   endTime: number;
   inputTokens: number;
+  cachedInputTokens?: number;
   outputTokens: number;
+  cacheName?: string;
+  cacheAgeMs?: number;
+}
+
+export interface CacheCreateStats {
+  mode: 'fast' | 'pro';
+  model: string;
+  name: string;
+  tokenCount: number;
+  createTime?: string;
+  expireTime?: string;
 }
 
 export interface ActionDetail {
@@ -16,6 +28,7 @@ export interface ActionDetail {
 export class RunStatistics {
   private fastRuns: ModelRunStats[] = [];
   private proRuns: ModelRunStats[] = [];
+  private cacheCreates: CacheCreateStats[] = [];
   private actionsPerformed: ActionDetail[] = [];
   private triaged = 0;
   private skipped = 0;
@@ -42,6 +55,10 @@ export class RunStatistics {
 
   trackProRun(stats: ModelRunStats): void {
     this.proRuns.push(stats);
+  }
+
+  trackCacheCreate(stats: CacheCreateStats): void {
+    this.cacheCreates.push(stats);
   }
 
   trackAction(action: ActionDetail): void {
@@ -88,9 +105,25 @@ export class RunStatistics {
     p95: number;
     inputTokens: number;
     outputTokens: number;
+    cachedInputTokens: number;
+    cacheHitRuns: number;
+    cacheReferencedRuns: number;
+    avgCacheAge: number;
+    maxCacheAge: number;
   } {
     if (runs.length === 0) {
-      return { total: 0, avg: 0, p95: 0, inputTokens: 0, outputTokens: 0 };
+      return {
+        total: 0,
+        avg: 0,
+        p95: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+        cacheHitRuns: 0,
+        cacheReferencedRuns: 0,
+        avgCacheAge: 0,
+        maxCacheAge: 0,
+      };
     }
 
     const durations = runs.map(r => r.endTime - r.startTime);
@@ -100,66 +133,98 @@ export class RunStatistics {
     const p95Index = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
     const p95 = sorted[p95Index] ?? 0;
     const inputTokens = runs.reduce((sum, r) => sum + r.inputTokens, 0);
+    const cachedInputTokens = runs.reduce((sum, r) => sum + (r.cachedInputTokens ?? 0), 0);
     const outputTokens = runs.reduce((sum, r) => sum + r.outputTokens, 0);
+    const cacheHitRuns = runs.filter(r => (r.cachedInputTokens ?? 0) > 0).length;
+    const cacheReferencedRuns = runs.filter(r => r.cacheName).length;
+    const cacheAges = runs
+      .map(r => r.cacheAgeMs)
+      .filter((age): age is number => typeof age === 'number' && Number.isFinite(age));
+    const avgCacheAge = cacheAges.length
+      ? cacheAges.reduce((sum, age) => sum + age, 0) / cacheAges.length
+      : 0;
+    const maxCacheAge = cacheAges.length ? Math.max(...cacheAges) : 0;
 
-    return { total, avg, p95, inputTokens, outputTokens };
+    return {
+      total,
+      avg,
+      p95,
+      inputTokens,
+      outputTokens,
+      cachedInputTokens,
+      cacheHitRuns,
+      cacheReferencedRuns,
+      avgCacheAge,
+      maxCacheAge,
+    };
+  }
+
+  private getCacheCreateStats(mode: 'fast' | 'pro'): { tokenCount: number; count: number } {
+    const creates = this.cacheCreates.filter(cache => cache.mode === mode);
+    return {
+      tokenCount: creates.reduce((sum, cache) => sum + cache.tokenCount, 0),
+      count: creates.length,
+    };
+  }
+
+  private printModelSummary(label: string, mode: 'fast' | 'pro', model: string, runs: ModelRunStats[]): void {
+    if (runs.length === 0) return;
+
+    const stats = this.calculateStats(runs);
+    const modelLabel = model ? ` (${model})` : '';
+    console.log(chalk.cyan(`  ${label}${modelLabel}`));
+    console.log(
+      `    Total: ${this.formatDuration(stats.total)} • ` +
+      `Avg: ${this.formatDuration(stats.avg)} • ` +
+      `p95: ${this.formatDuration(stats.p95)}`
+    );
+    console.log(
+      `    Tokens used: ${this.formatTokens(stats.inputTokens)} input ` +
+      `(${this.formatTokens(stats.cachedInputTokens)} cached), ` +
+      `${this.formatTokens(stats.outputTokens)} output`
+    );
+
+    const cacheCreate = this.getCacheCreateStats(mode);
+    if (cacheCreate.count > 0 || stats.cacheHitRuns > 0 || stats.cacheReferencedRuns > 0) {
+      const cacheParts = [
+        `${stats.cacheHitRuns}/${runs.length} hit(s)`,
+      ];
+      if (stats.cacheReferencedRuns > 0) {
+        cacheParts.push(`${stats.cacheReferencedRuns} explicit reuse(s)`);
+      }
+      if (cacheCreate.count > 0) {
+        cacheParts.push(`${this.formatTokens(cacheCreate.tokenCount)} create tokens`);
+      }
+      if (stats.maxCacheAge > 0) {
+        cacheParts.push(`avg age ${this.formatDuration(stats.avgCacheAge)}`);
+        cacheParts.push(`max age ${this.formatDuration(stats.maxCacheAge)}`);
+      }
+      console.log(`    Cache: ${cacheParts.join(' • ')}`);
+    }
   }
 
   printSummary(): void {
     console.log('\n' + chalk.bold('📊 Run Statistics:'));
 
-    // GitHub API calls
     if (this.githubApiCalls > 0) {
       console.log(`  GitHub API calls: ${this.githubApiCalls}`);
     }
 
-    // Fast model stats
-    if (this.fastRuns.length > 0) {
-      const stats = this.calculateStats(this.fastRuns);
-      const modelLabel = this.modelFast ? ` (${this.modelFast})` : '';
-      console.log(chalk.cyan(`  Fast${modelLabel}`));
-      console.log(
-        `    Total: ${this.formatDuration(stats.total)} • ` +
-        `Avg: ${this.formatDuration(stats.avg)} • ` +
-        `p95: ${this.formatDuration(stats.p95)}`
-      );
-      console.log(
-        `    Tokens used: ${this.formatTokens(stats.inputTokens)} input, ` +
-        `${this.formatTokens(stats.outputTokens)} output`
-      );
-    }
+    this.printModelSummary('Fast', 'fast', this.modelFast, this.fastRuns);
+    this.printModelSummary('Pro', 'pro', this.modelPro, this.proRuns);
 
-    // Pro model stats
-    if (this.proRuns.length > 0) {
-      const stats = this.calculateStats(this.proRuns);
-      const modelLabel = this.modelPro ? ` (${this.modelPro})` : '';
-      console.log(chalk.cyan(`  Pro${modelLabel}`));
-      console.log(
-        `    Total: ${this.formatDuration(stats.total)} • ` +
-        `Avg: ${this.formatDuration(stats.avg)} • ` +
-        `p95: ${this.formatDuration(stats.p95)}`
-      );
-      console.log(
-        `    Tokens used: ${this.formatTokens(stats.inputTokens)} input, ` +
-        `${this.formatTokens(stats.outputTokens)} output`
-      );
-    }
-
-    // Actions summary
     const actionParts: string[] = [];
     if (this.triaged > 0) actionParts.push(`✅ ${this.triaged} triaged`);
     if (this.skipped > 0) actionParts.push(`ℹ️ ${this.skipped} skipped`);
     if (this.failed > 0) actionParts.push(`❌ ${this.failed} failed`);
-    
+
     if (actionParts.length > 0) {
       console.log(`  Total: ${actionParts.join(' ')}`);
     }
 
-    // Detailed actions list
     if (this.actionsPerformed.length > 0) {
       console.log('\n' + chalk.bold('🎬 Actions Performed:'));
-      
-      // Group actions by issue number
+
       const byIssue = new Map<number, ActionDetail[]>();
       for (const action of this.actionsPerformed) {
         if (!byIssue.has(action.issueNumber)) {
@@ -168,9 +233,8 @@ export class RunStatistics {
         byIssue.get(action.issueNumber)!.push(action);
       }
 
-      // Sort by issue number
       const sortedIssues = Array.from(byIssue.keys()).sort((a, b) => a - b);
-      
+
       for (const issueNumber of sortedIssues) {
         const actions = byIssue.get(issueNumber)!;
         const parts = actions.map(a => a.details);
