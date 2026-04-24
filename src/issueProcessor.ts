@@ -42,7 +42,7 @@ export interface GenerateAnalysisOptions {
   userPrompt: string;
   repoLabels: RepoLabel[];
   isFastModel?: boolean;
-  cacheInfo?: GeminiCacheInfo;
+  cacheInfo?: GeminiCacheInfo | undefined;
   useFlexTier?: boolean;
 }
 
