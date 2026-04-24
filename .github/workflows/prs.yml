@@ -20,6 +20,7 @@ jobs:
           issues: ${{ github.event.pull_request.number }}
           prompt-path: examples/AutoTriage.prompt
           model-fast: ""
+          model-pro: "gemini-3.1-flash-lite-preview"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
