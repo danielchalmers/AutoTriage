@@ -45,6 +45,7 @@ export function buildJsonPayload(
   }
   if (useFlexTier) {
     config.httpOptions = {
+      headers: {},
       timeout: 600000,
       extraBody: {
         service_tier: 'flex',

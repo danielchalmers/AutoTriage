@@ -53,6 +53,7 @@ describe('context caching', () => {
     it('opts into flex service tier with long timeout when enabled', () => {
       const cacheName = 'cachedContents/abc123'
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1, cacheName, true)
+      expect(payload.config?.httpOptions?.headers).toEqual({})
       expect(payload.config?.httpOptions?.timeout).toBe(600000)
       expect(payload.config?.httpOptions?.extraBody).toEqual({ service_tier: 'flex' })
     })
