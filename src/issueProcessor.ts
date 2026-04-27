@@ -217,7 +217,7 @@ export async function generateAnalysis(
 
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 5000);
+  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500);
   const endTime = Date.now();
 
   const modelRunStats = {
