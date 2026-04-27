@@ -31,6 +31,7 @@ export class RunStatistics {
   private skipped = 0;
   private failed = 0;
   private githubApiCalls = 0;
+  private githubApiRetries = 0;
   private owner = '';
   private repo = '';
   private modelFast = '';
@@ -80,6 +81,10 @@ export class RunStatistics {
 
   incrementGithubApiCalls(count: number = 1): void {
     this.githubApiCalls += count;
+  }
+
+  incrementGithubApiRetries(count: number = 1): void {
+    this.githubApiRetries += count;
   }
 
   private formatDuration(ms: number): string {
@@ -170,25 +175,22 @@ export class RunStatistics {
       `p95: ${this.formatDuration(stats.p95)}`
     );
     console.log(
-      `    Tokens used: ${this.formatTokens(stats.inputTokens)} input ` +
-      `(${this.formatTokens(stats.cachedInputTokens)} cached` +
-      `${stats.inputTokens > 0 && stats.cachedInputTokens > 0
-        ? `, ${this.formatPercent(stats.cachedInputTokens / stats.inputTokens)}`
-        : ''}), ` +
+      `    Tokens: ${this.formatTokens(stats.inputTokens)} input • ` +
       `${this.formatTokens(stats.outputTokens)} output`
     );
 
     const cacheCreate = this.getCacheCreateStats(mode);
-    if (cacheCreate.count > 0 || stats.cacheHitRuns > 0 || stats.cacheReferencedRuns > 0) {
-      const cacheAttempts = stats.cacheReferencedRuns || runs.length;
-      const cacheParts = [
-        `${this.formatPercent(stats.cacheHitRuns / cacheAttempts)} hit rate (${stats.cacheHitRuns}/${cacheAttempts})`,
-      ];
-      if (stats.cachedInputTokens > 0) {
-        cacheParts.push(`${this.formatTokens(stats.cachedInputTokens)} reused`);
-      }
+    if (cacheCreate.count > 0 || stats.cachedInputTokens > 0) {
+      const cacheParts: string[] = [];
       if (cacheCreate.count > 0) {
         cacheParts.push(`${this.formatTokens(cacheCreate.tokenCount)} created`);
+      }
+      if (stats.cachedInputTokens > 0) {
+        const reused = `${this.formatTokens(stats.cachedInputTokens)}`;
+        const reusedPercent = stats.inputTokens > 0
+          ? ` (${this.formatPercent(stats.cachedInputTokens / stats.inputTokens)})`
+          : '';
+        cacheParts.push(`${reused}${reusedPercent} reused`);
       }
       console.log(`    Cache: ${cacheParts.join(' • ')}`);
     }
@@ -197,8 +199,8 @@ export class RunStatistics {
   printSummary(): void {
     console.log('\n' + chalk.bold('📊 Run Statistics:'));
 
-    if (this.githubApiCalls > 0) {
-      console.log(`  GitHub API calls: ${this.githubApiCalls}`);
+    if (this.githubApiCalls > 0 || this.githubApiRetries > 0) {
+      console.log(`  GitHub API: ${this.githubApiCalls} calls • ${this.githubApiRetries} retries`);
     }
 
     this.printModelSummary('Fast', 'fast', this.modelFast, this.fastRuns);
