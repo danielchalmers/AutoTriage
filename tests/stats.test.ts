@@ -288,13 +288,20 @@ describe('RunStatistics', () => {
       });
 
       const lines = captureSummaryOutput(() => stats.printSummary());
-      const tokenLine = lines.find(line => line.includes('Tokens used:'));
+      const tokenLine = lines.find(line => line.includes('Tokens:'));
       const cacheLine = lines.find(line => line.includes('Cache:'));
 
-      expect(tokenLine).toContain('Tokens used: 10.8k input (8.2k cached, 75.9%), 257 output');
-      expect(cacheLine).toContain('Cache: 100% hit rate (1/1) • 8.2k reused • 8.2k created');
-      expect(cacheLine).not.toContain('explicit reuse');
-      expect(cacheLine).not.toContain('age');
+      expect(tokenLine).toContain('Tokens: 10.8k input • 257 output');
+      expect(cacheLine).toContain('Cache: 8.2k created • 8.2k (75.9%) reused');
+    });
+
+    it('shows GitHub API calls with retries', () => {
+      stats.incrementGithubApiCalls(15);
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+      const apiLine = lines.find(line => line.includes('GitHub API:'));
+
+      expect(apiLine).toContain('GitHub API: 15 calls • 0 retries');
     });
   });
 });
