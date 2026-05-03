@@ -113,6 +113,7 @@ This command performs the following steps:
 2. **Clean** (`rimraf dist`) - Removes existing dist folder
 3. **Bundle** (`ncc build`) - Compiles and bundles TypeScript to a single JavaScript file
    - Minifies the output
+   - Generates source maps
    - Includes license information in `licenses.txt`
 4. **Copy Assets** (`npm run copy-assets`) - Copies `examples/AutoTriage.prompt` to dist as the bundled default prompt
 
