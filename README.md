@@ -7,7 +7,7 @@ Keep issues and pull requests moving: reads the latest context, drafts the next 
 - The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
 - A reviewing AI pass (default: `gemini-3.1-pro-preview`) replays the plan and confirms labels, comments, etc, before anything is written.
 - Defaults use the free-tier models (`gemini-3.1-flash-lite-preview` + `gemini-3.1-pro-preview`) rather than `gemini-3-pro`.
-- The full thought process along with all actions can be inspected in the workflow artifacts.
+- The workflow artifacts include the raw model outputs, planned actions, and a `run-debug.json` file with target selection details for debugging run behavior.
 - It will keep going until it runs out of issues or tokens, or reaches the specified limit.
 
 ## Quick setup

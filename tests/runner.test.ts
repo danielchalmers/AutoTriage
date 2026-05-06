@@ -78,7 +78,14 @@ describe('listTargets', () => {
       payload: { issue: { number: 99 } },
     });
 
-    expect(result).toEqual({ targets: [3, 5], autoDiscover: false });
+    expect(result).toEqual({
+      targets: [3, 5],
+      autoDiscover: false,
+      debugInfo: {
+        source: 'explicit-input',
+        explicitIssueNumbers: [3, 5],
+      },
+    });
     expect(gh.listOpenIssues).not.toHaveBeenCalled();
   });
 
@@ -95,7 +102,14 @@ describe('listTargets', () => {
       payload: { pull_request: { number: 77 } },
     });
 
-    expect(result).toEqual({ targets: [77], autoDiscover: false });
+    expect(result).toEqual({
+      targets: [77],
+      autoDiscover: false,
+      debugInfo: {
+        source: 'event-payload',
+        payloadIssueNumber: 77,
+      },
+    });
     expect(gh.listOpenIssues).not.toHaveBeenCalled();
   });
 
@@ -118,7 +132,20 @@ describe('listTargets', () => {
       payload: {},
     });
 
-    expect(result).toEqual({ targets: [5], autoDiscover: true });
+    expect(result).toEqual({
+      targets: [5],
+      autoDiscover: true,
+      debugInfo: {
+        source: 'auto-discover',
+        autoDiscover: {
+          openIssueNumbers: [5, 4],
+          recentlyClosedIssueNumbers: [],
+          closedIssueNumbersToRecheck: [],
+          skippedUnchangedIssueNumbers: [4],
+          allIssueNumbersBeforeLimits: [5, 4],
+        },
+      },
+    });
     expect(gh.listRecentlyClosedIssues).not.toHaveBeenCalled();
   });
 
@@ -143,7 +170,20 @@ describe('listTargets', () => {
       payload: {},
     });
 
-    expect(result).toEqual({ targets: [4, 5], autoDiscover: true });
+    expect(result).toEqual({
+      targets: [4, 5],
+      autoDiscover: true,
+      debugInfo: {
+        source: 'auto-discover',
+        autoDiscover: {
+          openIssueNumbers: [5],
+          recentlyClosedIssueNumbers: [4],
+          closedIssueNumbersToRecheck: [4],
+          skippedUnchangedIssueNumbers: [],
+          allIssueNumbersBeforeLimits: [4, 5],
+        },
+      },
+    });
     expect(gh.listRecentlyClosedIssues).toHaveBeenCalledOnce();
   });
 });
