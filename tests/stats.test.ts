@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { RunStatistics } from '../src/stats';
+import { RunStatistics, getRunStatistics, initializeRunStatistics, resetRunStatistics } from '../src/stats';
 
 describe('RunStatistics', () => {
   let stats: RunStatistics;
@@ -18,7 +18,12 @@ describe('RunStatistics', () => {
   }
 
   beforeEach(() => {
+    resetRunStatistics();
     stats = new RunStatistics();
+  });
+
+  afterEach(() => {
+    resetRunStatistics();
   });
 
   describe('tracking model runs', () => {
@@ -344,6 +349,69 @@ describe('RunStatistics', () => {
       const apiLine = lines.find(line => line.includes('GitHub API:'));
 
       expect(apiLine).toContain('GitHub API: 15 calls • 0 retries');
+    });
+
+    it('shows discovered items, flow metrics, and action breakdowns', () => {
+      stats.recordDiscoveredTargets(6);
+      stats.recordItemAttempted();
+      stats.recordItemAttempted();
+      stats.incrementTriaged();
+      stats.incrementSkipped();
+      stats.recordStopReason('fast_limit');
+      stats.trackFastRun({
+        startTime: 0,
+        endTime: 1000,
+        inputTokens: 100,
+        outputTokens: 10,
+      });
+      stats.trackProRun({
+        startTime: 0,
+        endTime: 2000,
+        inputTokens: 200,
+        outputTokens: 20,
+      });
+      stats.trackAction({
+        issueNumber: 1,
+        type: 'comment',
+        details: 'comment',
+      });
+      stats.trackAction({
+        issueNumber: 1,
+        type: 'set_state',
+        details: 'state: completed',
+      });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+      const itemsLine = lines.find(line => line.includes('Items:'));
+      const flowLine = lines.find(line => line.includes('Flow:'));
+      const actionsLine = lines.find(line => line.includes('Actions:'));
+
+      expect(itemsLine).toContain('Items: 6 discovered • 2 attempted • ✅ 1 triaged • ℹ️ 1 skipped');
+      expect(flowLine).toContain('Flow: 50% triaged rate • 100% fast→pro escalation (1/1) • stop reasons: fast limit reached 1');
+      expect(actionsLine).toContain('Actions: 2 total • 1 item(s) touched • comment 1 • set_state 1');
+    });
+
+    it('exposes a global current-run collector', () => {
+      const initialized = initializeRunStatistics({
+        owner: 'danielchalmers',
+        repo: 'AutoTriage',
+        modelFast: 'fast-model',
+        modelPro: 'pro-model',
+      });
+      const current = getRunStatistics();
+
+      expect(current).toBe(initialized);
+
+      current.trackFastRun({
+        startTime: 0,
+        endTime: 1000,
+        inputTokens: 100,
+        outputTokens: 50,
+      });
+
+      const lines = captureSummaryOutput(() => current.printSummary());
+      expect(lines.find(line => line.includes('Repo:'))).toContain('Repo: danielchalmers/AutoTriage');
+      expect(lines.find(line => line.includes('Fast (fast-model)'))).toBeTruthy();
     });
   });
 });

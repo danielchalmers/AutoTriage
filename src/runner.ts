@@ -13,7 +13,7 @@ import {
 import { GeminiCacheInfo, GeminiClient, GeminiResponseError } from './gemini';
 import { GitHubClient } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
-import { RunStatistics } from './stats';
+import { getRunStatistics } from './stats';
 import type { Config } from './config';
 import { TriageDb, saveArtifact, saveDatabase } from './storage';
 
@@ -22,7 +22,6 @@ export interface AutoTriageDeps extends IssueProcessorDeps {
   db: TriageDb;
   gh: GitHubClient;
   gemini: GeminiClient;
-  stats: RunStatistics;
 }
 
 export interface ListTargetsDeps {
@@ -33,9 +32,11 @@ export interface ListTargetsDeps {
 }
 
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
-  const { cfg, db, gh, gemini, stats } = deps;
+  const { cfg, db, gh, gemini } = deps;
+  const stats = getRunStatistics();
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
+  stats.recordDiscoveredTargets(targets.length);
   const runTimestamp = new Date().toISOString();
   let triagesPerformed = 0;
   let fastRunsPerformed = 0;
@@ -101,19 +102,22 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
 
       if (!cfg.skipFastPass && remainingFastRuns <= 0) {
+        stats.recordStopReason('fast_limit');
         console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
         break;
       }
 
       if (remainingTriages <= 0) {
+        stats.recordStopReason('pro_limit');
         console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
         break;
       }
 
       try {
+        stats.recordItemAttempted();
         const issue = await gh.getIssue(issueNumber);
         const { triageUsed, fastRunUsed } = await processIssue(
-          { cfg, db, gh, gemini, stats },
+          { cfg, db, gh, gemini },
           {
             issue,
             repoLabels,
@@ -140,6 +144,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
           stats.incrementFailed();
           consecutiveFailures++;
           if (consecutiveFailures >= 3) {
+            stats.recordStopReason('consecutive_failures');
             console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
             break;
           }

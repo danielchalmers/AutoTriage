@@ -12,7 +12,7 @@ import {
 } from './analysis';
 import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
-import { RunStatistics } from './stats';
+import { getRunStatistics } from './stats';
 import { TriageOperation, planOperations } from './triage';
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
@@ -25,7 +25,6 @@ export interface IssueProcessorDeps {
   db: TriageDb;
   gh: GitHubClient;
   gemini: GeminiClient;
-  stats: RunStatistics;
 }
 
 export interface ProcessIssueOptions {
@@ -57,7 +56,8 @@ export async function processIssue(
   deps: IssueProcessorDeps,
   options: ProcessIssueOptions
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
-  const { cfg, db, gh, gemini, stats } = deps;
+  const { cfg, db, gh, gemini } = deps;
+  const stats = getRunStatistics();
   const {
     issue,
     repoLabels,
@@ -105,7 +105,7 @@ export async function processIssue(
       saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
 
       const { data: quickAnalysis, ops: quickOps } = await generateAnalysis(
-        { gemini, stats },
+        { gemini },
         {
           issue,
           model: cfg.modelFast,
@@ -150,7 +150,7 @@ export async function processIssue(
     saveArtifact(issue.number, 'prompt-user.md', proUserPrompt);
 
     const { data: proAnalysis, ops: proOps } = await generateAnalysis(
-      { gemini, stats },
+      { gemini },
       {
         issue,
         model: cfg.modelPro,
@@ -210,10 +210,11 @@ export function buildRunContext(
 }
 
 export async function generateAnalysis(
-  deps: Pick<IssueProcessorDeps, 'gemini' | 'stats'>,
+  deps: Pick<IssueProcessorDeps, 'gemini'>,
   options: GenerateAnalysisOptions
 ): Promise<{ data: AnalysisResult; thoughts: string; ops: TriageOperation[] }> {
-  const { gemini, stats } = deps;
+  const { gemini } = deps;
+  const stats = getRunStatistics();
   const {
     issue,
     model,
