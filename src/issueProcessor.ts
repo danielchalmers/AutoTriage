@@ -5,7 +5,10 @@ import {
   FastPassPlan,
   buildAnalysisResultSchema,
   buildUserPrompt,
+  getUserPromptBudgetContentStats,
   getPromptLimits,
+  PromptBudgetContentStats,
+  sumPromptBudgetContentStats,
 } from './analysis';
 import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
@@ -31,6 +34,8 @@ export interface ProcessIssueOptions {
   autoDiscover: boolean;
   systemPromptFast: string;
   systemPromptPro: string;
+  fastSystemPromptBudgetContent: PromptBudgetContentStats;
+  proSystemPromptBudgetContent: PromptBudgetContentStats;
   cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo>;
   runTimestamp: string;
 }
@@ -45,6 +50,7 @@ export interface GenerateAnalysisOptions {
   isFastModel?: boolean;
   cacheInfo?: GeminiCacheInfo | undefined;
   useFlexTier?: boolean;
+  budgetContentStats?: PromptBudgetContentStats;
 }
 
 export async function processIssue(
@@ -52,7 +58,17 @@ export async function processIssue(
   options: ProcessIssueOptions
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const { cfg, db, gh, gemini, stats } = deps;
-  const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp } = options;
+  const {
+    issue,
+    repoLabels,
+    autoDiscover,
+    systemPromptFast,
+    systemPromptPro,
+    fastSystemPromptBudgetContent,
+    proSystemPromptBudgetContent,
+    cacheInfos,
+    runTimestamp,
+  } = options;
   const dbEntry = getDbEntry(db, issue.number);
   const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
@@ -62,8 +78,6 @@ export async function processIssue(
   );
   const fastLimits = getPromptLimits(cfg, 'fast');
   const proLimits = getPromptLimits(cfg, 'pro');
-  const fastTimelineEvents = timelineEvents.slice(-fastLimits.timelineEvents);
-  const proTimelineEvents = timelineEvents.slice(-proLimits.timelineEvents);
   const runContext = buildRunContext(
     issue,
     rawTimelineEvents,
@@ -81,7 +95,7 @@ export async function processIssue(
     if (!cfg.skipFastPass) {
       const fastUserPrompt = buildUserPrompt(
         issue,
-        fastTimelineEvents,
+        timelineEvents,
         'fast',
         fastLimits,
         runContext,
@@ -102,6 +116,10 @@ export async function processIssue(
           isFastModel: true,
           cacheInfo: cacheInfos.get('fast'),
           useFlexTier: cfg.contextCaching,
+          budgetContentStats: sumPromptBudgetContentStats(
+            fastSystemPromptBudgetContent,
+            getUserPromptBudgetContentStats(issue, timelineEvents, fastLimits)
+          ),
         }
       );
 
@@ -122,7 +140,7 @@ export async function processIssue(
 
     const proUserPrompt = buildUserPrompt(
       issue,
-      proTimelineEvents,
+      timelineEvents,
       'pro',
       proLimits,
       runContext,
@@ -142,6 +160,10 @@ export async function processIssue(
         repoLabels,
         cacheInfo: cacheInfos.get('pro'),
         useFlexTier: cfg.contextCaching,
+        budgetContentStats: sumPromptBudgetContentStats(
+          proSystemPromptBudgetContent,
+          getUserPromptBudgetContentStats(issue, timelineEvents, proLimits)
+        ),
       }
     );
 
@@ -202,6 +224,7 @@ export async function generateAnalysis(
     isFastModel = false,
     cacheInfo,
     useFlexTier = false,
+    budgetContentStats,
   } = options;
   const schema = buildAnalysisResultSchema(repoLabels);
   const artifactPrefix = isFastModel ? 'fast' : 'pro';
@@ -232,6 +255,9 @@ export async function generateAnalysis(
     stats.trackFastRun(modelRunStats);
   } else {
     stats.trackProRun(modelRunStats);
+  }
+  if (budgetContentStats) {
+    stats.trackBudgetContent(isFastModel ? 'fast' : 'pro', budgetContentStats);
   }
 
   console.log(chalk.magenta(thoughts));

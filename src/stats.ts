@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import type { PromptBudgetContentStats } from './analysis';
 
 export interface ModelRunStats {
   startTime: number;
@@ -36,6 +37,10 @@ export class RunStatistics {
   private repo = '';
   private modelFast = '';
   private modelPro = '';
+  private budgetContent: Record<'fast' | 'pro', PromptBudgetContentStats> = {
+    fast: { originalChars: 0, keptChars: 0 },
+    pro: { originalChars: 0, keptChars: 0 },
+  };
 
   setRepository(owner: string, repo: string): void {
     this.owner = owner;
@@ -61,6 +66,13 @@ export class RunStatistics {
 
   trackAction(action: ActionDetail): void {
     this.actionsPerformed.push(action);
+  }
+
+  trackBudgetContent(mode: 'fast' | 'pro', stats: PromptBudgetContentStats): void {
+    this.budgetContent[mode] = {
+      originalChars: this.budgetContent[mode].originalChars + stats.originalChars,
+      keptChars: this.budgetContent[mode].keptChars + stats.keptChars,
+    };
   }
 
   incrementTriaged(): void {
@@ -193,6 +205,17 @@ export class RunStatistics {
         cacheParts.push(`${reused}${reusedPercent} reused`);
       }
       console.log(`    Cache: ${cacheParts.join(' • ')}`);
+    }
+
+    const budgetContent = this.budgetContent[mode];
+    if (budgetContent.originalChars > 0) {
+      const keptRatio = budgetContent.keptChars / budgetContent.originalChars;
+      const removedChars = Math.max(0, budgetContent.originalChars - budgetContent.keptChars);
+      console.log(
+        `    Budget scale: ${this.formatPercent(keptRatio)} kept • ` +
+        `${this.formatPercent(removedChars / budgetContent.originalChars)} removed ` +
+        `(${this.formatTokens(budgetContent.keptChars)}/${this.formatTokens(budgetContent.originalChars)} chars)`
+      );
     }
   }
 

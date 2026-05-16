@@ -295,6 +295,48 @@ describe('RunStatistics', () => {
       expect(cacheLine).toContain('Cache: 8.2k created • 8.2k (75.9%) reused');
     });
 
+    it('summarizes budget-scale content kept and removed percentages', () => {
+      stats.setModelNames('gemini-2.5-flash-lite', 'gemini-3-flash-preview');
+      stats.trackFastRun({
+        startTime: 0,
+        endTime: 1000,
+        inputTokens: 100,
+        outputTokens: 50,
+      });
+      stats.trackBudgetContent('fast', {
+        originalChars: 1000,
+        keptChars: 250,
+      });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+      const budgetLine = lines.find(line => line.includes('Budget scale:'));
+
+      expect(budgetLine).toContain('Budget scale: 25% kept • 75% removed (250/1.0k chars)');
+    });
+
+    it('aggregates budget-scale content across multiple runs', () => {
+      stats.setModelNames('gemini-2.5-flash-lite', 'gemini-3-flash-preview');
+      stats.trackProRun({
+        startTime: 0,
+        endTime: 2000,
+        inputTokens: 200,
+        outputTokens: 100,
+      });
+      stats.trackBudgetContent('pro', {
+        originalChars: 1000,
+        keptChars: 800,
+      });
+      stats.trackBudgetContent('pro', {
+        originalChars: 500,
+        keptChars: 200,
+      });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+      const budgetLine = lines.find(line => line.includes('Budget scale:'));
+
+      expect(budgetLine).toContain('Budget scale: 66.7% kept • 33.3% removed (1.0k/1.5k chars)');
+    });
+
     it('shows GitHub API calls with retries', () => {
       stats.incrementGithubApiCalls(15);
 

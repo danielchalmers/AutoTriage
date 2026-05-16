@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import {
   buildSystemPrompt,
+  getSystemPromptBudgetContentStats,
   getPromptLimits,
   normalizeRepoLabels,
 } from './analysis';
@@ -46,6 +47,10 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
 
   const fastLimits = getPromptLimits(cfg, 'fast');
   const proLimits = getPromptLimits(cfg, 'pro');
+  const fastSystemPromptBudgetContent = cfg.skipFastPass
+    ? { originalChars: 0, keptChars: 0 }
+    : getSystemPromptBudgetContentStats(cfg.readmePath, fastLimits);
+  const proSystemPromptBudgetContent = getSystemPromptBudgetContentStats(cfg.readmePath, proLimits);
   const systemPromptFast = cfg.skipFastPass
     ? ''
     : buildSystemPrompt(cfg.promptPath, cfg.readmePath, repoLabels, cfg.additionalInstructions, 'fast', fastLimits);
@@ -109,7 +114,17 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         const issue = await gh.getIssue(issueNumber);
         const { triageUsed, fastRunUsed } = await processIssue(
           { cfg, db, gh, gemini, stats },
-          { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp }
+          {
+            issue,
+            repoLabels,
+            autoDiscover,
+            systemPromptFast,
+            systemPromptPro,
+            fastSystemPromptBudgetContent,
+            proSystemPromptBudgetContent,
+            cacheInfos,
+            runTimestamp,
+          }
         );
         if (triageUsed) {
           triagesPerformed++;

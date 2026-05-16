@@ -87,6 +87,11 @@ type PromptPassLimits = {
   timelineTextChars: number;
 };
 
+export type PromptBudgetContentStats = {
+  originalChars: number;
+  keptChars: number;
+};
+
 type RepoLabel = { name: string; description?: string | null };
 
 function clampText(value: string | null | undefined, maxChars: number): string {
@@ -112,6 +117,51 @@ function applyTimelineLimits(events: TimelineEvent[], limits: PromptPassLimits):
     }
     return next;
   });
+}
+
+function resolvePromptPassLimits(limits?: Partial<PromptPassLimits>): PromptPassLimits {
+  return {
+    readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
+    issueBodyChars: limits?.issueBodyChars ?? Number.MAX_SAFE_INTEGER,
+    timelineEvents: limits?.timelineEvents ?? Number.MAX_SAFE_INTEGER,
+    timelineTextChars: limits?.timelineTextChars ?? Number.MAX_SAFE_INTEGER,
+  };
+}
+
+export function sumPromptBudgetContentStats(...stats: PromptBudgetContentStats[]): PromptBudgetContentStats {
+  return stats.reduce(
+    (total, stat) => ({
+      originalChars: total.originalChars + stat.originalChars,
+      keptChars: total.keptChars + stat.keptChars,
+    }),
+    { originalChars: 0, keptChars: 0 }
+  );
+}
+
+export function getSystemPromptBudgetContentStats(
+  readmePath: string,
+  limits?: Partial<PromptPassLimits>,
+): PromptBudgetContentStats {
+  const resolvedLimits = resolvePromptPassLimits(limits);
+  const readme = loadReadme(readmePath);
+  return {
+    originalChars: readme.length,
+    keptChars: clampText(readme, resolvedLimits.readmeChars).length,
+  };
+}
+
+export function getUserPromptBudgetContentStats(
+  issue: Issue,
+  timelineEvents: TimelineEvent[],
+  limits?: Partial<PromptPassLimits>,
+): PromptBudgetContentStats {
+  const resolvedLimits = resolvePromptPassLimits(limits);
+  const issueBody = issue.body || '';
+  const limitedTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
+  return {
+    originalChars: issueBody.length + JSON.stringify(timelineEvents || [], null, 2).length,
+    keptChars: clampText(issueBody, resolvedLimits.issueBodyChars).length + JSON.stringify(limitedTimelineEvents, null, 2).length,
+  };
 }
 
 export function getPromptLimits(config: Config, mode: PromptPassMode): PromptPassLimits {
@@ -291,12 +341,7 @@ export function buildUserPrompt(
   fastPassPlan?: FastPassPlan,
   runTimestamp?: string,
 ): string {
-  const resolvedLimits: PromptPassLimits = {
-    readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
-    issueBodyChars: limits?.issueBodyChars ?? Number.MAX_SAFE_INTEGER,
-    timelineEvents: limits?.timelineEvents ?? Number.MAX_SAFE_INTEGER,
-    timelineTextChars: limits?.timelineTextChars ?? Number.MAX_SAFE_INTEGER,
-  };
+  const resolvedLimits = resolvePromptPassLimits(limits);
   const promptIssue = applyIssueLimits(issue, resolvedLimits);
   const promptTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
 
