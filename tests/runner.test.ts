@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ThinkingLevel } from '@google/genai';
 import { listTargets } from '../src/runner';
 import { Issue } from '../src/github';
 import type { Config } from '../src/config';
@@ -10,7 +11,7 @@ const baseConfig: Config = {
   token: 'token',
   geminiApiKey: 'key',
   dryRun: true,
-  thinkingLevel: 'high',
+  thinkingLevel: ThinkingLevel.HIGH,
   promptPath: '.github/AutoTriage.prompt',
   readmePath: 'README.md',
   skipFastPass: false,

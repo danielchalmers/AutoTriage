@@ -7,7 +7,7 @@ import {
   buildUserPrompt,
   getPromptLimits,
 } from './analysis';
-import { GeminiCacheInfo, GeminiClient, buildJsonPayload, type GeminiThinkingLevel } from './gemini';
+import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics } from './stats';
 import { TriageOperation, planOperations } from './triage';
@@ -38,7 +38,7 @@ export interface ProcessIssueOptions {
 export interface GenerateAnalysisOptions {
   issue: Issue;
   model: string;
-  thinkingLevel: GeminiThinkingLevel;
+  thinkingLevel: Config['thinkingLevel'];
   systemPrompt: string;
   userPrompt: string;
   repoLabels: RepoLabel[];

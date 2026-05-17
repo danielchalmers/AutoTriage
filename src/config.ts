@@ -1,10 +1,12 @@
+import type { ThinkingLevel } from '@google/genai';
+
 export interface Config {
   owner: string;
   repo: string;
   token: string;
   geminiApiKey: string;
   dryRun: boolean;
-  thinkingLevel: 'high';
+  thinkingLevel: ThinkingLevel;
   issueNumber?: number;
   issueNumbers?: number[];
   promptPath: string;

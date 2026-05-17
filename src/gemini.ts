@@ -1,4 +1,4 @@
-import { GenerateContentResponse, GoogleGenAI, type GenerateContentParameters } from '@google/genai';
+import { GenerateContentResponse, GoogleGenAI, ThinkingLevel, type GenerateContentParameters } from '@google/genai';
 
 export interface GeminiCacheInfo {
   name: string;
@@ -16,14 +16,12 @@ export interface GeminiJsonResult<T> {
   outputTokens: number;
 }
 
-export type GeminiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
-
 export function buildJsonPayload(
   systemPrompt: string,
   userPrompt: string,
   schema: unknown,
   model: string,
-  thinkingLevel: GeminiThinkingLevel = 'high',
+  thinkingLevel: ThinkingLevel = ThinkingLevel.HIGH,
   cachedContentName?: string,
   useFlexTier?: boolean
 ): GenerateContentParameters {

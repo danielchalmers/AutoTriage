@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { ThinkingLevel } from '@google/genai'
 import { buildJsonPayload } from '../src/gemini'
 import { buildSystemPrompt, buildUserPrompt, type FastPassPlan } from '../src/analysis'
 import * as fs from 'fs'
@@ -20,22 +21,22 @@ describe('context caching', () => {
 
     it('uses cachedContent and omits systemInstruction when cache name is provided', () => {
       const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'high', cacheName)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, ThinkingLevel.HIGH, cacheName)
       expect(payload.config?.cachedContent).toBe(cacheName)
       expect(payload.config?.systemInstruction).toBeUndefined()
     })
 
     it('preserves other config settings when using cache', () => {
       const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'medium', cacheName)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, ThinkingLevel.MEDIUM, cacheName)
       expect(payload.config?.cachedContent).toBe(cacheName)
       expect(payload.config?.responseMimeType).toBe('application/json')
-      expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: 'medium' })
+      expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: ThinkingLevel.MEDIUM })
     })
 
     it('still includes user content in both cached and uncached modes', () => {
       const uncachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model)
-      const cachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'high', 'cachedContents/abc123')
+      const cachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, ThinkingLevel.HIGH, 'cachedContents/abc123')
 
       expect(uncachedPayload.contents).toEqual(cachedPayload.contents)
       expect(uncachedPayload.contents).toEqual([{
@@ -51,7 +52,7 @@ describe('context caching', () => {
 
     it('opts into flex service tier with long timeout when enabled', () => {
       const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'high', cacheName, true)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, ThinkingLevel.HIGH, cacheName, true)
       expect(payload.config?.httpOptions?.headers).toEqual({})
       expect(payload.config?.httpOptions?.timeout).toBe(600000)
       expect(payload.config?.httpOptions?.extraBody).toEqual({ service_tier: 'flex' })
