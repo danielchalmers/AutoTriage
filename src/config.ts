@@ -4,7 +4,7 @@ export interface Config {
   token: string;
   geminiApiKey: string;
   dryRun: boolean;
-  thinkingBudget: number;
+  thinkingLevel: 'high';
   issueNumber?: number;
   issueNumbers?: number[];
   promptPath: string;

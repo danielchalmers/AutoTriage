@@ -16,12 +16,14 @@ export interface GeminiJsonResult<T> {
   outputTokens: number;
 }
 
+export type GeminiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
+
 export function buildJsonPayload(
   systemPrompt: string,
   userPrompt: string,
   schema: unknown,
   model: string,
-  thinkingBudget?: number,
+  thinkingLevel: GeminiThinkingLevel = 'high',
   cachedContentName?: string,
   useFlexTier?: boolean
 ): GenerateContentParameters {
@@ -30,7 +32,7 @@ export function buildJsonPayload(
     responseSchema: schema as any,
     thinkingConfig: {
       includeThoughts: true,
-      thinkingBudget: thinkingBudget ?? -1
+      thinkingLevel
     }
   };
 

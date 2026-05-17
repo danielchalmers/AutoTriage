@@ -104,7 +104,7 @@ export function getConfig(): Config {
   const dbPath = parseOptionalInput('db-path');
   const { modelFast, skipFastPass } = parseModelFastInput();
   const modelPro = parseInputOrDefault('model-pro', DEFAULT_MODEL_PRO);
-  const thinkingBudget = -1;
+  const thinkingLevel = 'high';
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
   const maxFastTimelineEvents = applyMultiplier(12, multiplier);
   const maxProTimelineEvents = applyMultiplier(40, multiplier);
@@ -130,7 +130,7 @@ export function getConfig(): Config {
     geminiApiKey,
     dryRun,
     skipFastPass,
-    thinkingBudget,
+    thinkingLevel,
 
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),

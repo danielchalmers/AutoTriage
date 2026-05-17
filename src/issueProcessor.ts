@@ -7,7 +7,7 @@ import {
   buildUserPrompt,
   getPromptLimits,
 } from './analysis';
-import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
+import { GeminiCacheInfo, GeminiClient, buildJsonPayload, type GeminiThinkingLevel } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics } from './stats';
 import { TriageOperation, planOperations } from './triage';
@@ -38,7 +38,7 @@ export interface ProcessIssueOptions {
 export interface GenerateAnalysisOptions {
   issue: Issue;
   model: string;
-  thinkingBudget: number;
+  thinkingLevel: GeminiThinkingLevel;
   systemPrompt: string;
   userPrompt: string;
   repoLabels: RepoLabel[];
@@ -95,7 +95,7 @@ export async function processIssue(
         {
           issue,
           model: cfg.modelFast,
-          thinkingBudget: cfg.thinkingBudget,
+          thinkingLevel: cfg.thinkingLevel,
           systemPrompt: systemPromptFast,
           userPrompt: fastUserPrompt,
           repoLabels,
@@ -133,13 +133,13 @@ export async function processIssue(
 
     const { data: proAnalysis, ops: proOps } = await generateAnalysis(
       { gemini, stats },
-      {
-        issue,
-        model: cfg.modelPro,
-        thinkingBudget: cfg.thinkingBudget,
-        systemPrompt: systemPromptPro,
-        userPrompt: proUserPrompt,
-        repoLabels,
+        {
+          issue,
+          model: cfg.modelPro,
+          thinkingLevel: cfg.thinkingLevel,
+          systemPrompt: systemPromptPro,
+          userPrompt: proUserPrompt,
+          repoLabels,
         cacheInfo: cacheInfos.get('pro'),
         useFlexTier: cfg.contextCaching,
       }
@@ -195,7 +195,7 @@ export async function generateAnalysis(
   const {
     issue,
     model,
-    thinkingBudget,
+    thinkingLevel,
     systemPrompt,
     userPrompt,
     repoLabels,
@@ -210,7 +210,7 @@ export async function generateAnalysis(
     userPrompt,
     schema,
     model,
-    thinkingBudget,
+    thinkingLevel,
     cacheInfo?.name,
     useFlexTier
   );

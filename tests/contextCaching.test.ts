@@ -12,7 +12,7 @@ describe('context caching', () => {
     const model = 'gemini-3.1-flash-lite'
 
     it('uses systemInstruction when no cache name is provided', () => {
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model)
       expect(payload.config?.systemInstruction).toBe(systemPrompt)
       expect(payload.config?.cachedContent).toBeUndefined()
       expect(payload.config?.httpOptions).toBeUndefined()
@@ -20,22 +20,22 @@ describe('context caching', () => {
 
     it('uses cachedContent and omits systemInstruction when cache name is provided', () => {
       const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1, cacheName)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'high', cacheName)
       expect(payload.config?.cachedContent).toBe(cacheName)
       expect(payload.config?.systemInstruction).toBeUndefined()
     })
 
     it('preserves other config settings when using cache', () => {
       const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 1024, cacheName)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'medium', cacheName)
       expect(payload.config?.cachedContent).toBe(cacheName)
       expect(payload.config?.responseMimeType).toBe('application/json')
-      expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: 1024 })
+      expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: 'medium' })
     })
 
     it('still includes user content in both cached and uncached modes', () => {
-      const uncachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1)
-      const cachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1, 'cachedContents/abc123')
+      const uncachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model)
+      const cachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'high', 'cachedContents/abc123')
 
       expect(uncachedPayload.contents).toEqual(cachedPayload.contents)
       expect(uncachedPayload.contents).toEqual([{
@@ -45,13 +45,13 @@ describe('context caching', () => {
     })
 
     it('does not set temperature by default', () => {
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3.1-flash-lite', -1)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3.1-flash-lite')
       expect(payload.config?.temperature).toBeUndefined()
     })
 
     it('opts into flex service tier with long timeout when enabled', () => {
       const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1, cacheName, true)
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'high', cacheName, true)
       expect(payload.config?.httpOptions?.headers).toEqual({})
       expect(payload.config?.httpOptions?.timeout).toBe(600000)
       expect(payload.config?.httpOptions?.extraBody).toEqual({ service_tier: 'flex' })
