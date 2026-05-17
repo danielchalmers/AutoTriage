@@ -36,6 +36,7 @@ jobs:
         shell: bash
         run: |
           extended_run=false
+          # Run the heavier extended sweep on days 1, 4, 7, etc. (every third UTC day of the year).
           if (( (10#$(date -u +%j) - 1) % 3 == 0 )); then
             extended_run=true
           fi
