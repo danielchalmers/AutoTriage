@@ -12,7 +12,7 @@ AutoTriage is a GitHub Action that uses AI to automatically triage issues and pu
 - **npm**: Comes bundled with Node.js
 - **Git**: For version control
 - **GitHub Token**: Required for testing (set as `GITHUB_TOKEN` environment variable)
-- **Gemini API Key**: Required for AI functionality (set as `GEMINI_API_KEY` environment variable)
+- **Gemini API Key**: Required for AI functionality when running the action locally (set as `GEMINI_API_KEY` environment variable)
 
 ## Repository Structure
 
@@ -55,7 +55,7 @@ GITHUB_TOKEN=your_github_token_here
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-These are required for running tests and local development.
+These are required for local development when exercising the action against GitHub and Gemini. Unit tests do not require `GEMINI_API_KEY`.
 
 ## Development Workflow
 
@@ -223,8 +223,8 @@ These are gitignored but uploaded as workflow artifacts in CI.
 
 ### Test Failures
 
-**Issue**: Tests fail with API errors
-- Ensure `GEMINI_API_KEY` is set in `.env`
+**Issue**: Action runs fail with API errors
+- Ensure `GEMINI_API_KEY` is set in `.env` when running the action against Gemini
 - Ensure `GITHUB_TOKEN` is set in `.env`
 - Check internet connectivity
 
