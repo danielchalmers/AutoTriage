@@ -104,7 +104,7 @@ describe('getConfig integer and list inputs', () => {
   });
 });
 
-describe('getConfig model and budget inputs', () => {
+describe('getConfig model inputs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.GITHUB_TOKEN = 'token';
