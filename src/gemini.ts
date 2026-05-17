@@ -40,9 +40,6 @@ export function buildJsonPayload(
   } else {
     config.systemInstruction = systemPrompt;
   }
-  if (model.startsWith('gemini-2')) {
-    config.temperature = 0.0;
-  }
   if (useFlexTier) {
     config.httpOptions = {
       headers: {},
@@ -121,7 +118,7 @@ export class GeminiClient {
 
   private async parseJson<T>(response: GenerateContentResponse): Promise<GeminiJsonResult<T>> {
     // Manually extract text from parts to avoid warnings about non-text parts (e.g., thoughtSignature)
-    // when using Gemini 3 models with thinking enabled
+    // when thinking is enabled
     const thoughts: string[] = [];
     const textParts: string[] = [];
     

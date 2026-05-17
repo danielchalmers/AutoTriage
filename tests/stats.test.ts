@@ -191,7 +191,7 @@ describe('RunStatistics', () => {
   describe('comprehensive scenario', () => {
     it('displays complete statistics for a typical run', () => {
       stats.setRepository('danielchalmers', 'AutoTriage');
-      stats.setModelNames('gemini-2.5-flash-lite', 'gemini-3-flash-preview');
+      stats.setModelNames('gemini-3.1-flash-lite', 'gemini-3-flash-preview');
       
       // Fast runs
       stats.trackFastRun({
@@ -251,7 +251,7 @@ describe('RunStatistics', () => {
     });
 
     it('displays model names when set', () => {
-      stats.setModelNames('gemini-2.5-flash-lite', 'gemini-3-flash-preview');
+      stats.setModelNames('gemini-3.1-flash-lite', 'gemini-3-flash-preview');
       
       stats.trackFastRun({
         startTime: 0,
@@ -271,7 +271,7 @@ describe('RunStatistics', () => {
     });
 
     it('summarizes cache usage with hit rate and cached percentage', () => {
-      stats.setModelNames('gemini-2.5-flash-lite', 'gemini-3-flash-preview');
+      stats.setModelNames('gemini-3.1-flash-lite', 'gemini-3-flash-preview');
       stats.trackCacheCreate({
         mode: 'pro',
         model: 'gemini-3-flash-preview',
