@@ -165,7 +165,7 @@ export async function listTargets(
   if (payloadNumber) return { targets: [Number(payloadNumber)], autoDiscover: false };
 
   const issues = await gh.listOpenIssues();
-  const recentlyClosedIssues = cfg.extended ? await gh.listRecentlyClosedIssues() : [];
+  const recentlyClosedIssues = await gh.listRecentlyClosedIssues();
   const closedIssuesToRecheck = filterPreviouslyTriagedClosedIssuesWithNewActivity(recentlyClosedIssues, db);
   const skipUnchanged = !cfg.extended;
   const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, skipUnchanged);

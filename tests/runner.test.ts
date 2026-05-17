@@ -99,16 +99,20 @@ describe('listTargets', () => {
     expect(gh.listOpenIssues).not.toHaveBeenCalled();
   });
 
-  it('falls back to auto-discovery and skips unchanged items outside extended mode', async () => {
+  it('falls back to auto-discovery, including previously scanned closed items with new activity outside extended mode', async () => {
     const gh = {
       listOpenIssues: vi.fn().mockResolvedValue([
         makeIssue(5, '2024-04-05T00:00:00Z'),
         makeIssue(4, '2024-04-01T00:00:00Z'),
       ]),
-      listRecentlyClosedIssues: vi.fn(),
+      listRecentlyClosedIssues: vi.fn().mockResolvedValue([
+        makeClosedIssue(3, '2024-04-02T00:00:00Z', '2024-04-03T00:00:00Z'),
+        makeClosedIssue(2, '2024-04-02T00:00:00Z', '2024-04-03T00:00:00Z'),
+      ]),
     };
     const db: TriageDb = {
       '4': { lastTriaged: '2024-04-02T00:00:00Z' },
+      '3': { lastTriaged: '2024-04-01T00:00:00Z' },
     };
 
     const result = await listTargets({
@@ -118,8 +122,8 @@ describe('listTargets', () => {
       payload: {},
     });
 
-    expect(result).toEqual({ targets: [5], autoDiscover: true });
-    expect(gh.listRecentlyClosedIssues).not.toHaveBeenCalled();
+    expect(result).toEqual({ targets: [5, 3], autoDiscover: true });
+    expect(gh.listRecentlyClosedIssues).toHaveBeenCalledOnce();
   });
 
   it('includes re-check candidates from recently closed issues in extended mode', async () => {
