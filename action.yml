@@ -40,11 +40,11 @@ inputs:
     required: false
     default: "20"
   model-fast:
-    description: "Identifier of the fast analysis model used for the first pass (default shown below). Leave blank to skip the fast pass."
+    description: "Identifier of the Gemini 3 fast analysis model used for the first pass (default shown below). Leave blank to skip the fast pass."
     required: false
     default: "gemini-3.1-flash-lite"
   model-pro:
-    description: "Identifier of the deeper review model used when the fast pass asks for confirmation."
+    description: "Identifier of the Gemini 3 review model used when the fast pass asks for confirmation."
     required: false
     default: "gemini-3.1-pro-preview"
   prompt-path:

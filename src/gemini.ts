@@ -1,4 +1,4 @@
-import { GenerateContentResponse, GoogleGenAI, type GenerateContentParameters } from '@google/genai';
+import { GenerateContentResponse, GoogleGenAI, ThinkingLevel, type GenerateContentParameters } from '@google/genai';
 
 export interface GeminiCacheInfo {
   name: string;
@@ -16,12 +16,15 @@ export interface GeminiJsonResult<T> {
   outputTokens: number;
 }
 
+export function isGemini3Model(model: string): boolean {
+  return /^gemini-3(?:[.-]|$)/.test(model.trim().toLowerCase());
+}
+
 export function buildJsonPayload(
   systemPrompt: string,
   userPrompt: string,
   schema: unknown,
   model: string,
-  thinkingBudget?: number,
   cachedContentName?: string,
   useFlexTier?: boolean
 ): GenerateContentParameters {
@@ -30,7 +33,7 @@ export function buildJsonPayload(
     responseSchema: schema as any,
     thinkingConfig: {
       includeThoughts: true,
-      thinkingBudget: thinkingBudget ?? -1
+      thinkingLevel: ThinkingLevel.HIGH
     }
   };
 
@@ -39,9 +42,6 @@ export function buildJsonPayload(
     config.cachedContent = cachedContentName;
   } else {
     config.systemInstruction = systemPrompt;
-  }
-  if (model.startsWith('gemini-2')) {
-    config.temperature = 0.0;
   }
   if (useFlexTier) {
     config.httpOptions = {

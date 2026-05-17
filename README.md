@@ -6,7 +6,8 @@ Keep issues and pull requests moving: reads the latest context, drafts the next 
 
 - The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
 - A reviewing AI pass (default: `gemini-3.1-pro-preview`) replays the plan and confirms labels, comments, etc, before anything is written.
-- Defaults use the free-tier models (`gemini-3.1-flash-lite` + `gemini-3.1-pro-preview`) rather than `gemini-3-pro`.
+- AutoTriage now only accepts Gemini 3 family models for both passes.
+- Requests use Gemini thinking with `thinkingLevel: high` and no extra temperature fallback.
 - The full thought process along with all actions can be inspected in the workflow artifacts.
 - It will keep going until it runs out of issues or tokens, or reaches the specified limit.
 
@@ -27,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: AutoTriage
-        uses: danielchalmers/AutoTriage@v3
+        uses: danielchalmers/AutoTriage@v4
         with:
           dry-run: true # flip to false once you're comfortable with the plan output
 ```
@@ -47,8 +48,8 @@ jobs:
 | `issues` | Explicit issue/PR list (space or comma separated); falls back to the GitHub event target when omitted. | event target |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `max-pro-runs` | Cap on items that escalate to the review pass per run. | `20` |
-| `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-3.1-flash-lite` |
-| `model-pro` | Review model that double-checks uncertain plans. | `gemini-3.1-pro-preview` |
+| `model-fast` | Fast Gemini 3 analysis model for the first pass. Leave blank to skip. | `gemini-3.1-flash-lite` |
+| `model-pro` | Gemini 3 review model that double-checks uncertain plans. | `gemini-3.1-pro-preview` |
 | `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
 
@@ -70,7 +71,7 @@ Copy one into `.github/workflows/` and adjust `dry-run`, schedules, or permissio
 
 Here's what a typical thought process looks like:
 
-> 💭 Thinking with gemini-2.5-pro...
+> 💭 Thinking with gemini-3.1-pro-preview...
 > 
 > Okay, so I've got a pull request to triage. Let's break this down. Firstly, the PR itself looks straightforward. It's titled "Docs: Update cookie consent prompt design," so immediately I'm thinking documentation updates, which is nice and specific. The author is `danielchalmers`, and the good news is they are a maintainer. That's a good sign – they're likely familiar with the project's standards and processes. The body describes visual changes to the cookie consent prompt and includes before/after screenshots, which is really helpful. Now, let's consult the ASSISTANT BEHAVIOR POLICY. This is where I can ensure I'm following the established guidelines. Since the author is a maintainer, I can skip sections related to encouraging contributions, triaging, and addressing missing information. I also don't need to worry about title edits or inactivity rules. The policy is really tailored to this scenario! The main thing I need to focus on is labeling. The title starts with "Docs:", which is a clear indicator, and the changes are specifically about the documentation site. Although the changes involve visual improvements, and could be interpreted as an `enhancement` or `refactor`, the "Docs" prefix makes the `docs` label the most appropriate, as it's directly tied to the documentation site. Finally, I can synthesize my actions. The summary will be: "A maintainer submitted a pull request to update the visual design of the cookie consent prompt on the documentation website." The label will be `docs`. No comments or state changes are needed. The title is fine as it is.
 > 

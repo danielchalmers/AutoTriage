@@ -126,12 +126,27 @@ describe('getConfig model and budget inputs', () => {
   });
 
   it('trims a provided model-fast input', () => {
-    setInputs({ 'model-fast': ' fast-model ' });
+    setInputs({ 'model-fast': ' gemini-3-flash ' });
 
     const cfg = getConfig();
 
     expect(cfg.skipFastPass).toBe(false);
-    expect(cfg.modelFast).toBe('fast-model');
+    expect(cfg.modelFast).toBe('gemini-3-flash');
+  });
+
+  it('rejects non-Gemini 3 models', () => {
+    setInputs({
+      'model-fast': 'gemini-2.5-flash',
+      'model-pro': 'gemini-2.5-pro',
+    });
+
+    expect(() => getConfig()).toThrow('model-fast must be a Gemini 3 model. Received: gemini-2.5-flash');
+  });
+
+  it('rejects a non-Gemini 3 pro model', () => {
+    setInputs({ 'model-pro': 'claude-3-7-sonnet' });
+
+    expect(() => getConfig()).toThrow('model-pro must be a Gemini 3 model. Received: claude-3-7-sonnet');
   });
 
   it('uses a valid budget scale and falls back for invalid values', () => {

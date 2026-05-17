@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import type { Config } from './config';
+import { isGemini3Model } from './gemini';
 
 const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
@@ -59,12 +60,19 @@ function parseOptionalInput(name: string): string | undefined {
   return normalizeInput(core.getInput(name));
 }
 
+function assertGemini3Model(name: string, model: string): string {
+  if (!isGemini3Model(model)) {
+    throw new Error(`${name} must be a Gemini 3 model. Received: ${model}`);
+  }
+  return model;
+}
+
 function parseModelFastInput(): { modelFast: string; skipFastPass: boolean } {
   const normalized = normalizeInput(core.getInput('model-fast'));
   if (!normalized) {
-    return { modelFast: DEFAULT_MODEL_FAST, skipFastPass: true };
+    return { modelFast: assertGemini3Model('model-fast', DEFAULT_MODEL_FAST), skipFastPass: true };
   }
-  return { modelFast: normalized, skipFastPass: false };
+  return { modelFast: assertGemini3Model('model-fast', normalized), skipFastPass: false };
 }
 
 function applyMultiplier(base: number, multiplier: number): number {
@@ -103,8 +111,7 @@ export function getConfig(): Config {
   const readmePath = DEFAULT_README_PATH;
   const dbPath = parseOptionalInput('db-path');
   const { modelFast, skipFastPass } = parseModelFastInput();
-  const modelPro = parseInputOrDefault('model-pro', DEFAULT_MODEL_PRO);
-  const thinkingBudget = -1;
+  const modelPro = assertGemini3Model('model-pro', parseInputOrDefault('model-pro', DEFAULT_MODEL_PRO));
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
   const maxFastTimelineEvents = applyMultiplier(12, multiplier);
   const maxProTimelineEvents = applyMultiplier(40, multiplier);
@@ -130,7 +137,6 @@ export function getConfig(): Config {
     geminiApiKey,
     dryRun,
     skipFastPass,
-    thinkingBudget,
 
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
