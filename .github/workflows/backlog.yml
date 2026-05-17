@@ -1,8 +1,8 @@
 name: AutoTriage (Backlog)
 
 on:
-#  schedule:
-#    - cron: '0 6 * * *'
+  schedule:
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       issues:
@@ -31,6 +31,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Select backlog mode
+        id: backlog-mode
+        shell: bash
+        run: |
+          extended_run=false
+          if (( (10#$(date -u +%j) - 1) % 3 == 0 )); then
+            extended_run=true
+          fi
+
+          echo "extended=$extended_run" >> "$GITHUB_OUTPUT"
+          echo "context-caching=$extended_run" >> "$GITHUB_OUTPUT"
+          echo "max-fast-runs=100" >> "$GITHUB_OUTPUT"
+
       - uses: actions/cache@v5
         with:
           path: triage-db.json
@@ -44,6 +57,9 @@ jobs:
           prompt-path: .github/AutoTriage.prompt
           dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry-run || false }}
           db-path: triage-db.json
+          extended: ${{ steps.backlog-mode.outputs.extended }}
+          context-caching: ${{ steps.backlog-mode.outputs.context-caching }}
+          max-fast-runs: ${{ steps.backlog-mode.outputs.max-fast-runs }}
           additional-instructions: ${{ github.event.inputs.additional-instructions }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

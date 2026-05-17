@@ -59,7 +59,7 @@ See ready-to-use workflow files in [`examples/workflows`](./examples/workflows/)
 
 - [`autotriage-issues.yml`](./examples/workflows/autotriage-issues.yml) – run on issue events.
 - [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) – run on pull request events.
-- [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) – scheduled/backlog sweep.
+- [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) – daily backlog sweep with every-third-day extended/cached runs.
 
 Copy one into `.github/workflows/` and adjust `dry-run`, schedules, or permissions as needed.
 
