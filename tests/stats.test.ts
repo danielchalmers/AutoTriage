@@ -21,12 +21,6 @@ describe('RunStatistics', () => {
     stats = new RunStatistics();
   });
 
-  describe('tracking model runs', () => {
-  });
-
-  describe('tracking actions', () => {
-  });
-
   describe('tracking counts', () => {
     it('tracks failed count', () => {
       stats.incrementFailed();
@@ -40,7 +34,6 @@ describe('RunStatistics', () => {
     it('handles empty statistics', () => {
       expect(() => stats.printSummary()).not.toThrow();
     });
-
   });
 
   describe('comprehensive scenario', () => {
