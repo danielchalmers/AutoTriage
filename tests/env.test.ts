@@ -145,4 +145,12 @@ describe('getConfig model and budget inputs', () => {
     expect(fallback.maxFastTimelineEvents).toBe(12);
     expect(fallback.maxProTimelineEvents).toBe(40);
   });
+
+  it('always uses README.md for README context', () => {
+    setInputs({ 'readme-path': 'docs/README.md' });
+
+    const cfg = getConfig();
+
+    expect(cfg.readmePath).toBe('README.md');
+  });
 });

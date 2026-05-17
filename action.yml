@@ -51,10 +51,6 @@ inputs:
     description: "Repo-relative path to the prompt template that governs triage behavior (tone, rules, closure policy)."
     required: false
     default: ".github/AutoTriage.prompt"
-  readme-path:
-    description: "Path to an optional Markdown file (e.g., your README) that is bundled into the AI prompt for extra context."
-    required: false
-    default: "README.md"
   strict-mode:
     description: "Set to true to fail the overall job if any runs have errors."
     required: false

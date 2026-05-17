@@ -100,7 +100,7 @@ export function getConfig(): Config {
 
   const dryRun = parseBooleanInput('dry-run');
   const promptPath = parseInputOrDefault('prompt-path', DEFAULT_PROMPT_PATH);
-  const readmePath = parseInputOrDefault('readme-path', DEFAULT_README_PATH);
+  const readmePath = DEFAULT_README_PATH;
   const dbPath = parseOptionalInput('db-path');
   const { modelFast, skipFastPass } = parseModelFastInput();
   const modelPro = parseInputOrDefault('model-pro', DEFAULT_MODEL_PRO);
