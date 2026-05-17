@@ -61,7 +61,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   saveArtifact(0, 'prompt-system.md', systemPromptPro);
 
   const cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo> = new Map();
-  if (cfg.contextCaching) {
+  if (autoDiscover) {
     if (!cfg.skipFastPass) {
       try {
         const cacheInfo = await gemini.createCache(cfg.modelFast, systemPromptFast, `autotriage-fast-${cfg.owner}/${cfg.repo}`);

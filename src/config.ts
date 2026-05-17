@@ -24,7 +24,6 @@ export interface Config {
   maxProRuns: number;
   maxFastRuns: number;
   additionalInstructions?: string;
-  contextCaching: boolean;
   extended: boolean;
   strictMode: boolean;
 }

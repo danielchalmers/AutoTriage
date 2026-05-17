@@ -101,7 +101,7 @@ export async function processIssue(
           repoLabels,
           isFastModel: true,
           cacheInfo: cacheInfos.get('fast'),
-          useFlexTier: cfg.contextCaching,
+          useFlexTier: cacheInfos.has('fast'),
         }
       );
 
@@ -141,7 +141,7 @@ export async function processIssue(
         userPrompt: proUserPrompt,
         repoLabels,
         cacheInfo: cacheInfos.get('pro'),
-        useFlexTier: cfg.contextCaching,
+        useFlexTier: cacheInfos.has('pro'),
       }
     );
 

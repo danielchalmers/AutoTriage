@@ -36,7 +36,6 @@ describe('getConfig boolean inputs', () => {
   it('defaults booleans to false when inputs are not set', () => {
     const cfg = getConfig();
     expect(cfg.dryRun).toBe(false);
-    expect(cfg.contextCaching).toBe(false);
     expect(cfg.extended).toBe(false);
     expect(cfg.strictMode).toBe(false);
   });
@@ -44,14 +43,12 @@ describe('getConfig boolean inputs', () => {
   it('parses trimmed true values', () => {
     setInputs({
       'dry-run': ' TRUE ',
-      'context-caching': ' true ',
       extended: 'TrUe',
       'strict-mode': ' true ',
     });
     const cfg = getConfig();
 
     expect(cfg.dryRun).toBe(true);
-    expect(cfg.contextCaching).toBe(true);
     expect(cfg.extended).toBe(true);
     expect(cfg.strictMode).toBe(true);
   });

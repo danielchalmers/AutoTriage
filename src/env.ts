@@ -119,7 +119,6 @@ export function getConfig(): Config {
   const issueNumbers = parsePositiveIntegerList(core.getInput('issues'));
   const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = parseOptionalInput('additional-instructions');
-  const contextCaching = parseBooleanInput('context-caching');
   const extended = parseBooleanInput('extended');
   const strictMode = parseBooleanInput('strict-mode');
 
@@ -150,7 +149,6 @@ export function getConfig(): Config {
     maxProRuns,
     maxFastRuns,
     ...(additionalInstructions ? { additionalInstructions } : {}),
-    contextCaching,
     extended,
     strictMode,
   };
