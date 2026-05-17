@@ -119,7 +119,7 @@ describe('getConfig model and budget inputs', () => {
     const cfg = getConfig();
 
     expect(cfg.skipFastPass).toBe(true);
-    expect(cfg.modelFast).toBe('gemini-3.1-flash-lite');
+    expect(cfg.modelFast).toBe('');
   });
 
   it('trims a provided model-fast input', () => {
@@ -129,6 +129,12 @@ describe('getConfig model and budget inputs', () => {
 
     expect(cfg.skipFastPass).toBe(false);
     expect(cfg.modelFast).toBe('fast-model');
+  });
+
+  it('defaults the pro model to flash-lite', () => {
+    const cfg = getConfig();
+
+    expect(cfg.modelPro).toBe('gemini-3.1-flash-lite');
   });
 
   it('uses a valid budget scale and falls back for invalid values', () => {
