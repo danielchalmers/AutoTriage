@@ -1,5 +1,4 @@
 import * as core from '@actions/core';
-import { ThinkingLevel } from '@google/genai';
 import * as github from '@actions/github';
 import type { Config } from './config';
 
@@ -105,7 +104,7 @@ export function getConfig(): Config {
   const dbPath = parseOptionalInput('db-path');
   const { modelFast, skipFastPass } = parseModelFastInput();
   const modelPro = parseInputOrDefault('model-pro', DEFAULT_MODEL_PRO);
-  const thinkingLevel = ThinkingLevel.HIGH;
+  const thinkingLevel = 'high' as const;
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
   const maxFastTimelineEvents = applyMultiplier(12, multiplier);
   const maxProTimelineEvents = applyMultiplier(40, multiplier);

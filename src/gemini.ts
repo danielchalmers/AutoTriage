@@ -1,4 +1,4 @@
-import { GenerateContentResponse, GoogleGenAI, ThinkingLevel, type GenerateContentParameters } from '@google/genai';
+import { GenerateContentResponse, GoogleGenAI, type GenerateContentParameters } from '@google/genai';
 
 export interface GeminiCacheInfo {
   name: string;
@@ -16,12 +16,14 @@ export interface GeminiJsonResult<T> {
   outputTokens: number;
 }
 
+export type GeminiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
+
 export function buildJsonPayload(
   systemPrompt: string,
   userPrompt: string,
   schema: unknown,
   model: string,
-  thinkingLevel: ThinkingLevel = ThinkingLevel.HIGH,
+  thinkingLevel: GeminiThinkingLevel = 'high',
   cachedContentName?: string,
   useFlexTier?: boolean
 ): GenerateContentParameters {
@@ -29,8 +31,7 @@ export function buildJsonPayload(
     responseMimeType: 'application/json',
     responseSchema: schema as any,
     thinkingConfig: {
-      includeThoughts: true,
-      thinkingLevel
+      includeThoughts: true
     }
   };
 
@@ -40,15 +41,26 @@ export function buildJsonPayload(
   } else {
     config.systemInstruction = systemPrompt;
   }
-  if (useFlexTier) {
-    config.httpOptions = {
-      headers: {},
-      timeout: 600000,
-      extraBody: {
-        service_tier: 'flex',
+  config.httpOptions = {
+    ...(useFlexTier
+      ? {
+          headers: {},
+          timeout: 600000,
+        }
+      : {}),
+    extraBody: {
+      generationConfig: {
+        thinkingConfig: {
+          thinkingLevel,
+        },
       },
-    };
-  }
+      ...(useFlexTier
+        ? {
+            service_tier: 'flex',
+          }
+        : {}),
+    },
+  };
 
   return {
     model,

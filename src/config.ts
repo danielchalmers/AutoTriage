@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from '@google/genai';
+export type GeminiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
 
 export interface Config {
   owner: string;
@@ -6,7 +6,7 @@ export interface Config {
   token: string;
   geminiApiKey: string;
   dryRun: boolean;
-  thinkingLevel: ThinkingLevel;
+  thinkingLevel: GeminiThinkingLevel;
   issueNumber?: number;
   issueNumbers?: number[];
   promptPath: string;
