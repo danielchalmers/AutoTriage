@@ -207,7 +207,7 @@ describe('runAutoTriage automatic backlog caching', () => {
 
     expect(gemini.createCache).toHaveBeenCalledTimes(2);
     expect(processIssueMock).toHaveBeenCalledOnce();
-    const [, options] = processIssueMock.mock.calls[0];
+    const options = processIssueMock.mock.calls[0]![1];
     expect(options.autoDiscover).toBe(true);
     expect(options.cacheInfos.get('fast')?.name).toBe('cachedContents/fast');
     expect(options.cacheInfos.get('pro')?.name).toBe('cachedContents/pro');
@@ -230,7 +230,7 @@ describe('runAutoTriage automatic backlog caching', () => {
 
     expect(gemini.createCache).not.toHaveBeenCalled();
     expect(processIssueMock).toHaveBeenCalledOnce();
-    const [, options] = processIssueMock.mock.calls[0];
+    const options = processIssueMock.mock.calls[0]![1];
     expect(options.autoDiscover).toBe(false);
     expect(options.cacheInfos.size).toBe(0);
   });
@@ -247,7 +247,7 @@ describe('runAutoTriage automatic backlog caching', () => {
 
     expect(gemini.createCache).toHaveBeenCalledTimes(2);
     expect(processIssueMock).toHaveBeenCalledOnce();
-    const [, options] = processIssueMock.mock.calls[0];
+    const options = processIssueMock.mock.calls[0]![1];
     expect(options.autoDiscover).toBe(true);
     expect(options.cacheInfos.size).toBe(0);
     expect(gemini.deleteCache).not.toHaveBeenCalled();
