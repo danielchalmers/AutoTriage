@@ -50,8 +50,9 @@ jobs:
 | `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-3.1-flash-lite` |
 | `model-pro` | Review model that double-checks uncertain plans. | `gemini-3.1-pro-preview` |
 | `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
-| `readme-path` | Extra Markdown context uploaded to the AI prompt. | `README.md` |
 | `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
+
+Your repository's `README.md` is automatically included as extra Markdown context when present.
 
 ## Example Workflows
 
