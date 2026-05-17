@@ -40,7 +40,7 @@ jobs:
           prompt-path: examples/AutoTriage.prompt
           dry-run: true
           model-fast: gemini-3.1-flash-lite
-          model-pro: gemini-3.1-pro-preview
+          model-pro: gemini-3.1-flash-lite # Save API usage by doing flash-lite again instead of gemini-3.1-pro-preview.
           strict-mode: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
