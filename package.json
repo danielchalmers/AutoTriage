@@ -1,7 +1,7 @@
 {
   "name": "autotriage",
   "version": "0.1.0",
-  "description": "AI triage for GitHub issues & PRs: reads context, drafts the next move, and applies it with your project prompt.",
+  "description": "GitHub Action for AI-assisted issue and pull request triage using a repository-defined prompt.",
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
@@ -16,10 +16,10 @@
   },
   "keywords": [
     "github-actions",
-    "triage",
-    "issues",
-    "pull-requests",
-    "ai"
+    "issue-triage",
+    "pull-request-triage",
+    "github-automation",
+    "ai-triage"
   ],
   "author": "Daniel Chalmers",
   "license": "MIT",

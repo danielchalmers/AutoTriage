@@ -1,23 +1,15 @@
 # AutoTriage
 
-Keep issues and pull requests moving: reads the latest context, drafts the next move, and applies it with the rules you define in your prompt.
-
-## How it works
-
-- The run starts with a fast AI pass to gather signals, summarize the thread, and draft the intended operations.
-- A reviewing AI pass (default: `gemini-3.1-pro-preview`) replays the plan and confirms labels, comments, etc, before anything is written.
-- Defaults use the free-tier models (`gemini-3.1-flash-lite` + `gemini-3.1-pro-preview`) rather than `gemini-3-pro`.
-- The full thought process along with all actions can be inspected in the workflow artifacts.
-- It will keep going until it runs out of issues or tokens, or reaches the specified limit.
+AutoTriage is a GitHub Action for AI-assisted issue and pull request triage. It reads repository context, issue or pull request history, and a repository-defined prompt, then plans and applies authorized GitHub operations.
 
 ## Quick setup
 
-1. Copy the [default prompt](./examples/AutoTriage.prompt) into your repo as `.github/AutoTriage.prompt` and tailor the labeling rules or tone.
-2. Add a `GEMINI_API_KEY` secret to your repository (or organization) pointing at your AI provider key.
-3. Drop a dry-run workflow such as:
+1. Copy the [default prompt](./examples/AutoTriage.prompt) into your repo as `.github/AutoTriage.prompt` and define your triage rules.
+2. Add a `GEMINI_API_KEY` secret to your repository or organization.
+3. Add a dry-run workflow:
 
 ```yaml
-name: nightly-auto-triage
+name: triage
 on:
   schedule:
     - cron: "0 0 * * *"
@@ -29,45 +21,35 @@ jobs:
       - name: AutoTriage
         uses: danielchalmers/AutoTriage@v3
         with:
-          dry-run: true # flip to false once you're comfortable with the plan output
+          dry-run: "true" # change to "false" after reviewing the plan output
 ```
 
-4. Review the artifacts, then set `dry-run: false` when you are ready.
+For event-specific workflows, start from the examples in [`examples/workflows`](./examples/workflows/):
+
+- [`autotriage-issues.yml`](./examples/workflows/autotriage-issues.yml) - run on issue events.
+- [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) - run on pull request events.
+- [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) - scheduled backlog sweep.
 
 ## Inputs
 
-| Input | Purpose | Default |
+| Name | Purpose | Default |
 | --- | --- | --- |
-| `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
-| `budget-scale` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
-| `db-path` | Persist per-item history between runs. | - |
-| `dry-run` | `"true"` logs the plan only, `"false"` applies changes. | `"false"` |
-| `extended` | When `"true"`, include unchanged issues and recently closed issues in auto-discovery. | `"false"` |
-| `issues` | Explicit issue/PR list (space or comma separated); falls back to the GitHub event target when omitted. Explicit targets stay uncached. | event target |
-| `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
-| `max-pro-runs` | Cap on items that escalate to the review pass per run. | `20` |
-| `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-3.1-flash-lite` |
-| `model-pro` | Review model that double-checks uncertain plans. | `gemini-3.1-pro-preview` |
-| `prompt-path` | Path to the triage prompt file you control. | `.github/AutoTriage.prompt` |
-| `strict-mode` | Fail the overall job if any individual run errors occur. | `"false"` |
-
-Your repository's `README.md` is automatically included as extra Markdown context when present.
-
-## Example Workflows
-
-See ready-to-use workflow files in [`examples/workflows`](./examples/workflows/):
-
-- [`autotriage-issues.yml`](./examples/workflows/autotriage-issues.yml) – run on issue events.
-- [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) – run on pull request events.
-- [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) – scheduled/backlog sweep.
-
-Backlog auto-discovery runs automatically try Gemini [context caching](https://ai.google.dev/gemini-api/docs/caching) and [flex inference](https://ai.google.dev/gemini-api/docs/flex-inference). If cache creation is unavailable for your account tier, AutoTriage falls back to normal uncached requests without failing the run.
-
-Copy one into `.github/workflows/` and adjust `dry-run`, schedules, or permissions as needed.
+| `additional-instructions` | Extra prompt instructions for this run. | - |
+| `budget-scale` | Multiplier for prompt context limits. | `1` |
+| `db-path` | Path to the triage history JSON file. | - |
+| `dry-run` | Log planned actions without applying changes. | `"false"` |
+| `extended` | Broaden backlog auto-discovery. | `"false"` |
+| `issues` | Space or comma separated issue or PR numbers. | event target or backlog |
+| `max-fast-runs` | Maximum fast-model analyses per run. | `100` |
+| `max-pro-runs` | Maximum review-model analyses per run. | `20` |
+| `model-fast` | Fast-pass model. Leave blank to skip. | `gemini-3.1-flash-lite` |
+| `model-pro` | Review model for final planning. | `gemini-3.1-pro-preview` |
+| `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
+| `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
 
 ## Example
 
-[MudBlazor](https://github.com/MudBlazor/MudBlazor) is a popular UI library that uses AutoTriage for all new issues, PRs, and comments.
+[MudBlazor](https://github.com/MudBlazor/MudBlazor) uses AutoTriage for all new issues, PRs, and comments.
 
 Here's what a typical thought process looks like:
 
