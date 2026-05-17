@@ -1,5 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
-import { listTargets } from '../src/runner';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const processIssueMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ triageUsed: true, fastRunUsed: true })
+);
+
+vi.mock('../src/issueProcessor', async () => {
+  const actual = await vi.importActual<typeof import('../src/issueProcessor')>('../src/issueProcessor');
+  return {
+    ...actual,
+    processIssue: processIssueMock,
+  };
+});
+
+import { listTargets, runAutoTriage } from '../src/runner';
 import { Issue } from '../src/github';
 import type { Config } from '../src/config';
 import { TriageDb } from '../src/storage';
@@ -11,7 +24,7 @@ const baseConfig: Config = {
   geminiApiKey: 'key',
   dryRun: true,
   thinkingBudget: -1,
-  promptPath: '.github/AutoTriage.prompt',
+  promptPath: 'examples/AutoTriage.prompt',
   readmePath: 'README.md',
   skipFastPass: false,
   modelFast: 'fast-model',
@@ -26,7 +39,6 @@ const baseConfig: Config = {
   maxProTimelineTextChars: 4000,
   maxProRuns: 20,
   maxFastRuns: 100,
-  contextCaching: false,
   extended: false,
   strictMode: false,
 };
@@ -145,5 +157,99 @@ describe('listTargets', () => {
 
     expect(result).toEqual({ targets: [4, 5], autoDiscover: true });
     expect(gh.listRecentlyClosedIssues).toHaveBeenCalledOnce();
+  });
+});
+
+describe('runAutoTriage automatic backlog caching', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: true });
+  });
+
+  function createStats() {
+    return {
+      trackCacheCreate: vi.fn(),
+      incrementTriaged: vi.fn(),
+      incrementSkipped: vi.fn(),
+      incrementFailed: vi.fn(),
+      incrementGithubApiCalls: vi.fn(),
+      printSummary: vi.fn(),
+      getFailed: vi.fn().mockReturnValue(0),
+    };
+  }
+
+  function createGemini() {
+    return {
+      createCache: vi.fn(),
+      deleteCache: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function createGitHub() {
+    return {
+      listRepoLabels: vi.fn().mockResolvedValue([]),
+      listOpenIssues: vi.fn().mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z')]),
+      listRecentlyClosedIssues: vi.fn().mockResolvedValue([]),
+      getIssue: vi.fn().mockResolvedValue(makeIssue(5, '2024-04-05T00:00:00Z')),
+      getApiCallCount: vi.fn().mockReturnValue(0),
+    };
+  }
+
+  it('creates caches for backlog auto-discovery runs', async () => {
+    const gh = createGitHub();
+    const gemini = createGemini();
+    gemini.createCache
+      .mockResolvedValueOnce({ name: 'cachedContents/fast', tokenCount: 10 })
+      .mockResolvedValueOnce({ name: 'cachedContents/pro', tokenCount: 20 });
+    const stats = createStats();
+
+    await runAutoTriage({ cfg: baseConfig, db: {}, gh: gh as any, gemini: gemini as any, stats: stats as any });
+
+    expect(gemini.createCache).toHaveBeenCalledTimes(2);
+    expect(processIssueMock).toHaveBeenCalledOnce();
+    const [, options] = processIssueMock.mock.calls[0];
+    expect(options.autoDiscover).toBe(true);
+    expect(options.cacheInfos.get('fast')?.name).toBe('cachedContents/fast');
+    expect(options.cacheInfos.get('pro')?.name).toBe('cachedContents/pro');
+    expect(gemini.deleteCache).toHaveBeenCalledWith('cachedContents/fast');
+    expect(gemini.deleteCache).toHaveBeenCalledWith('cachedContents/pro');
+  });
+
+  it('skips caches for explicit target runs', async () => {
+    const gh = createGitHub();
+    const gemini = createGemini();
+    const stats = createStats();
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5] },
+      db: {},
+      gh: gh as any,
+      gemini: gemini as any,
+      stats: stats as any,
+    });
+
+    expect(gemini.createCache).not.toHaveBeenCalled();
+    expect(processIssueMock).toHaveBeenCalledOnce();
+    const [, options] = processIssueMock.mock.calls[0];
+    expect(options.autoDiscover).toBe(false);
+    expect(options.cacheInfos.size).toBe(0);
+  });
+
+  it('falls back to uncached processing when cache creation is unavailable', async () => {
+    const gh = createGitHub();
+    const gemini = createGemini();
+    gemini.createCache.mockRejectedValue(new Error('Caching is not supported for this account'));
+    const stats = createStats();
+
+    await expect(
+      runAutoTriage({ cfg: baseConfig, db: {}, gh: gh as any, gemini: gemini as any, stats: stats as any })
+    ).resolves.toBeUndefined();
+
+    expect(gemini.createCache).toHaveBeenCalledTimes(2);
+    expect(processIssueMock).toHaveBeenCalledOnce();
+    const [, options] = processIssueMock.mock.calls[0];
+    expect(options.autoDiscover).toBe(true);
+    expect(options.cacheInfos.size).toBe(0);
+    expect(gemini.deleteCache).not.toHaveBeenCalled();
   });
 });

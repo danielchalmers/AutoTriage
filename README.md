@@ -40,11 +40,10 @@ jobs:
 | --- | --- | --- |
 | `additional-instructions` | Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt. | - |
 | `budget-scale` | Scales all internal Fast/Pro context limits (`1` = defaults, `2` ≈ double). | `1` |
-| `context-caching` | Enable Gemini [context caching](https://ai.google.dev/gemini-api/docs/caching) and [flex inference](https://ai.google.dev/gemini-api/docs/flex-inference) to reduce costs. | `"false"` |
 | `db-path` | Persist per-item history between runs. | - |
 | `dry-run` | `"true"` logs the plan only, `"false"` applies changes. | `"false"` |
 | `extended` | When `"true"`, include unchanged issues and recently closed issues in auto-discovery. | `"false"` |
-| `issues` | Explicit issue/PR list (space or comma separated); falls back to the GitHub event target when omitted. | event target |
+| `issues` | Explicit issue/PR list (space or comma separated); falls back to the GitHub event target when omitted. Explicit targets stay uncached. | event target |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `max-pro-runs` | Cap on items that escalate to the review pass per run. | `20` |
 | `model-fast` | Fast analysis model for the first pass. Leave blank to skip. | `gemini-3.1-flash-lite` |
@@ -61,6 +60,8 @@ See ready-to-use workflow files in [`examples/workflows`](./examples/workflows/)
 - [`autotriage-issues.yml`](./examples/workflows/autotriage-issues.yml) – run on issue events.
 - [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) – run on pull request events.
 - [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) – scheduled/backlog sweep.
+
+Backlog auto-discovery runs automatically try Gemini [context caching](https://ai.google.dev/gemini-api/docs/caching) and [flex inference](https://ai.google.dev/gemini-api/docs/flex-inference). If cache creation is unavailable for your account tier, AutoTriage falls back to normal uncached requests without failing the run.
 
 Copy one into `.github/workflows/` and adjust `dry-run`, schedules, or permissions as needed.
 
