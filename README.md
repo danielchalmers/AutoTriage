@@ -42,8 +42,8 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 | `issues` | Space or comma separated issue or PR numbers. | event target or backlog |
 | `max-fast-runs` | Maximum fast-model analyses per run. | `100` |
 | `max-pro-runs` | Maximum review-model analyses per run. | `20` |
-| `model-fast` | Fast-pass model. Leave blank to skip. | `gemini-3.1-flash-lite` |
-| `model-pro` | Review model for final planning. | `gemini-3.1-pro-preview` |
+| `model-fast` | Fast-pass model. Leave blank to skip. | `""` (skip) |
+| `model-pro` | Review model for final planning. | `gemini-3.1-flash-lite` |
 | `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
 | `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
 

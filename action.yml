@@ -38,11 +38,11 @@ inputs:
   model-fast:
     description: "Fast-pass model. Leave blank to skip."
     required: false
-    default: "gemini-3.1-flash-lite"
+    default: ""
   model-pro:
     description: "Review model for final planning."
     required: false
-    default: "gemini-3.1-pro-preview"
+    default: "gemini-3.1-flash-lite"
   prompt-path:
     description: "Repo-relative path to the triage prompt."
     required: false

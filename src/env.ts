@@ -4,8 +4,8 @@ import type { Config } from './config';
 
 const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
-const DEFAULT_MODEL_FAST = 'gemini-3.1-flash-lite';
-const DEFAULT_MODEL_PRO = 'gemini-3.1-pro-preview';
+const DEFAULT_MODEL_FAST = '';
+const DEFAULT_MODEL_PRO = 'gemini-3.1-flash-lite';
 const DEFAULT_BUDGET_SCALE = 1;
 const DEFAULT_MAX_PRO_RUNS = 20;
 const DEFAULT_MAX_FAST_RUNS = 100;
