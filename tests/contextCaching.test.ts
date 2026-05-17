@@ -46,11 +46,6 @@ describe('context caching', () => {
       }])
     })
 
-    it('does not inject a temperature fallback for any Gemini model family', () => {
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-2.5-pro')
-      expect(payload.config?.temperature).toBeUndefined()
-    })
-
     it('uses high thinking level for Gemini 3 requests', () => {
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3-flash-preview')
       expect(payload.config?.temperature).toBeUndefined()

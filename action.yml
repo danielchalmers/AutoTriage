@@ -36,11 +36,11 @@ inputs:
     required: false
     default: "20"
   model-fast:
-    description: "Fast-pass Gemini 3 model. Leave blank to skip."
+    description: "Fast-pass model. Leave blank to skip."
     required: false
     default: ""
   model-pro:
-    description: "Review Gemini 3 model for final planning."
+    description: "Review model for final planning."
     required: false
     default: "gemini-3.1-flash-lite"
   prompt-path:

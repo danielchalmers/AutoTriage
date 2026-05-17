@@ -2,9 +2,6 @@
 
 AutoTriage is a GitHub Action for AI-assisted issue and pull request triage. It reads repository context, issue or pull request history, and a repository-defined prompt, then plans and applies authorized GitHub operations.
 
-> [!IMPORTANT]
-> AutoTriage is officially supported with Gemini 3 models. Other Gemini model families may still work, but they are considered use-at-your-own-risk and are not covered by our compatibility guarantee.
-
 ## Quick setup
 
 1. Copy the [default prompt](./examples/AutoTriage.prompt) into your repo as `.github/AutoTriage.prompt` and define your triage rules.
@@ -45,10 +42,13 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 | `issues` | Space or comma separated issue or PR numbers. | event target or backlog |
 | `max-fast-runs` | Maximum fast-model analyses per run. | `100` |
 | `max-pro-runs` | Maximum review-model analyses per run. | `20` |
-| `model-fast` | Fast-pass Gemini 3 model. Leave blank to skip. | `""` (skip) |
-| `model-pro` | Review Gemini 3 model for final planning. | `gemini-3.1-flash-lite` |
+| `model-fast` | Fast-pass model. Leave blank to skip. | `""` (skip) |
+| `model-pro` | Review model for final planning. | `gemini-3.1-flash-lite` |
 | `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
 | `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
+
+> [!IMPORTANT]
+> AutoTriage is officially supported with Gemini 3 models. Other Gemini model families may still work, but they are considered use-at-your-own-risk.
 
 ## Example
 
