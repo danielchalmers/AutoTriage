@@ -43,7 +43,7 @@ jobs:
 | `context-caching` | Enable Gemini [context caching](https://ai.google.dev/gemini-api/docs/caching) and [flex inference](https://ai.google.dev/gemini-api/docs/flex-inference) to reduce costs. | `"false"` |
 | `db-path` | Persist per-item history between runs. | - |
 | `dry-run` | `"true"` logs the plan only, `"false"` applies changes. | `"false"` |
-| `extended` | When `"true"`, include unchanged issues and recently closed issues in auto-discovery. | `"false"` |
+| `extended` | When `"true"`, also include unchanged issues in auto-discovery. Previously triaged recently closed issues with new activity are reconsidered even when this is `"false"`. | `"false"` |
 | `issues` | Explicit issue/PR list (space or comma separated); falls back to the GitHub event target when omitted. | event target |
 | `max-fast-runs` | Cap on items analyzed with the fast model per run. | `100` |
 | `max-pro-runs` | Cap on items that escalate to the review pass per run. | `20` |

@@ -25,7 +25,7 @@ inputs:
     required: false
     default: "false"
   extended:
-    description: "Set to true to include unchanged issues and recently closed issues during backlog auto-discovery."
+    description: "Set to true to include unchanged issues during backlog auto-discovery. Previously triaged recently closed issues with new activity are reconsidered even when false."
     required: false
     default: "false"
   issues:
