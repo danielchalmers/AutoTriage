@@ -3,6 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const processIssueMock = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ triageUsed: true, fastRunUsed: true })
 );
+const githubContextMock = vi.hoisted(() => ({
+  payload: {},
+}));
+
+vi.mock('@actions/github', () => ({
+  context: githubContextMock,
+}));
 
 vi.mock('../src/issueProcessor', async () => {
   const actual = await vi.importActual<typeof import('../src/issueProcessor')>('../src/issueProcessor');
@@ -163,6 +170,7 @@ describe('listTargets', () => {
 describe('runAutoTriage automatic backlog caching', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    githubContextMock.payload = {};
     processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: true });
   });
 
