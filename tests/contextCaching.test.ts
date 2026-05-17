@@ -29,7 +29,7 @@ describe('context caching', () => {
       const cacheName = 'cachedContents/abc123'
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 1024, cacheName)
       expect(payload.config?.cachedContent).toBe(cacheName)
-      expect(payload.config?.temperature).toBe(0)
+      expect(payload.config?.temperature).toBeUndefined()
       expect(payload.config?.responseMimeType).toBe('application/json')
       expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: 1024 })
     })
