@@ -9,20 +9,13 @@ AutoTriage is a GitHub Action for AI-assisted issue and pull request triage. It 
 3. Add a dry-run workflow:
 
 ```yaml
-name: nightly-auto-triage
+name: triage
 on:
   schedule:
     - cron: "0 0 * * *"
 jobs:
   triage:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v6
       - name: AutoTriage
@@ -31,11 +24,15 @@ jobs:
           dry-run: "true" # change to "false" after reviewing the plan output
 ```
 
-4. Review the artifacts, then set `dry-run: "false"` when you are ready.
+For event-specific workflows, start from the examples in [`examples/workflows`](./examples/workflows/):
+
+- [`autotriage-issues.yml`](./examples/workflows/autotriage-issues.yml) - run on issue events.
+- [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) - run on pull request events.
+- [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) - scheduled backlog sweep.
 
 ## Inputs
 
-| Input | Purpose | Default |
+| Name | Purpose | Default |
 | --- | --- | --- |
 | `additional-instructions` | Extra prompt instructions for this run. | - |
 | `budget-scale` | Multiplier for prompt context limits. | `1` |
@@ -50,32 +47,9 @@ jobs:
 | `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
 | `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
 
-Your repository's `README.md` is automatically included as extra Markdown context in the review pass when present.
+## Example
 
-## Environment
-
-AutoTriage reads credentials from environment variables:
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `GITHUB_TOKEN` | Yes | Reads issue/PR context and applies authorized GitHub changes. |
-| `GEMINI_API_KEY` | Yes | Calls the Gemini API for analysis. |
-
-## Example Workflows
-
-Workflow examples are available in [`examples/workflows`](./examples/workflows/):
-
-- [`autotriage-issues.yml`](./examples/workflows/autotriage-issues.yml) – run on issue events.
-- [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) – run on pull request events.
-- [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) – scheduled/backlog sweep.
-
-Backlog auto-discovery runs automatically try Gemini [context caching](https://ai.google.dev/gemini-api/docs/caching) and [flex inference](https://ai.google.dev/gemini-api/docs/flex-inference). If cache creation is unavailable for your account tier, AutoTriage falls back to normal uncached requests without failing the run.
-
-Copy one into `.github/workflows/` and adjust `dry-run`, schedules, inputs, and permissions for your repository.
-
-## Example Run
-
-[MudBlazor](https://github.com/MudBlazor/MudBlazor) is a popular UI library that uses AutoTriage for all new issues, PRs, and comments.
+[MudBlazor](https://github.com/MudBlazor/MudBlazor) uses AutoTriage for all new issues, PRs, and comments.
 
 Here's what a typical thought process looks like:
 
