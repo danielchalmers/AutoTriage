@@ -1,54 +1,54 @@
 name: "AutoTriage"
-description: "AI issue & PR triage that reads context, drafts a plan, and applies it according to your project prompt."
+description: "GitHub Action for AI-assisted issue and pull request triage using a repository-defined prompt."
 author: "Daniel Chalmers"
 branding:
   color: "blue"
-  icon: "robot"
+  icon: "git-pull-request"
 
 inputs:
   additional-instructions:
-    description: "Additional instructions appended to the prompt for testing or tweaking behavior without committing a new prompt."
+    description: "Extra prompt instructions for this run."
     required: false
   budget-scale:
-    description: "Scalar multiplier for internal Fast/Pro context limits. Use values >1 to allow more prompt context."
+    description: "Multiplier for prompt context limits."
     required: false
     default: "1"
   db-path:
-    description: "Optional path to a JSON file that stores per-item history between runs."
+    description: "Path to the triage history JSON file."
     required: false
   dry-run:
-    description: "Set to true to log the plan only; false applies labels, comments, and title changes."
+    description: "Log planned actions without applying changes."
     required: false
     default: "false"
   extended:
-    description: "Set to true to include unchanged issues and recently closed issues during backlog auto-discovery."
+    description: "Broaden backlog auto-discovery."
     required: false
     default: "false"
   issues:
-    description: "Space or comma separated list of issue / PR numbers to triage explicitly; when omitted the GitHub event target is used."
+    description: "Space or comma separated issue or PR numbers."
     required: false
   max-fast-runs:
-    description: "Cap on how many targets can be analyzed with the fast model during this run."
+    description: "Maximum fast-model analyses per run."
     required: false
     default: "100"
   max-pro-runs:
-    description: "Cap on how many targets can escalate to the review pass during this run."
+    description: "Maximum review-model analyses per run."
     required: false
     default: "20"
   model-fast:
-    description: "Identifier of the fast analysis model used for the first pass (default shown below). Leave blank to skip the fast pass."
+    description: "Fast-pass model. Leave blank to skip."
     required: false
     default: "gemini-3.1-flash-lite"
   model-pro:
-    description: "Identifier of the deeper review model used when the fast pass asks for confirmation."
+    description: "Review model for final planning."
     required: false
     default: "gemini-3.1-pro-preview"
   prompt-path:
-    description: "Repo-relative path to the prompt template that governs triage behavior (tone, rules, closure policy)."
+    description: "Repo-relative path to the triage prompt."
     required: false
     default: ".github/AutoTriage.prompt"
   strict-mode:
-    description: "Set to true to fail the overall job if any runs have errors."
+    description: "Fail the job when any item analysis fails."
     required: false
     default: "false"
 
