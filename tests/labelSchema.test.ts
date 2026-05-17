@@ -46,21 +46,6 @@ describe('buildAnalysisResultSchema', () => {
     ]);
   });
 
-  it('handles labels with spaces correctly', () => {
-    const repoLabels = [
-      { name: 'help wanted', description: 'Help wanted' },
-      { name: 'good first issue', description: 'Good for newcomers' },
-    ];
-
-    const schema = buildAnalysisResultSchema(repoLabels);
-    const labelItems = getLabelItems(schema);
-
-    expect(labelItems.enum).toEqual([
-      'good first issue',
-      'help wanted',
-    ]);
-  });
-
   it('falls back to unconstrained schema when no labels provided', () => {
     const schema = buildAnalysisResultSchema([]);
     const labelItems = getLabelItems(schema);

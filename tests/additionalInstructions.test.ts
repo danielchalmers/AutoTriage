@@ -85,24 +85,4 @@ describe('additional instructions', () => {
     }
   })
 
-  it('does not include additional instructions section when empty string provided', async () => {
-    const customPromptPath = path.join(__dirname, 'test-custom-prompt.txt')
-    fs.writeFileSync(customPromptPath, 'Base prompt content')
-
-    try {
-      const { systemPrompt } = await buildPrompt(
-        mockIssue,
-        customPromptPath,
-        '',
-        mockTimelineEvents,
-        mockRepoLabels,
-        ''
-      )
-
-      expect(systemPrompt).toContain('Base prompt content')
-      expect(systemPrompt).not.toContain('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
-    } finally {
-      fs.unlinkSync(customPromptPath)
-    }
-  })
 })

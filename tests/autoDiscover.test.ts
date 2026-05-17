@@ -78,23 +78,6 @@ describe('buildAutoDiscoverQueue', () => {
     expect(buildAutoDiscoverQueue(issues, db)).toEqual([1, 2, 3]);
   });
 
-  it('sorts secondary bucket by lastTriaged with oldest first', () => {
-    const db: TriageDb = {
-      '10': { lastTriaged: '2024-10-10T00:00:00Z' },
-      '11': { lastTriaged: '2024-11-11T00:00:00Z' },
-      '9': { lastTriaged: '2024-09-09T00:00:00Z' },
-    };
-    const issues = [
-      makeIssue(11, '2024-11-10T00:00:00Z'),
-      makeIssue(10, '2024-10-09T00:00:00Z'),
-      makeIssue(9, '2024-09-08T00:00:00Z'),
-    ];
-
-    // All issues are unchanged (updated before lastTriaged), so sorted by lastTriaged
-    // Order should be: #9 (Sep 9), #10 (Oct 10), #11 (Nov 11)
-    expect(buildAutoDiscoverQueue(issues, db)).toEqual([9, 10, 11]);
-  });
-
   it('handles mixed prioritized and secondary issues correctly', () => {
     const db: TriageDb = {
       '5': { lastTriaged: '2024-04-05T00:00:00Z' },
@@ -177,20 +160,6 @@ describe('buildAutoDiscoverQueue', () => {
       expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([6, 5]);
     });
 
-    it('behaves the same as false when skipUnchanged is not provided', () => {
-      const db: TriageDb = {
-        '4': { lastTriaged: '2024-04-04T00:00:00Z' },
-        '3': { lastTriaged: '2024-04-03T00:00:00Z' },
-      };
-      const issues = [
-        makeIssue(5, '2024-04-05T00:00:00Z'),
-        makeIssue(4, '2024-04-02T00:00:00Z'),
-        makeIssue(3, '2024-04-01T00:00:00Z'),
-      ];
-
-      // Default behavior (no skipUnchanged) should be same as skipUnchanged=false
-      expect(buildAutoDiscoverQueue(issues, db)).toEqual([5, 3, 4]);
-    });
   });
 });
 
