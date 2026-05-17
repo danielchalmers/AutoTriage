@@ -38,7 +38,6 @@ export interface ProcessIssueOptions {
 export interface GenerateAnalysisOptions {
   issue: Issue;
   model: string;
-  thinkingBudget: number;
   systemPrompt: string;
   userPrompt: string;
   repoLabels: RepoLabel[];
@@ -95,7 +94,6 @@ export async function processIssue(
         {
           issue,
           model: cfg.modelFast,
-          thinkingBudget: cfg.thinkingBudget,
           systemPrompt: systemPromptFast,
           userPrompt: fastUserPrompt,
           repoLabels,
@@ -136,7 +134,6 @@ export async function processIssue(
       {
         issue,
         model: cfg.modelPro,
-        thinkingBudget: cfg.thinkingBudget,
         systemPrompt: systemPromptPro,
         userPrompt: proUserPrompt,
         repoLabels,
@@ -195,7 +192,6 @@ export async function generateAnalysis(
   const {
     issue,
     model,
-    thinkingBudget,
     systemPrompt,
     userPrompt,
     repoLabels,
@@ -210,7 +206,6 @@ export async function generateAnalysis(
     userPrompt,
     schema,
     model,
-    thinkingBudget,
     cacheInfo?.name,
     useFlexTier
   );

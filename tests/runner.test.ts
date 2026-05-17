@@ -30,7 +30,6 @@ const baseConfig: Config = {
   token: 'token',
   geminiApiKey: 'key',
   dryRun: true,
-  thinkingBudget: -1,
   promptPath: 'examples/AutoTriage.prompt',
   readmePath: 'README.md',
   skipFastPass: false,

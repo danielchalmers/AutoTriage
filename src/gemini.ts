@@ -1,4 +1,4 @@
-import { GenerateContentResponse, GoogleGenAI, type GenerateContentParameters } from '@google/genai';
+import { GenerateContentResponse, GoogleGenAI, ThinkingLevel, type GenerateContentParameters } from '@google/genai';
 
 export interface GeminiCacheInfo {
   name: string;
@@ -21,7 +21,6 @@ export function buildJsonPayload(
   userPrompt: string,
   schema: unknown,
   model: string,
-  thinkingBudget?: number,
   cachedContentName?: string,
   useFlexTier?: boolean
 ): GenerateContentParameters {
@@ -30,7 +29,7 @@ export function buildJsonPayload(
     responseSchema: schema as any,
     thinkingConfig: {
       includeThoughts: true,
-      thinkingBudget: thinkingBudget ?? -1
+      thinkingLevel: ThinkingLevel.HIGH,
     }
   };
 
@@ -39,9 +38,6 @@ export function buildJsonPayload(
     config.cachedContent = cachedContentName;
   } else {
     config.systemInstruction = systemPrompt;
-  }
-  if (model.startsWith('gemini-2')) {
-    config.temperature = 0.0;
   }
   if (useFlexTier) {
     config.httpOptions = {
@@ -120,8 +116,8 @@ export class GeminiClient {
   }
 
   private async parseJson<T>(response: GenerateContentResponse): Promise<GeminiJsonResult<T>> {
-    // Manually extract text from parts to avoid warnings about non-text parts (e.g., thoughtSignature)
-    // when using Gemini 3 models with thinking enabled
+    // Manually extract text from parts to avoid warnings about non-text parts
+    // when Gemini 3 thinking responses include dedicated thought parts.
     const thoughts: string[] = [];
     const textParts: string[] = [];
     
