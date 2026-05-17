@@ -9,7 +9,7 @@ describe('context caching', () => {
     const systemPrompt = 'You are a triage assistant.'
     const userPrompt = 'Analyze this issue.'
     const schema = { type: 'OBJECT', properties: { summary: { type: 'STRING' } }, required: ['summary'] }
-    const model = 'gemini-2.5-flash-lite'
+    const model = 'gemini-3.1-flash-lite'
 
     it('uses systemInstruction when no cache name is provided', () => {
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, -1)
@@ -29,7 +29,7 @@ describe('context caching', () => {
       const cacheName = 'cachedContents/abc123'
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 1024, cacheName)
       expect(payload.config?.cachedContent).toBe(cacheName)
-      expect(payload.config?.temperature).toBe(0)
+      expect(payload.config?.temperature).toBeUndefined()
       expect(payload.config?.responseMimeType).toBe('application/json')
       expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingBudget: 1024 })
     })

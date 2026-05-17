@@ -122,7 +122,7 @@ describe('getConfig model and budget inputs', () => {
     const cfg = getConfig();
 
     expect(cfg.skipFastPass).toBe(true);
-    expect(cfg.modelFast).toBe('gemini-3.1-flash-lite-preview');
+    expect(cfg.modelFast).toBe('gemini-3.1-flash-lite');
   });
 
   it('trims a provided model-fast input', () => {
