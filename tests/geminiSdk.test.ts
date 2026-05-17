@@ -28,5 +28,5 @@ describe('Gemini (real API)', () => {
         const response = await client.generateJson<User>(payload, 2, 500);
         expect(response.data).toEqual({ name: 'Alice', age: 30 });
         expect(typeof response.thoughts).toBe('string');
-    }, 5000);
+    }, 15000);
 });
