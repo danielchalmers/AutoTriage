@@ -31,6 +31,7 @@ npm run typecheck:test
 npm test
 npm run build
 git status --porcelain
+git diff --exit-code --name-only
 ```
 
 Commit source, tests, and generated `dist/` together. For docs-only changes, `npm run build` is not required unless the docs change action inputs, examples copied into `dist/`, or other bundled assets.
