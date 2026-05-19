@@ -11,6 +11,7 @@ AutoTriage is a Node 24 GitHub Action written in TypeScript. Source lives in `sr
 - Never edit `dist/` by hand. Regenerate it with `npm run build`.
 - Keep changes scoped to the request. Avoid drive-by refactors, formatting churn, and unrelated dependency updates.
 - Prefer existing patterns and local helpers over new abstractions.
+- Before committing, run `git status --short` and confirm only files relevant to the request are staged. Do not stage unrelated user changes.
 
 ## Commands
 
@@ -47,6 +48,8 @@ git diff --exit-code --name-only
 
 Commit source, tests, and generated `dist/` together. Do not open, update, or mark a PR ready for review when `npm run build` still leaves `dist/` modified. For docs-only changes, `npm run build` is not required unless the docs change action inputs, examples copied into `dist/`, or other bundled assets.
 
+If a required verification command cannot be run, mention the exact command and reason in the final response.
+
 ## Build And Dist
 
 `dist/` is committed because GitHub Actions executes `dist/index.js` directly.
@@ -67,7 +70,11 @@ Runtime changes that usually require a build include:
 
 `README.md` and `action.yml` describe the public action contract. Keep them aligned with behavior changes.
 
-AutoTriage may apply labels, comments, title changes, and issue state changes. Preserve default-deny authorization behavior unless the user explicitly asks to change it.
+For changes to inputs, defaults, permissions, runtime behavior, labels/comments/state/title operations, or artifacts, review whether `README.md`, `action.yml`, and examples need updates.
+
+AutoTriage may apply labels, comments, title changes, and issue state changes. Preserve default-deny authorization behavior unless the user explicitly asks to change it. Malformed, unauthorized, unknown-label, empty, or no-op model operations must not produce GitHub mutations.
+
+Treat prompt, schema, and operation-planning changes as runtime behavior changes; run the relevant tests and build.
 
 Do not downgrade Node, `package.json` engines, or `action.yml` runtime without explicit request.
 
