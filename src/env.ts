@@ -2,13 +2,27 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import type { Config } from './config';
 
-const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
-const DEFAULT_README_PATH = 'README.md';
-const DEFAULT_MODEL_FAST = '';
-const DEFAULT_MODEL_PRO = 'gemini-3.1-flash-lite';
-const DEFAULT_BUDGET_SCALE = 1;
-const DEFAULT_MAX_PRO_RUNS = 20;
-const DEFAULT_MAX_FAST_RUNS = 100;
+const DEFAULTS = {
+  promptPath: '.github/AutoTriage.prompt',
+  readmePath: 'README.md',
+  modelFast: '',
+  modelPro: 'gemini-3.1-flash-lite',
+  budgetScale: 1,
+  maxProRuns: 20,
+  maxFastRuns: 100,
+  fast: {
+    timelineEvents: 12,
+    readmeChars: 0,
+    issueBodyChars: 4000,
+    timelineTextChars: 600,
+  },
+  pro: {
+    timelineEvents: 40,
+    readmeChars: 120000,
+    issueBodyChars: 20000,
+    timelineTextChars: 4000,
+  },
+} as const;
 
 function normalizeInput(input?: string): string | undefined {
   const normalized = input?.trim();
@@ -62,13 +76,26 @@ function parseOptionalInput(name: string): string | undefined {
 function parseModelFastInput(): { modelFast: string; skipFastPass: boolean } {
   const normalized = normalizeInput(core.getInput('model-fast'));
   if (!normalized) {
-    return { modelFast: DEFAULT_MODEL_FAST, skipFastPass: true };
+    return { modelFast: DEFAULTS.modelFast, skipFastPass: true };
   }
   return { modelFast: normalized, skipFastPass: false };
 }
 
 function applyMultiplier(base: number, multiplier: number): number {
   return Math.max(0, Math.floor(base * multiplier));
+}
+
+function scaledPromptLimits(multiplier: number) {
+  return {
+    maxFastTimelineEvents: applyMultiplier(DEFAULTS.fast.timelineEvents, multiplier),
+    maxProTimelineEvents: applyMultiplier(DEFAULTS.pro.timelineEvents, multiplier),
+    maxFastReadmeChars: applyMultiplier(DEFAULTS.fast.readmeChars, multiplier),
+    maxProReadmeChars: applyMultiplier(DEFAULTS.pro.readmeChars, multiplier),
+    maxFastIssueBodyChars: applyMultiplier(DEFAULTS.fast.issueBodyChars, multiplier),
+    maxProIssueBodyChars: applyMultiplier(DEFAULTS.pro.issueBodyChars, multiplier),
+    maxFastTimelineTextChars: applyMultiplier(DEFAULTS.fast.timelineTextChars, multiplier),
+    maxProTimelineTextChars: applyMultiplier(DEFAULTS.pro.timelineTextChars, multiplier),
+  };
 }
 
 /**
@@ -99,22 +126,15 @@ export function getConfig(): Config {
   if (!geminiApiKey) throw new Error('GEMINI_API_KEY missing (add it as a repository secret).');
 
   const dryRun = parseBooleanInput('dry-run');
-  const promptPath = parseInputOrDefault('prompt-path', DEFAULT_PROMPT_PATH);
-  const readmePath = DEFAULT_README_PATH;
+  const promptPath = parseInputOrDefault('prompt-path', DEFAULTS.promptPath);
+  const readmePath = DEFAULTS.readmePath;
   const dbPath = parseOptionalInput('db-path');
   const { modelFast, skipFastPass } = parseModelFastInput();
-  const modelPro = parseInputOrDefault('model-pro', DEFAULT_MODEL_PRO);
-  const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
-  const maxFastTimelineEvents = applyMultiplier(12, multiplier);
-  const maxProTimelineEvents = applyMultiplier(40, multiplier);
-  const maxFastReadmeChars = applyMultiplier(0, multiplier);
-  const maxProReadmeChars = applyMultiplier(120000, multiplier);
-  const maxFastIssueBodyChars = applyMultiplier(4000, multiplier);
-  const maxProIssueBodyChars = applyMultiplier(20000, multiplier);
-  const maxFastTimelineTextChars = applyMultiplier(600, multiplier);
-  const maxProTimelineTextChars = applyMultiplier(4000, multiplier);
-  const maxProRuns = parsePositiveIntegerInput('max-pro-runs', DEFAULT_MAX_PRO_RUNS);
-  const maxFastRuns = parsePositiveIntegerInput('max-fast-runs', DEFAULT_MAX_FAST_RUNS);
+  const modelPro = parseInputOrDefault('model-pro', DEFAULTS.modelPro);
+  const multiplier = parseBudgetScaleInput('budget-scale', DEFAULTS.budgetScale);
+  const promptLimits = scaledPromptLimits(multiplier);
+  const maxProRuns = parsePositiveIntegerInput('max-pro-runs', DEFAULTS.maxProRuns);
+  const maxFastRuns = parsePositiveIntegerInput('max-fast-runs', DEFAULTS.maxFastRuns);
   const issueNumbers = parsePositiveIntegerList(core.getInput('issues'));
   const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = parseOptionalInput('additional-instructions');
@@ -136,14 +156,7 @@ export function getConfig(): Config {
     ...(dbPath ? { dbPath } : {}),
     modelFast,
     modelPro,
-    maxFastTimelineEvents,
-    maxProTimelineEvents,
-    maxFastReadmeChars,
-    maxProReadmeChars,
-    maxFastIssueBodyChars,
-    maxProIssueBodyChars,
-    maxFastTimelineTextChars,
-    maxProTimelineTextChars,
+    ...promptLimits,
     maxProRuns,
     maxFastRuns,
     ...(additionalInstructions ? { additionalInstructions } : {}),

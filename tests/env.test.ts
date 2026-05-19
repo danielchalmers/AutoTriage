@@ -142,11 +142,23 @@ describe('getConfig model inputs', () => {
     const scaled = getConfig();
     expect(scaled.maxFastTimelineEvents).toBe(18);
     expect(scaled.maxProTimelineEvents).toBe(60);
+    expect(scaled.maxFastReadmeChars).toBe(0);
+    expect(scaled.maxProReadmeChars).toBe(180000);
+    expect(scaled.maxFastIssueBodyChars).toBe(6000);
+    expect(scaled.maxProIssueBodyChars).toBe(30000);
+    expect(scaled.maxFastTimelineTextChars).toBe(900);
+    expect(scaled.maxProTimelineTextChars).toBe(6000);
 
     setInputs({ 'budget-scale': '-2' });
     const fallback = getConfig();
     expect(fallback.maxFastTimelineEvents).toBe(12);
     expect(fallback.maxProTimelineEvents).toBe(40);
+    expect(fallback.maxFastReadmeChars).toBe(0);
+    expect(fallback.maxProReadmeChars).toBe(120000);
+    expect(fallback.maxFastIssueBodyChars).toBe(4000);
+    expect(fallback.maxProIssueBodyChars).toBe(20000);
+    expect(fallback.maxFastTimelineTextChars).toBe(600);
+    expect(fallback.maxProTimelineTextChars).toBe(4000);
   });
 
   it('always uses README.md for README context', () => {
