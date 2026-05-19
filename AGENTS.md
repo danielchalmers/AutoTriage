@@ -26,9 +26,9 @@ Run the smallest useful verification first. For source changes that affect runti
 
 ## Build And Dist
 
-`dist/` is committed because GitHub Actions executes `dist/index.js` directly. Any change to runtime source, bundled assets, dependencies, or action metadata may require `npm run build`.
+`dist/` is committed because GitHub Actions executes `dist/index.js` directly.
 
-CI checks that generated `dist/` output is current. If `npm run build` changes `dist/`, keep those generated changes with the source change unless the user asked for analysis only.
+CI checks that generated `dist/` output is current, so always run `npm run build` before committing any changes.
 
 ## Behavior And Safety
 
