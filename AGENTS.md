@@ -40,7 +40,9 @@ Commit source, tests, and generated `dist/` together. For docs-only changes, `np
 
 `dist/` is committed because GitHub Actions executes `dist/index.js` directly.
 
-CI rebuilds and fails if `git status --porcelain` or `git diff --exit-code --name-only` reports generated changes. If `npm run build` changes `dist/`, commit the regenerated files instead of editing `dist/` by hand.
+CI rebuilds and fails if `git status --porcelain` or `git diff --exit-code --name-only` reports generated changes. A runtime-source PR is incomplete until `npm run build` has been run from that branch tip and any resulting `dist/` changes are committed. If CI fails only because `dist/` is stale, fix it by rebuilding and committing `dist/`; changing instructions or tests will not make the freshness check pass.
+
+If `npm run build` changes `dist/`, commit the regenerated files instead of editing `dist/` by hand.
 
 Runtime changes that usually require a build include:
 
