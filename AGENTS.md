@@ -11,7 +11,6 @@ AutoTriage is a Node 24 GitHub Action written in TypeScript. Source lives in `sr
 - Never edit `dist/` by hand. Regenerate it with `npm run build`.
 - Keep changes scoped to the request. Avoid drive-by refactors, formatting churn, and unrelated dependency updates.
 - Prefer existing patterns and local helpers over new abstractions.
-- Use ASCII unless the touched file already uses non-ASCII or the content requires it.
 
 ## Commands
 
@@ -22,13 +21,33 @@ AutoTriage is a Node 24 GitHub Action written in TypeScript. Source lives in `sr
 - Build action bundle: `npm run build`
 - Watch TypeScript: `npm run dev`
 
-Run the smallest useful verification first. For source changes that affect runtime behavior, run `npm run typecheck`, `npm test`, and `npm run build` when practical.
+## Development Workflow
+
+Run the smallest useful verification first while developing. Before committing runtime changes, run:
+
+```bash
+npm run typecheck
+npm run typecheck:test
+npm test
+npm run build
+git status --porcelain
+```
+
+Commit source, tests, and generated `dist/` together. For docs-only changes, `npm run build` is not required unless the docs change action inputs, examples copied into `dist/`, or other bundled assets.
 
 ## Build And Dist
 
 `dist/` is committed because GitHub Actions executes `dist/index.js` directly.
 
-CI checks that generated `dist/` output is current, so always run `npm run build` before committing any changes.
+CI rebuilds and fails if `git status --porcelain` or `git diff --exit-code --name-only` reports generated changes. If `npm run build` changes `dist/`, commit the regenerated files instead of editing `dist/` by hand.
+
+Runtime changes that usually require a build include:
+
+- changes under `src/`
+- changes to `examples/AutoTriage.prompt`
+- dependency or lockfile changes
+- changes to `action.yml`
+- build script or bundling changes in `package.json`
 
 ## Behavior And Safety
 
@@ -57,12 +76,5 @@ Avoid or remove low-quality tests when they:
 - Require broad mocks or fragile setup for little behavioral coverage.
 
 Prefer one focused test with strong assertions over several weak variations. When cleaning tests, preserve coverage for risky paths such as GitHub API calls, prompt construction, cache behavior, triage operation planning, database updates, and `dist` build expectations.
-
-## Runtime Inputs
-
-Local action runs need:
-
-- `GITHUB_TOKEN`
-- `GEMINI_API_KEY`
 
 Unit tests should not require real GitHub or Gemini credentials. Use mocks for API boundaries.
