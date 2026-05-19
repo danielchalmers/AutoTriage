@@ -46,12 +46,79 @@ export interface GenerateAnalysisOptions {
   useFlexTier?: boolean;
 }
 
+type PromptLimits = ReturnType<typeof getPromptLimits>;
+
+interface IssueContext {
+  fastTimelineEvents: TimelineEvent[];
+  proTimelineEvents: TimelineEvent[];
+  fastLimits: PromptLimits;
+  proLimits: PromptLimits;
+  runContext: string;
+}
+
+interface FastPassResult {
+  used: boolean;
+  plan?: FastPassPlan;
+  shouldSkipPro: boolean;
+}
+
+interface ProPassResult {
+  analysis: AnalysisResult;
+  operations: PlannedOperation[];
+}
+
 export async function processIssue(
   deps: IssueProcessorDeps,
   options: ProcessIssueOptions
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
   const { cfg, db, gh, gemini, stats } = deps;
   const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp } = options;
+
+  return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
+    const context = await loadIssueContext(
+      { cfg, db, gh },
+      { issue, autoDiscover }
+    );
+    const fastPass = await runFastPass(
+      { cfg, gemini, stats },
+      { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context }
+    );
+
+    if (fastPass.shouldSkipPro) {
+      console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
+      updateDbEntry(db, issue.number, fastPass.plan?.analysis.summary || issue.title);
+      return { triageUsed: false, fastRunUsed: fastPass.used };
+    }
+
+    const proPass = await runProPass(
+      { cfg, gemini, stats },
+      {
+        issue,
+        repoLabels,
+        systemPromptPro,
+        cacheInfos,
+        runTimestamp,
+        context,
+        ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
+      }
+    );
+
+    await executePlannedOperations(
+      { cfg, gh, stats },
+      { issue, operations: proPass.operations }
+    );
+
+    updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title);
+    return { triageUsed: true, fastRunUsed: fastPass.used };
+  });
+}
+
+async function loadIssueContext(
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'db' | 'gh'>,
+  options: Pick<ProcessIssueOptions, 'issue' | 'autoDiscover'>
+): Promise<IssueContext> {
+  const { cfg, db, gh } = deps;
+  const { issue, autoDiscover } = options;
   const dbEntry = getDbEntry(db, issue.number);
   const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
@@ -61,8 +128,6 @@ export async function processIssue(
   );
   const fastLimits = getPromptLimits(cfg, 'fast');
   const proLimits = getPromptLimits(cfg, 'pro');
-  const fastTimelineEvents = timelineEvents.slice(-fastLimits.timelineEvents);
-  const proTimelineEvents = timelineEvents.slice(-proLimits.timelineEvents);
   const runContext = buildRunContext(
     issue,
     rawTimelineEvents,
@@ -71,97 +136,130 @@ export async function processIssue(
     (trackedIssue, events) => gh.lastUpdated(trackedIssue, events)
   );
 
-  return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
-    saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
+  saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
-    let fastRunUsed = false;
-    let fastPassPlan: FastPassPlan | undefined;
+  return {
+    fastTimelineEvents: timelineEvents.slice(-fastLimits.timelineEvents),
+    proTimelineEvents: timelineEvents.slice(-proLimits.timelineEvents),
+    fastLimits,
+    proLimits,
+    runContext,
+  };
+}
 
-    if (!cfg.skipFastPass) {
-      const fastUserPrompt = buildUserPrompt(
-        issue,
-        fastTimelineEvents,
-        'fast',
-        fastLimits,
-        runContext,
-        undefined,
-        runTimestamp
-      );
-      saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
+async function runFastPass(
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'gemini' | 'stats'>,
+  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'systemPromptFast' | 'cacheInfos' | 'runTimestamp'> & {
+    context: IssueContext;
+  }
+): Promise<FastPassResult> {
+  const { cfg, gemini, stats } = deps;
+  const { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context } = options;
 
-      const { data: quickAnalysis, ops: quickOps } = await generateAnalysis(
-        { gemini, stats },
-        {
-          issue,
-          model: cfg.modelFast,
-          systemPrompt: systemPromptFast,
-          userPrompt: fastUserPrompt,
-          repoLabels,
-          isFastModel: true,
-          cacheInfo: cacheInfos.get('fast'),
-          useFlexTier: cacheInfos.has('fast'),
-        }
-      );
+  if (cfg.skipFastPass) {
+    console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
+    return { used: false, shouldSkipPro: false };
+  }
 
-      fastRunUsed = true;
-      fastPassPlan = {
-        analysis: quickAnalysis,
-        operations: quickOps,
-      };
+  const fastUserPrompt = buildUserPrompt(
+    issue,
+    context.fastTimelineEvents,
+    'fast',
+    context.fastLimits,
+    context.runContext,
+    undefined,
+    runTimestamp
+  );
+  saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
 
-      if (quickOps.length === 0) {
-        console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
-        updateDbEntry(db, issue.number, quickAnalysis.summary || issue.title);
-        return { triageUsed: false, fastRunUsed };
-      }
-    } else {
-      console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
-    }
-
-    const proUserPrompt = buildUserPrompt(
+  const { data: analysis, ops: operations } = await generateAnalysis(
+    { gemini, stats },
+    {
       issue,
-      proTimelineEvents,
-      'pro',
-      proLimits,
-      runContext,
-      fastPassPlan,
-      runTimestamp
-    );
-    saveArtifact(issue.number, 'prompt-user.md', proUserPrompt);
-
-    const { data: proAnalysis, ops: proOps } = await generateAnalysis(
-      { gemini, stats },
-      {
-        issue,
-        model: cfg.modelPro,
-        systemPrompt: systemPromptPro,
-        userPrompt: proUserPrompt,
-        repoLabels,
-        cacheInfo: cacheInfos.get('pro'),
-        useFlexTier: cacheInfos.has('pro'),
-      }
-    );
-
-    if (proOps.length === 0) {
-      console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
-    } else {
-      saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps, null, 2));
-      await executeOperations(proOps, {
-        issue,
-        dryRun: cfg.dryRun,
-        gh,
-        onAction: (op) => {
-          stats.trackAction({
-            issueNumber: issue.number,
-            type: op.kind,
-            details: describeOperation(op),
-          });
-        },
-      });
+      model: cfg.modelFast,
+      systemPrompt: systemPromptFast,
+      userPrompt: fastUserPrompt,
+      repoLabels,
+      isFastModel: true,
+      cacheInfo: cacheInfos.get('fast'),
+      useFlexTier: cacheInfos.has('fast'),
     }
+  );
 
-    updateDbEntry(db, issue.number, proAnalysis.summary || issue.title);
-    return { triageUsed: true, fastRunUsed };
+  return {
+    used: true,
+    plan: {
+      analysis,
+      operations,
+    },
+    shouldSkipPro: operations.length === 0,
+  };
+}
+
+async function runProPass(
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'gemini' | 'stats'>,
+  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'systemPromptPro' | 'cacheInfos' | 'runTimestamp'> & {
+    context: IssueContext;
+    fastPassPlan?: FastPassPlan;
+  }
+): Promise<ProPassResult> {
+  const { cfg, gemini, stats } = deps;
+  const { issue, repoLabels, systemPromptPro, cacheInfos, runTimestamp, context, fastPassPlan } = options;
+
+  const proUserPrompt = buildUserPrompt(
+    issue,
+    context.proTimelineEvents,
+    'pro',
+    context.proLimits,
+    context.runContext,
+    fastPassPlan,
+    runTimestamp
+  );
+  saveArtifact(issue.number, 'prompt-user.md', proUserPrompt);
+
+  const { data: analysis, ops: operations } = await generateAnalysis(
+    { gemini, stats },
+    {
+      issue,
+      model: cfg.modelPro,
+      systemPrompt: systemPromptPro,
+      userPrompt: proUserPrompt,
+      repoLabels,
+      cacheInfo: cacheInfos.get('pro'),
+      useFlexTier: cacheInfos.has('pro'),
+    }
+  );
+
+  return { analysis, operations };
+}
+
+async function executePlannedOperations(
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'gh' | 'stats'>,
+  options: {
+    issue: Issue;
+    operations: PlannedOperation[];
+  }
+): Promise<void> {
+  const { cfg, gh, stats } = deps;
+  const { issue, operations } = options;
+
+  if (operations.length === 0) {
+    console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
+    return;
+  }
+
+  saveArtifact(issue.number, 'operations.json', JSON.stringify(operations, null, 2));
+  await executeOperations(operations, {
+    issue,
+    dryRun: cfg.dryRun,
+    gh,
+    onAction: (op) => {
+      stats.trackAction({
+        issueNumber: issue.number,
+        type: op.kind,
+        details: describeOperation(op),
+      });
+    },
   });
 }
 
