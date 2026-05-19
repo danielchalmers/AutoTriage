@@ -10,7 +10,7 @@ import {
 import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics } from './stats';
-import { TriageOperation, planOperations } from './triage';
+import { PlannedOperation, describeOperation, executeOperations, planOperations } from './triage';
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
 
@@ -106,7 +106,7 @@ export async function processIssue(
       fastRunUsed = true;
       fastPassPlan = {
         analysis: quickAnalysis,
-        operations: quickOps.map((op) => op.toJSON()),
+        operations: quickOps,
       };
 
       if (quickOps.length === 0) {
@@ -145,15 +145,19 @@ export async function processIssue(
     if (proOps.length === 0) {
       console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
     } else {
-      saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps.map((op) => op.toJSON()), null, 2));
-      for (const op of proOps) {
-        await op.perform(gh, cfg, issue);
-        stats.trackAction({
-          issueNumber: issue.number,
-          type: op.kind,
-          details: op.getActionDetails(),
-        });
-      }
+      saveArtifact(issue.number, 'operations.json', JSON.stringify(proOps, null, 2));
+      await executeOperations(proOps, {
+        issue,
+        dryRun: cfg.dryRun,
+        gh,
+        onAction: (op) => {
+          stats.trackAction({
+            issueNumber: issue.number,
+            type: op.kind,
+            details: describeOperation(op),
+          });
+        },
+      });
     }
 
     updateDbEntry(db, issue.number, proAnalysis.summary || issue.title);
@@ -187,7 +191,7 @@ export function buildRunContext(
 export async function generateAnalysis(
   deps: Pick<IssueProcessorDeps, 'gemini' | 'stats'>,
   options: GenerateAnalysisOptions
-): Promise<{ data: AnalysisResult; thoughts: string; ops: TriageOperation[] }> {
+): Promise<{ data: AnalysisResult; thoughts: string; ops: PlannedOperation[] }> {
   const { gemini, stats } = deps;
   const {
     issue,

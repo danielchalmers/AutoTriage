@@ -1,112 +1,112 @@
-import type { Config } from './config';
 import type { AnalysisResult, ModelOperation } from './analysis';
-import type { GitHubClient } from './github';
+import type { Issue } from './github';
 import chalk from 'chalk';
 
-export interface TriageOperation {
-  kind: 'add_labels' | 'remove_labels' | 'comment' | 'set_title' | 'set_state';
-  toJSON(): any;
-  perform(client: GitHubClient, cfg: Config, issue: any): Promise<void>;
-  getActionDetails(): string;
+export type PlannedOperation =
+  | { kind: 'add_labels'; labels: string[]; authorization: string }
+  | { kind: 'remove_labels'; labels: string[]; authorization: string }
+  | { kind: 'comment'; body: string; authorization: string; thoughts?: string }
+  | { kind: 'set_title'; title: string; authorization: string }
+  | { kind: 'set_state'; state: 'open' | 'completed' | 'not_planned'; authorization: string };
+
+export interface GitHubWriteClient {
+  addLabels(issueNumber: number, labels: string[]): Promise<void>;
+  removeLabel(issueNumber: number, name: string): Promise<void>;
+  createComment(issueNumber: number, body: string): Promise<void>;
+  updateTitle(issueNumber: number, title: string): Promise<void>;
+  updateIssueState(
+    issueNumber: number,
+    state: 'open' | 'closed',
+    reason?: 'completed' | 'not_planned'
+  ): Promise<void>;
 }
 
-class AddLabelsOp implements TriageOperation {
-  kind: 'add_labels' = 'add_labels';
-  constructor(public labels: string[], public authorization: string) { }
-  toJSON() {
-    return { kind: this.kind, labels: this.labels, authorization: this.authorization };
+type StatefulIssue = Pick<Issue, 'number' | 'title' | 'state'> & {
+  state_reason?: string | null;
+};
+
+function formatCommentBody(body: string, thoughts?: string): string {
+  const thoughtLog = (thoughts ?? '').trim();
+  const hiddenBlock = thoughtLog.length ? thoughtLog : 'No thoughts provided';
+  return `${body}\n\n<!--\n${hiddenBlock}\n-->`;
+}
+
+function commentPreview(body: string): string {
+  return body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
+}
+
+export function describeOperation(operation: PlannedOperation): string {
+  switch (operation.kind) {
+    case 'add_labels':
+      return `labels: ${operation.labels.map(label => `+${label}`).join(', ')}`;
+    case 'remove_labels':
+      return `labels: ${operation.labels.map(label => `-${label}`).join(', ')}`;
+    case 'comment':
+      return 'comment';
+    case 'set_title':
+      return 'title change';
+    case 'set_state':
+      return `state: ${operation.state}`;
   }
-  getActionDetails(): string {
-    return `labels: ${this.labels.map(l => `+${l}`).join(', ')}`;
+}
+
+export async function executeOperations(
+  operations: PlannedOperation[],
+  context: {
+    issue: Pick<Issue, 'number' | 'title'>;
+    dryRun: boolean;
+    gh: GitHubWriteClient;
+    onAction?: (operation: PlannedOperation) => void;
   }
-  async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    if (this.labels.length) {
-      console.log(`${chalk.cyan('🏷️ Labels')}: ${this.labels.map(label => chalk.green(`+${label}`)).join(', ')}`);
-      if (!cfg.dryRun) await client.addLabels(issue.number, this.labels);
+): Promise<void> {
+  const { issue, dryRun, gh, onAction } = context;
+
+  for (const operation of operations) {
+    switch (operation.kind) {
+      case 'add_labels':
+        console.log(`${chalk.cyan('🏷️ Labels')}: ${operation.labels.map(label => chalk.green(`+${label}`)).join(', ')}`);
+        if (!dryRun) await gh.addLabels(issue.number, operation.labels);
+        break;
+      case 'remove_labels':
+        console.log(`${chalk.cyan('🏷️ Labels')}: ${operation.labels.map(label => chalk.red(`-${label}`)).join(', ')}`);
+        if (!dryRun) {
+          for (const label of operation.labels) {
+            await gh.removeLabel(issue.number, label);
+          }
+        }
+        break;
+      case 'comment':
+        console.log(chalk.cyan('💬 Comment:'));
+        console.log(chalk.green(commentPreview(operation.body)));
+        if (!dryRun) await gh.createComment(issue.number, formatCommentBody(operation.body, operation.thoughts));
+        break;
+      case 'set_title':
+        console.log(chalk.cyan('✏️ Title:'));
+        console.log(chalk.red(`-"${issue.title}"`));
+        console.log(chalk.green(`+"${operation.title}"`));
+        if (!dryRun) await gh.updateTitle(issue.number, operation.title);
+        break;
+      case 'set_state':
+        if (operation.state === 'open') {
+          console.log(`${chalk.cyan('🔄 State')}: Reopening issue`);
+          if (!dryRun) await gh.updateIssueState(issue.number, 'open');
+        } else {
+          console.log(`${chalk.cyan('🔄 State')}: Closing issue as ${operation.state}`);
+          if (!dryRun) await gh.updateIssueState(issue.number, 'closed', operation.state);
+        }
+        break;
     }
+
+    onAction?.(operation);
   }
 }
 
-class RemoveLabelsOp implements TriageOperation {
-  kind: 'remove_labels' = 'remove_labels';
-  constructor(public labels: string[], public authorization: string) { }
-  toJSON() {
-    return { kind: this.kind, labels: this.labels, authorization: this.authorization };
-  }
-  getActionDetails(): string {
-    return `labels: ${this.labels.map(l => `-${l}`).join(', ')}`;
-  }
-  async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    if (this.labels.length) {
-      console.log(`${chalk.cyan('🏷️ Labels')}: ${this.labels.map(label => chalk.red(`-${label}`)).join(', ')}`);
-      if (!cfg.dryRun) {
-        for (const name of this.labels) await client.removeLabel(issue.number, name);
-      }
-    }
-  }
-}
-
-// Post a model-suggested comment (includes hidden thoughts log for traceability).
-class CreateCommentOp implements TriageOperation {
-  kind: 'comment' = 'comment';
-  constructor(public body: string, public authorization: string, private thoughts?: string) { }
-  toJSON() { return { kind: this.kind, body: this.body, authorization: this.authorization }; }
-  getActionDetails(): string {
-    return 'comment';
-  }
-  async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    const preview = this.body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
-    const thoughtLog = (this.thoughts ?? '').trim();
-    const hiddenBlock = thoughtLog.length ? thoughtLog : 'No thoughts provided';
-    const body = `${this.body}\n\n<!--\n${hiddenBlock}\n-->`;
-    console.log(chalk.cyan('💬 Comment:'));
-    console.log(chalk.green(preview));
-    if (!cfg.dryRun) await client.createComment(issue.number, body);
-  }
-}
-
-// Retitle the issue / PR when model proposes a more canonical, specific title.
-class UpdateTitleOp implements TriageOperation {
-  kind: 'set_title' = 'set_title';
-  constructor(public title: string, public authorization: string) { }
-  toJSON() { return { kind: this.kind, title: this.title, authorization: this.authorization }; }
-  getActionDetails(): string {
-    return 'title change';
-  }
-  async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    console.log(chalk.cyan('✏️ Title:'));
-    console.log(chalk.red(`-"${issue.title}"`));
-    console.log(chalk.green(`+"${this.title}"`));
-    if (!cfg.dryRun) await client.updateTitle(issue.number, this.title);
-  }
-}
-
-// Update the issue state (open, completed, not_planned) where completed/not_planned map to closed + reason.
-class UpdateStateOp implements TriageOperation {
-  kind: 'set_state' = 'set_state';
-  constructor(public state: 'open' | 'completed' | 'not_planned', public authorization: string) { }
-  toJSON() { return { kind: this.kind, state: this.state, authorization: this.authorization }; }
-  getActionDetails(): string {
-    return `state: ${this.state}`;
-  }
-  async perform(client: GitHubClient, cfg: Config, issue: any): Promise<void> {
-    if (this.state === 'open') {
-      console.log(`${chalk.cyan('🔄 State')}: Reopening issue`);
-      if (!cfg.dryRun) await client.updateIssueState(issue.number, 'open');
-    } else {
-      console.log(`${chalk.cyan('🔄 State')}: Closing issue as ${this.state}`);
-      if (!cfg.dryRun) await client.updateIssueState(issue.number, 'closed', this.state);
-    }
-  }
-}
-
-// Ensure proposed labels exist in the repository; silently drop unknown labels.
 function filterLabels(labels: unknown, repoLabels: string[] | undefined): string[] {
   if (!Array.isArray(labels) || labels.length === 0) return [];
   const unique = [...new Set(labels.filter((label): label is string => typeof label === 'string' && label.trim().length > 0))];
   if (!repoLabels || repoLabels.length === 0) return unique;
   const allowed = new Set(repoLabels);
-  return unique.filter(l => allowed.has(l));
+  return unique.filter(label => allowed.has(label));
 }
 
 function hasAuthorization(op: unknown): op is ModelOperation {
@@ -120,20 +120,16 @@ function hasAuthorization(op: unknown): op is ModelOperation {
   return validKind && typeof maybe.authorization === 'string' && maybe.authorization.trim().length > 0;
 }
 
-/**
- * Translate model output into a concrete ordered list of operations.
- * Each operation must be explicitly present, authorized, and non-empty to produce executable work.
- */
 export function planOperations(
-  issue: any,
+  issue: StatefulIssue,
   analysis: AnalysisResult,
-  metadata: any,
+  metadata: { labels?: string[] },
   repoLabels?: string[],
   thoughts?: string
-): TriageOperation[] {
-  const ops: TriageOperation[] = [];
+): PlannedOperation[] {
+  const ops: PlannedOperation[] = [];
   const modelOps: unknown[] = Array.isArray(analysis.operations) ? analysis.operations : [];
-  const currentLabels = new Set(Array.isArray(metadata.labels) ? (metadata.labels as string[]) : []);
+  const currentLabels = new Set(Array.isArray(metadata.labels) ? metadata.labels : []);
 
   for (const op of modelOps) {
     if (!hasAuthorization(op)) continue;
@@ -141,38 +137,42 @@ export function planOperations(
     switch (op.kind) {
       case 'add_labels': {
         const labels = filterLabels(op.labels, repoLabels).filter(label => !currentLabels.has(label));
-        if (labels.length) {
+        if (labels.length > 0) {
           labels.forEach(label => currentLabels.add(label));
-          ops.push(new AddLabelsOp(labels, op.authorization));
+          ops.push({ kind: 'add_labels', labels, authorization: op.authorization });
         }
         break;
       }
       case 'remove_labels': {
         const labels = filterLabels(op.labels, repoLabels).filter(label => currentLabels.has(label));
-        if (labels.length) {
+        if (labels.length > 0) {
           labels.forEach(label => currentLabels.delete(label));
-          ops.push(new RemoveLabelsOp(labels, op.authorization));
+          ops.push({ kind: 'remove_labels', labels, authorization: op.authorization });
         }
         break;
       }
       case 'comment':
         if (typeof op.body === 'string' && op.body.trim().length > 0) {
-          ops.push(new CreateCommentOp(op.body, op.authorization, thoughts));
+          ops.push({
+            kind: 'comment',
+            body: op.body,
+            authorization: op.authorization,
+            ...(typeof thoughts === 'string' && thoughts.length > 0 ? { thoughts } : {}),
+          });
         }
         break;
       case 'set_title':
-        if (typeof op.title === 'string' && op.title.trim() && op.title !== issue.title) {
-          ops.push(new UpdateTitleOp(op.title, op.authorization));
+        if (typeof op.title === 'string' && op.title.trim().length > 0 && op.title !== issue.title) {
+          ops.push({ kind: 'set_title', title: op.title, authorization: op.authorization });
         }
         break;
       case 'set_state': {
-        const desired = op.state;
-        const currentState: 'open' | 'closed' = issue.state;
-        const currentReason: string | undefined = issue.state_reason;
-        if (desired === 'open') {
-          if (currentState !== 'open') ops.push(new UpdateStateOp('open', op.authorization));
-        } else if (currentState !== 'closed' || currentReason !== desired) {
-          ops.push(new UpdateStateOp(desired, op.authorization));
+        const currentState = issue.state;
+        const currentReason = issue.state_reason ?? undefined;
+        if (op.state === 'open') {
+          if (currentState !== 'open') ops.push({ kind: 'set_state', state: 'open', authorization: op.authorization });
+        } else if (currentState !== 'closed' || currentReason !== op.state) {
+          ops.push({ kind: 'set_state', state: op.state, authorization: op.authorization });
         }
         break;
       }

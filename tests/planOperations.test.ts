@@ -3,88 +3,128 @@ import { planOperations } from '../src/triage';
 import type { AnalysisResult } from '../src/analysis';
 
 describe('planOperations', () => {
-  const baseIssue = { number: 1, title: 'Original title', state: 'open' } as any;
+  const baseIssue = { number: 1, title: 'Original title', state: 'open' } as const;
   const baseMetadata = { labels: ['bug', 'help wanted'] };
 
-  it('produces label update op when labels differ', () => {
+  it('produces plain label update data when labels differ', () => {
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'add_labels', labels: ['feature'], authorization: 'policy allows feature labels' }],
     };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, ['bug', 'feature']);
-    const kinds = ops.map(o => o.kind);
-    expect(kinds).toContain('add_labels');
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, ['bug', 'feature'])).toEqual([
+      { kind: 'add_labels', labels: ['feature'], authorization: 'policy allows feature labels' },
+    ]);
   });
 
-  it('filters unknown labels (dropping ghost but may still diff others)', () => {
+  it('filters unknown labels', () => {
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'add_labels', labels: ['bug', 'ghost'], authorization: 'policy allows bug labels' }],
     };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, ['bug']);
-    expect(ops).toEqual([]);
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, ['bug'])).toEqual([]);
   });
 
-  it('adds comment op when comment present', () => {
+  it('drops duplicate and no-op label changes while preserving order', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [
+        { kind: 'add_labels', labels: ['feature', 'feature', 'bug'], authorization: 'policy allows feature labels' },
+        { kind: 'remove_labels', labels: ['help wanted', 'help wanted', 'ghost'], authorization: 'policy allows cleanup' },
+        { kind: 'add_labels', labels: ['help wanted'], authorization: 'policy allows restore' },
+      ],
+    };
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, ['bug', 'feature', 'help wanted'])).toEqual([
+      { kind: 'add_labels', labels: ['feature'], authorization: 'policy allows feature labels' },
+      { kind: 'remove_labels', labels: ['help wanted'], authorization: 'policy allows cleanup' },
+      { kind: 'add_labels', labels: ['help wanted'], authorization: 'policy allows restore' },
+    ]);
+  });
+
+  it('adds comment data when comment present', () => {
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'comment', body: 'Hello there', authorization: 'policy requires a response' }],
     };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, []);
-    expect(ops.some(o => o.kind === 'comment')).toBe(true);
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [], 'internal reasoning')).toEqual([
+      {
+        kind: 'comment',
+        body: 'Hello there',
+        authorization: 'policy requires a response',
+        thoughts: 'internal reasoning',
+      },
+    ]);
   });
 
-  it('adds title op when title changes', () => {
+  it('ignores empty comments', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [{ kind: 'comment', body: '   ', authorization: 'policy requires a response' }],
+    };
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
+  });
+
+  it('adds title data when title changes', () => {
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'set_title', title: 'Better title', authorization: 'policy allows title edits' }],
     };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, []);
-    expect(ops.some(o => o.kind === 'set_title')).toBe(true);
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([
+      { kind: 'set_title', title: 'Better title', authorization: 'policy allows title edits' },
+    ]);
   });
 
-  it('does not add title op when unchanged', () => {
+  it('does not add title data when unchanged', () => {
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'set_title', title: 'Original title', authorization: 'policy allows title edits' }],
     };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, []);
-    expect(ops.some(o => o.kind === 'set_title')).toBe(false);
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
   });
 
-  it('adds state op when closing with reason', () => {
+  it('adds state data when closing with reason', () => {
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'set_state', state: 'completed', authorization: 'policy allows closing completed work' }],
     };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, []);
-    expect(ops.some(o => o.kind === 'set_state')).toBe(true);
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([
+      { kind: 'set_state', state: 'completed', authorization: 'policy allows closing completed work' },
+    ]);
   });
 
-  it('no state op when already closed with same reason', () => {
-    const issue = { ...baseIssue, state: 'closed', state_reason: 'completed' };
+  it('adds no state data when already closed with same reason', () => {
+    const issue = { ...baseIssue, state: 'closed', state_reason: 'completed' } as const;
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'set_state', state: 'completed', authorization: 'policy allows closing completed work' }],
     };
-    const ops = planOperations(issue, analysis, baseMetadata, []);
-    expect(ops.some(o => o.kind === 'set_state')).toBe(false);
+
+    expect(planOperations(issue, analysis, baseMetadata, [])).toEqual([]);
   });
 
-  it('reopen op when desired open and currently closed', () => {
-    const issue = { ...baseIssue, state: 'closed', state_reason: 'completed' };
+  it('adds reopen data when desired open and currently closed', () => {
+    const issue = { ...baseIssue, state: 'closed', state_reason: 'completed' } as const;
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'set_state', state: 'open', authorization: 'policy allows reopening when info arrives' }],
     };
-    const ops = planOperations(issue, analysis, baseMetadata, []);
-    expect(ops.some(o => o.kind === 'set_state')).toBe(true);
+
+    expect(planOperations(issue, analysis, baseMetadata, [])).toEqual([
+      { kind: 'set_state', state: 'open', authorization: 'policy allows reopening when info arrives' },
+    ]);
   });
 
   it('returns no operations for an explicit empty operation plan', () => {
     const analysis: AnalysisResult = { summary: 's', operations: [] };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, []);
-    expect(ops).toEqual([]);
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
   });
 
   it('skips operations without authorization', () => {
@@ -92,8 +132,8 @@ describe('planOperations', () => {
       summary: 's',
       operations: [{ kind: 'comment', body: 'Hello there', authorization: '' }],
     };
-    const ops = planOperations(baseIssue, analysis, baseMetadata, []);
-    expect(ops).toEqual([]);
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
   });
 
   it('skips malformed operations instead of inferring work', () => {
@@ -101,7 +141,7 @@ describe('planOperations', () => {
       summary: 's',
       operations: [null, { kind: 'labels', labels: ['feature'], authorization: 'old shape' }],
     } as unknown as AnalysisResult;
-    const ops = planOperations(baseIssue, analysis, baseMetadata, ['feature']);
-    expect(ops).toEqual([]);
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, ['feature'])).toEqual([]);
   });
 });
