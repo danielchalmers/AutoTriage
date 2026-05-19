@@ -3,6 +3,7 @@ import * as github from '@actions/github';
 export type Issue = {
   title: string;
   state: string;
+  state_reason?: string | null;
   type: string;
   number: number;
   author: string;
@@ -70,6 +71,7 @@ export class GitHubClient {
     return {
       title: rawIssue.title,
       state: rawIssue.state,
+      state_reason: rawIssue.state_reason ?? null,
       type: rawIssue.pull_request ? 'pull request' : 'issue',
       number: rawIssue.number,
       author: rawIssue.user?.login || 'unknown',
