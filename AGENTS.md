@@ -1,101 +1,261 @@
 # AGENTS.md
 
-Guidance for agents working in this repository.
+This document provides comprehensive instructions for AI agents and developers working on the AutoTriage project. It outlines the setup process, development workflow, testing procedures, and build requirements.
 
-## Project
+## Project Overview
 
-AutoTriage is a Node 24 GitHub Action written in TypeScript. Source lives in `src/`, tests live in `tests/`, and the action entrypoint is the generated `dist/index.js`.
+AutoTriage is a GitHub Action that uses AI to automatically triage issues and pull requests. It's built with TypeScript and requires Node.js 24+ for development, and runs on Node.js 24 in GitHub Actions.
 
-## Ground Rules
+## Prerequisites
 
-- Never edit `dist/` by hand. Regenerate it with `npm run build`.
-- Keep changes scoped to the request. Avoid drive-by refactors, formatting churn, and unrelated dependency updates.
-- Prefer existing patterns and local helpers over new abstractions.
-- Before committing, run `git status --short` and confirm only files relevant to the request are staged. Do not stage unrelated user changes.
+- **Node.js**: Version 24 or higher (specified in `package.json` engines)
+- **npm**: Comes bundled with Node.js
+- **Git**: For version control
+- **GitHub Token**: Required for testing (set as `GITHUB_TOKEN` environment variable)
+- **Gemini API Key**: Required for AI functionality when running the action locally (set as `GEMINI_API_KEY` environment variable)
 
-## Commands
+## Repository Structure
 
-- Install dependencies: `npm ci`
-- Type-check source: `npm run typecheck`
-- Type-check tests: `npm run typecheck:test`
-- Run tests: `npm test`
-- Build action bundle: `npm run build`
-- Watch TypeScript: `npm run dev`
+```
+AutoTriage/
+├── .github/          # GitHub workflows and configuration
+├── dist/             # Compiled output (generated, committed to repo)
+├── examples/         # Example prompts and workflows
+├── src/              # TypeScript source code
+├── tests/            # Test files using Vitest
+├── action.yml        # GitHub Action metadata
+├── package.json      # Dependencies and scripts
+├── tsconfig.json     # TypeScript configuration
+└── vitest.config.ts  # Test configuration
+```
+
+## Initial Setup
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/danielchalmers/AutoTriage.git
+cd AutoTriage
+```
+
+### 2. Install Dependencies
+
+```bash
+npm ci
+```
+
+Use `npm ci` (clean install) for reproducible builds based on `package-lock.json`.
+
+### 3. Set Up Environment Variables
+
+Create a `.env` file in the root directory (this file is gitignored):
+
+```bash
+GITHUB_TOKEN=your_github_token_here
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+These are required for local development when exercising the action against GitHub and Gemini. Unit tests do not require `GEMINI_API_KEY`.
 
 ## Development Workflow
 
-Run the smallest useful verification first while developing. Before committing runtime changes, use this sequence:
+### Available npm Scripts
 
-1. Run `npm run typecheck`.
-2. Run `npm run typecheck:test`.
-3. Run `npm test`.
-4. Run `npm run build` from the branch tip.
-5. Run `git status --porcelain`.
-6. Run `git diff --exit-code --name-only`.
-7. If either Git check reports generated `dist/` changes, stage and commit those generated files with the source change.
-8. Run `git status --porcelain` again and make sure no build-generated changes remain.
+- `npm run typecheck` - Type-check TypeScript without emitting files
+- `npm run dev` - Watch mode for TypeScript compilation
+- `npm run build` - Full production build (includes typecheck, clean, compile, and asset copy)
+- `npm run clean` - Remove the dist directory
+- `npm run copy-assets` - Copy required assets to dist folder
+- `npm test` - Run all tests once
+- `npm run test:watch` - Run tests in watch mode
 
-The command form is:
+### TypeScript Development
+
+1. Make changes to source files in `src/`
+2. Run type checking: `npm run typecheck`
+3. For continuous development, use watch mode: `npm run dev`
+
+### Testing
+
+Tests are located in the `tests/` directory and use Vitest.
+
+#### Running Tests
 
 ```bash
-npm run typecheck
-npm run typecheck:test
+# Run all tests once
 npm test
+
+# Run tests in watch mode (for development)
+npm run test:watch
+```
+
+#### Test Environment
+
+- Tests use Vitest with Node.js environment
+- Setup file: `tests/setupEnv.ts`
+- Test files: `tests/**/*.test.ts`
+
+## Building the Project
+
+### Creating the dist Folder
+
+The `dist/` folder contains the compiled, bundled JavaScript that GitHub Actions executes. **This folder must be committed to the repository** as GitHub Actions runs directly from it.
+
+#### Build Process
+
+```bash
 npm run build
+```
+
+This command performs the following steps:
+
+1. **Type-checking** (`npm run typecheck`) - Validates TypeScript code
+2. **Clean** (`rimraf dist`) - Removes existing dist folder
+3. **Bundle** (`ncc build`) - Compiles and bundles TypeScript to a single JavaScript file
+   - Minifies the output
+   - Generates source maps
+   - Includes license information in `licenses.txt`
+4. **Copy Assets** (`npm run copy-assets`) - Copies `examples/AutoTriage.prompt` to dist as the bundled default prompt
+
+#### Important: Commit dist Changes
+
+After building, the `dist/` folder contents must be committed:
+
+```bash
+npm run build
+git add dist/
+git commit -m "Build: Update dist folder"
+```
+
+The CI workflow (`ci.yml`) verifies that the dist folder is up to date:
+
+```bash
 git status --porcelain
 git diff --exit-code --name-only
 ```
 
-Commit source, tests, and generated `dist/` together. Do not open, update, or mark a PR ready for review when `npm run build` still leaves `dist/` modified. For docs-only changes, `npm run build` is not required unless the docs change action inputs, examples copied into `dist/`, or other bundled assets.
+If you forget to rebuild dist after changing source code, the CI will fail.
 
-If a required verification command cannot be run, mention the exact command and reason in the final response.
+## Pre-commit Checklist
 
-## Build And Dist
+Before committing changes, ensure:
 
-`dist/` is committed because GitHub Actions executes `dist/index.js` directly.
+1. ✅ **Type-check passes**: `npm run typecheck`
+2. ✅ **Tests pass**: `npm test`
+3. ✅ **Build succeeds**: `npm run build`
+4. ✅ **dist is up to date**: Commit any changes in `dist/` folder
+5. ✅ **No uncommitted changes in dist**: `git status` shows clean dist
 
-CI rebuilds and fails if `git status --porcelain` or `git diff --exit-code --name-only` reports generated changes. A runtime-source PR is incomplete until `npm run build` has been run from that branch tip and any resulting `dist/` changes are committed. If CI fails only because `dist/` is stale, fix it by rebuilding and committing `dist/`; changing instructions or tests will not make the freshness check pass.
+## Continuous Integration
 
-If `npm run build` changes `dist/index.js`, `dist/index.js.map`, `dist/*.js`, `dist/*.map`, `dist/licenses.txt`, or copied bundled assets, commit those files. Never edit generated `dist/` files by hand.
+The project uses GitHub Actions for CI (`.github/workflows/ci.yml`):
 
-Runtime changes that usually require a build include:
+1. Installs dependencies with `npm ci`
+2. Runs type-checking
+3. Builds the project
+4. Verifies dist folder is up to date
+5. Runs a mock triage test
+6. Runs unit tests (separate workflow: `tests.yml`)
 
-- changes under `src/`
-- changes to `examples/AutoTriage.prompt`
-- dependency or lockfile changes
-- changes to `action.yml`
-- build script or bundling changes in `package.json`
+## Common Tasks
 
-## Behavior And Safety
+### Adding New Dependencies
 
-`README.md` and `action.yml` describe the public action contract. Keep them aligned with behavior changes.
+```bash
+# Add production dependency
+npm install <package-name>
 
-For changes to inputs, defaults, permissions, runtime behavior, labels/comments/state/title operations, or artifacts, review whether `README.md`, `action.yml`, and examples need updates.
+# Add development dependency
+npm install -D <package-name>
 
-AutoTriage may apply labels, comments, title changes, and issue state changes. Preserve default-deny authorization behavior unless the user explicitly asks to change it. Malformed, unauthorized, unknown-label, empty, or no-op model operations must not produce GitHub mutations.
+# Rebuild after adding dependencies
+npm run build
+```
 
-Treat prompt, schema, and operation-planning changes as runtime behavior changes; run the relevant tests and build.
+### Updating TypeScript Code
 
-Do not downgrade Node, `package.json` engines, or `action.yml` runtime without explicit request.
+1. Edit source files in `src/`
+2. Run `npm run typecheck` to verify types
+3. Run `npm test` to ensure tests pass
+4. Run `npm run build` to update dist
+5. Commit both source and dist changes
 
-## Tests
+### Debugging
 
-Tests use Vitest and should protect behavior, not just increase count.
+For debugging the action locally:
 
-Add or keep tests when they:
+1. Set up `.env` file with required tokens
+2. Use the mock triage setup from CI:
+   ```bash
+   # Build first
+   npm run build
+   
+   # Then test locally (requires proper GitHub Action environment)
+   ```
 
-- Assert observable behavior, data shape, side effects, or error handling.
-- Cover a regression, boundary case, integration contract, or permission/safety rule.
-- Would fail for a realistic broken implementation.
+### Working with the GitHub Action
 
-Avoid or remove low-quality tests when they:
+The action is defined in `action.yml` and runs from `dist/index.js`. Key points:
 
-- Only assert that a function "does not throw" without checking meaningful output.
-- Duplicate another test with different names but the same behavior.
-- Mirror implementation details so closely that refactors break tests without behavior changing.
-- Check trivial getters, setters, constants, or framework wiring unless those are part of a public contract.
-- Require broad mocks or fragile setup for little behavioral coverage.
+- **Entry point**: `dist/index.js`
+- **Runtime**: Node.js 24 (specified in `action.yml`)
+- **Inputs**: Defined in `action.yml`
+- **Default prompt path**: `.github/AutoTriage.prompt` (where users place their custom prompt)
+- **Bundled prompt**: `examples/AutoTriage.prompt` (copied to dist during build as fallback)
 
-Prefer one focused test with strong assertions over several weak variations. When cleaning tests, preserve coverage for risky paths such as GitHub API calls, prompt construction, cache behavior, triage operation planning, database updates, and `dist` build expectations.
+## File Artifacts
 
-Unit tests should not require real GitHub or Gemini credentials. Use mocks for API boundaries.
+The action generates artifacts during execution:
+
+- `triage-db.json` - Stores per-item history between runs
+- `artifacts/` - Contains thought processes and action logs
+
+These are gitignored but uploaded as workflow artifacts in CI.
+
+## Troubleshooting
+
+### Build Failures
+
+**Issue**: `npm run build` fails
+- Check Node.js version: `node --version` (must be 24+)
+- Clear node_modules: `rm -rf node_modules && npm ci`
+- Check TypeScript errors: `npm run typecheck`
+
+### Test Failures
+
+**Issue**: Action runs fail with API errors
+- Ensure `GEMINI_API_KEY` is set in `.env` when running the action against Gemini
+- Ensure `GITHUB_TOKEN` is set in `.env`
+- Check internet connectivity
+
+### dist Out of Sync
+
+**Issue**: CI fails with "Ensure dist is up to date"
+- Run `npm run build` locally
+- Commit the updated dist folder
+- Push changes
+
+## Best Practices
+
+1. **Always rebuild dist** after changing source code
+2. **Run type-check** before committing
+3. **Run tests** to catch regressions
+4. **Use `npm ci`** in CI/CD and for clean installs
+5. **Keep dist committed** - GitHub Actions needs it
+6. **Don't edit dist manually** - always regenerate with `npm run build`
+7. **Follow TypeScript strict mode** - project uses strict compiler options
+
+## Additional Resources
+
+- **README.md** - User-facing documentation and setup guide
+- **action.yml** - GitHub Action configuration and input definitions
+- **examples/** - Sample prompts and workflow configurations
+- **.github/workflows/** - CI/CD pipeline definitions
+
+## Questions?
+
+For questions or issues:
+1. Check existing issues on GitHub
+2. Review the README.md for user documentation
+3. Examine the CI workflows for expected behavior
+4. Consult TypeScript and GitHub Actions documentation
