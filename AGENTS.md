@@ -11,6 +11,7 @@ AutoTriage is a Node 24 GitHub Action written in TypeScript. Source lives in `sr
 - Never edit `dist/` by hand. Regenerate it with `npm run build`.
 - Keep changes scoped to the request. Avoid drive-by refactors, formatting churn, and unrelated dependency updates.
 - Prefer existing patterns and local helpers over new abstractions.
+- Before committing, run `git status --short` and confirm only files relevant to the request are staged. Do not stage unrelated user changes.
 
 ## Commands
 
@@ -23,7 +24,18 @@ AutoTriage is a Node 24 GitHub Action written in TypeScript. Source lives in `sr
 
 ## Development Workflow
 
-Run the smallest useful verification first while developing. Before committing runtime changes, run:
+Run the smallest useful verification first while developing. Before committing runtime changes, use this sequence:
+
+1. Run `npm run typecheck`.
+2. Run `npm run typecheck:test`.
+3. Run `npm test`.
+4. Run `npm run build` from the branch tip.
+5. Run `git status --porcelain`.
+6. Run `git diff --exit-code --name-only`.
+7. If either Git check reports generated `dist/` changes, stage and commit those generated files with the source change.
+8. Run `git status --porcelain` again and make sure no build-generated changes remain.
+
+The command form is:
 
 ```bash
 npm run typecheck
@@ -34,7 +46,9 @@ git status --porcelain
 git diff --exit-code --name-only
 ```
 
-Commit source, tests, and generated `dist/` together. For docs-only changes, `npm run build` is not required unless the docs change action inputs, examples copied into `dist/`, or other bundled assets.
+Commit source, tests, and generated `dist/` together. Do not open, update, or mark a PR ready for review when `npm run build` still leaves `dist/` modified. For docs-only changes, `npm run build` is not required unless the docs change action inputs, examples copied into `dist/`, or other bundled assets.
+
+If a required verification command cannot be run, mention the exact command and reason in the final response.
 
 ## Build And Dist
 
@@ -42,7 +56,7 @@ Commit source, tests, and generated `dist/` together. For docs-only changes, `np
 
 CI rebuilds and fails if `git status --porcelain` or `git diff --exit-code --name-only` reports generated changes. A runtime-source PR is incomplete until `npm run build` has been run from that branch tip and any resulting `dist/` changes are committed. If CI fails only because `dist/` is stale, fix it by rebuilding and committing `dist/`; changing instructions or tests will not make the freshness check pass.
 
-If `npm run build` changes `dist/`, commit the regenerated files instead of editing `dist/` by hand.
+If `npm run build` changes `dist/index.js`, `dist/index.js.map`, `dist/*.js`, `dist/*.map`, `dist/licenses.txt`, or copied bundled assets, commit those files. Never edit generated `dist/` files by hand.
 
 Runtime changes that usually require a build include:
 
@@ -56,7 +70,11 @@ Runtime changes that usually require a build include:
 
 `README.md` and `action.yml` describe the public action contract. Keep them aligned with behavior changes.
 
-AutoTriage may apply labels, comments, title changes, and issue state changes. Preserve default-deny authorization behavior unless the user explicitly asks to change it.
+For changes to inputs, defaults, permissions, runtime behavior, labels/comments/state/title operations, or artifacts, review whether `README.md`, `action.yml`, and examples need updates.
+
+AutoTriage may apply labels, comments, title changes, and issue state changes. Preserve default-deny authorization behavior unless the user explicitly asks to change it. Malformed, unauthorized, unknown-label, empty, or no-op model operations must not produce GitHub mutations.
+
+Treat prompt, schema, and operation-planning changes as runtime behavior changes; run the relevant tests and build.
 
 Do not downgrade Node, `package.json` engines, or `action.yml` runtime without explicit request.
 
