@@ -32,7 +32,6 @@ jobs:
           issues: ${{ github.event.pull_request.number }}
           prompt-path: .github/AutoTriage.prompt
           db-path: triage-db.json
-          model-fast: ""
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
