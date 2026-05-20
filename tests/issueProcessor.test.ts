@@ -195,6 +195,9 @@ describe('processIssue', () => {
     } as any;
 
     try {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-04-11T12:00:00.000Z'));
+
       const result = await processIssue(
         {
           cfg: createConfig({ dryRun: false }),
@@ -230,6 +233,7 @@ describe('processIssue', () => {
       expect(files).toContain('42-operations.json');
       expect(fs.readFileSync(path.join(artifactsDir, '42-operations.json'), 'utf8')).toContain('"kind": "add_labels"');
     } finally {
+      vi.useRealTimers();
       cwdSpy.mockRestore();
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

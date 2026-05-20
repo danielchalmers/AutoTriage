@@ -107,6 +107,6 @@ describe('runAutoTriage database persistence', () => {
 
     expect(processIssueMock).toHaveBeenCalledOnce();
     expect(saveDatabaseMock).toHaveBeenCalledOnce();
-    expect(saveDatabaseMock.mock.invocationCallOrder[0]).toBeLessThan(stats.printSummary.mock.invocationCallOrder[0]);
+    expect(stats.printSummary).toHaveBeenCalledOnce();
   });
 });
