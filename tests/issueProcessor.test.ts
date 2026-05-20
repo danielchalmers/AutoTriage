@@ -239,4 +239,71 @@ describe('processIssue', () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it('falls back to the original updated_at when the post-action refresh fails', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-process-issue-'));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const db: TriageDb = { version: 2, items: {} };
+    const stats = new RunStatistics();
+    const gh = {
+      listTimelineEvents: vi.fn().mockResolvedValue({
+        raw: timelineEvents,
+        filtered: timelineEvents,
+      }),
+      lastUpdated: vi.fn().mockReturnValue(Date.parse('2024-04-11T00:00:00Z')),
+      getIssue: vi.fn().mockRejectedValue(new Error('refresh failed')),
+      addLabels: vi.fn().mockResolvedValue(undefined),
+      removeLabel: vi.fn().mockResolvedValue(undefined),
+      createComment: vi.fn().mockResolvedValue(undefined),
+      updateTitle: vi.fn().mockResolvedValue(undefined),
+      updateIssueState: vi.fn().mockResolvedValue(undefined),
+    } as any;
+    const gemini = {
+      generateJson: vi.fn().mockResolvedValue({
+        data: {
+          summary: 'Pro summary',
+          operations: [{ kind: 'add_labels', labels: ['bug'], authorization: 'pro policy' }],
+        },
+        thoughts: 'Pro thoughts',
+        inputTokens: 20,
+        cachedInputTokens: 0,
+        outputTokens: 10,
+      }),
+    } as any;
+
+    try {
+      const result = await processIssue(
+        {
+          cfg: createConfig({ dryRun: false, skipFastPass: true }),
+          db,
+          gh,
+          gemini,
+          stats,
+        },
+        {
+          issue: baseIssue,
+          repoLabels: [{ name: 'bug' }],
+          autoDiscover: false,
+          systemPromptFast: '',
+          systemPromptPro: 'pro system prompt',
+          cacheInfos: new Map(),
+          runTimestamp: '2026-05-19T16:16:13.737Z',
+        }
+      );
+
+      expect(result).toEqual({ triageUsed: true, fastRunUsed: false });
+      expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+      expect(gh.getIssue).toHaveBeenCalledWith(42);
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(db.items['42']).toMatchObject({
+        summary: 'Pro summary',
+        lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
+      });
+    } finally {
+      warnSpy.mockRestore();
+      cwdSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

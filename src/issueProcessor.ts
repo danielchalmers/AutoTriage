@@ -128,11 +128,23 @@ async function resolveConsumedIssue(
     return issue;
   }
 
-  return gh.getIssue(issue.number);
+  try {
+    return await gh.getIssue(issue.number);
+  } catch (err) {
+    console.warn(
+      `⚠️ Failed to refresh #${issue.number} after applying operations: ${getErrorMessage(err)}. ` +
+      'Using the pre-action updated_at watermark.'
+    );
+    return issue;
+  }
 }
 
 function getConsumedUpdatedAt(issue: Pick<Issue, 'updated_at' | 'created_at'>): string | undefined {
   return issue.updated_at || issue.created_at;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function loadIssueContext(
