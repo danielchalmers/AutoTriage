@@ -9,19 +9,27 @@ AutoTriage is a GitHub Action for AI-assisted issue and pull request triage. It 
 3. Add a dry-run workflow:
 
 ```yaml
-name: triage
+name: AutoTriage
+
 on:
-  schedule:
-    - cron: "0 0 * * *"
+  pull_request_target:
+    types: [opened]
+  issues:
+    types: [opened]
+
 jobs:
   triage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: AutoTriage
-        uses: danielchalmers/AutoTriage@v4
+
+      - uses: danielchalmers/AutoTriage@v4
         with:
+          issues: ${{ github.event.pull_request.number || github.event.issue.number }}
           dry-run: "true" # change to "false" after reviewing the plan output
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```
 
 For event-specific workflows, start from the examples in [`examples/workflows`](./examples/workflows/):
