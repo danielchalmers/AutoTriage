@@ -19,6 +19,9 @@ vi.mock('../src/issueProcessor', async () => {
   };
 });
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { Issue } from '../src/github';
 import type { Config } from '../src/config';
@@ -265,5 +268,32 @@ describe('runAutoTriage automatic backlog caching', () => {
     expect(options.autoDiscover).toBe(true);
     expect(options.cacheInfos.size).toBe(0);
     expect(gemini.deleteCache).not.toHaveBeenCalled();
+  });
+
+  it('saves the database after processing the item that reaches max-pro-runs', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-runner-db-'));
+    const dbPath = path.join(tempDir, 'triage-db.json');
+    const gh = createGitHub();
+    const gemini = createGemini();
+    const stats = createStats();
+
+    try {
+      await runAutoTriage({
+        cfg: { ...baseConfig, dbPath, dryRun: false, issueNumbers: [5], maxProRuns: 1 },
+        db: makeDb({ '5': { lastTriaged: '2024-04-01T00:00:00Z' } }),
+        gh: gh as any,
+        gemini: gemini as any,
+        stats: stats as any,
+      });
+
+      expect(JSON.parse(fs.readFileSync(dbPath, 'utf8'))).toEqual({
+        version: 2,
+        items: {
+          '5': { lastTriaged: '2024-04-01T00:00:00Z' },
+        },
+      });
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
