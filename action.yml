@@ -44,7 +44,7 @@ inputs:
     required: false
     default: "gemini-3.1-flash-lite"
   prompt-path:
-    description: "Repo-relative path to the triage prompt. If missing, AutoTriage uses a built-in label-only policy."
+    description: "Repo-relative path to the triage prompt."
     required: false
     default: ".github/AutoTriage.prompt"
   strict-mode:

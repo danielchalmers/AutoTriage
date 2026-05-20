@@ -4,7 +4,7 @@ AutoTriage is a GitHub Action for AI-assisted issue and pull request triage. It 
 
 ## Quick setup
 
-1. Optional but recommended: copy the [default prompt](./examples/AutoTriage.prompt) into your repo as `.github/AutoTriage.prompt` and define your triage rules. If you skip this, AutoTriage falls back to a built-in label-only policy.
+1. Copy the [default prompt](./examples/AutoTriage.prompt) into your repo as `.github/AutoTriage.prompt` and define your triage rules.
 2. Add a `GEMINI_API_KEY` secret to your repository or organization.
 3. Add a dry-run workflow:
 
