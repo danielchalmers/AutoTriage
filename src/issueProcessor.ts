@@ -86,7 +86,9 @@ export async function processIssue(
 
     if (fastPass.shouldSkipPro) {
       console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
-      updateDbEntry(db, issue.number, fastPass.plan?.analysis.summary || issue.title);
+      updateDbEntry(db, issue.number, fastPass.plan?.analysis.summary || issue.title, {
+        lastSeenUpdatedAt: getConsumedUpdatedAt(issue),
+      });
       return { triageUsed: false, fastRunUsed: fastPass.used };
     }
 
@@ -108,9 +110,41 @@ export async function processIssue(
       { issue, operations: proPass.operations }
     );
 
-    updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title);
+    const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations);
+    updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title, {
+      lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
+    });
     return { triageUsed: true, fastRunUsed: fastPass.used };
   });
+}
+
+async function resolveConsumedIssue(
+  gh: Pick<IssueProcessorDeps, 'gh'>['gh'],
+  dryRun: boolean,
+  issue: Issue,
+  operations: PlannedOperation[]
+): Promise<Issue> {
+  if (dryRun || operations.length === 0) {
+    return issue;
+  }
+
+  try {
+    return await gh.getIssue(issue.number);
+  } catch (err) {
+    console.warn(
+      `⚠️ Failed to refresh #${issue.number} after applying operations: ${getErrorMessage(err)}. ` +
+      'Using the pre-action updated_at watermark.'
+    );
+    return issue;
+  }
+}
+
+function getConsumedUpdatedAt(issue: Pick<Issue, 'updated_at' | 'created_at'>): string | undefined {
+  return issue.updated_at || issue.created_at;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function loadIssueContext(

@@ -41,7 +41,7 @@ export function filterPreviouslyTriagedClosedIssuesWithNewActivity(issues: Issue
     if (triagedMs === 0) return false; // Never triaged before (or invalid timestamp)
     const closedMs = safeParseDate(issue.closed_at);
     const updatedMs = getLastUpdatedMs(issue);
-    const baselineMs = Math.max(triagedMs, closedMs);
+    const baselineMs = Math.max(getActivityBaselineMs(entry), closedMs);
     return updatedMs > baselineMs;
   });
 }
@@ -52,10 +52,14 @@ function getLastUpdatedMs(issue: Issue): number {
 
 function shouldPrioritize(lastUpdatedMs: number, entry?: TriageDbEntry): boolean {
   if (!entry?.lastTriaged) return true;
-  const triagedMs = safeParseDate(entry.lastTriaged);
-  if (triagedMs === 0) return true;
+  const baselineMs = getActivityBaselineMs(entry);
+  if (baselineMs === 0) return true;
   if (lastUpdatedMs === 0) return false;
-  return lastUpdatedMs > triagedMs;
+  return lastUpdatedMs > baselineMs;
+}
+
+function getActivityBaselineMs(entry?: TriageDbEntry): number {
+  return safeParseDate(entry?.lastSeenUpdatedAt ?? entry?.lastTriaged);
 }
 
 function safeParseDate(value?: string | null): number {

@@ -3,26 +3,47 @@ import * as path from 'path';
 
 export interface TriageDbEntry {
   lastTriaged?: string;   // ISO timestamp of when triage was completed
-  thoughts?: string;      // Raw model "thoughts" / chain-of-thought output
+  lastSeenUpdatedAt?: string; // GitHub updated_at watermark already consumed
   summary?: string;       // One-line summary from analysis
 }
 
-export type TriageDb = Record<string, TriageDbEntry>;
+export interface TriageDb {
+  version: 2;
+  items: Record<string, TriageDbEntry>;
+}
+
+type LegacyTriageDbEntry = {
+  lastTriaged?: unknown;
+  summary?: unknown;
+  thoughts?: unknown;
+};
+
+type LegacyTriageDb = Record<string, LegacyTriageDbEntry>;
+
+function createEmptyDatabase(): TriageDb {
+  return {
+    version: 2,
+    items: {},
+  };
+}
 
 export function loadDatabase(dbPath?: string): TriageDb {
-  if (!dbPath) return {};
+  if (!dbPath) return createEmptyDatabase();
 
   try {
-    if (!fs.existsSync(dbPath)) return {};
+    if (!fs.existsSync(dbPath)) return createEmptyDatabase();
 
     const contents = fs.readFileSync(dbPath, 'utf8');
-    const db = contents ? JSON.parse(contents) : {};
-    console.info(`📊 Loaded ${dbPath} with ${Object.keys(db).length} entries`);
+    const parsed = contents ? JSON.parse(contents) : createEmptyDatabase();
+    const db = isV2Database(parsed)
+      ? normalizeV2Database(parsed)
+      : migrateLegacyDatabase(parsed);
+    console.info(`📊 Loaded ${dbPath} with ${Object.keys(db.items).length} entries`);
     return db;
   } catch (err) {
     const message = getErrorMessage(err);
     console.error(`⚠️ Failed to load ${dbPath}: ${message}. Starting with empty database.`);
-    return {};
+    return createEmptyDatabase();
   }
 }
 
@@ -39,22 +60,93 @@ export function saveDatabase(db: TriageDb, dbPath?: string, dryRun?: boolean): v
 }
 
 export function getDbEntry(db: TriageDb, issueNumber: number): TriageDbEntry {
-  return db[String(issueNumber)] || {};
+  return db.items[String(issueNumber)] || {};
 }
 
 export function updateDbEntry(
   db: TriageDb,
   issueNumber: number,
-  summary: string
+  summary: string,
+  options: {
+    lastSeenUpdatedAt?: string | undefined;
+  } = {}
 ): void {
   const key = String(issueNumber);
-  const existing = db[key] || {};
+  const existing = db.items[key] || {};
   const entry: TriageDbEntry = { ...existing };
 
   entry.summary = summary;
   entry.lastTriaged = new Date().toISOString();
+  if (options.lastSeenUpdatedAt) {
+    entry.lastSeenUpdatedAt = options.lastSeenUpdatedAt;
+  }
 
-  db[key] = entry;
+  db.items[key] = entry;
+}
+
+function isV2Database(value: unknown): value is TriageDb {
+  return isRecord(value) && value.version === 2 && isRecord(value.items);
+}
+
+function normalizeV2Database(db: TriageDb): TriageDb {
+  const items = Object.entries(db.items).reduce<Record<string, TriageDbEntry>>((acc, [key, value]) => {
+    if (!isRecord(value)) return acc;
+
+    const entry: TriageDbEntry = {};
+    if (typeof value.lastTriaged === 'string') entry.lastTriaged = value.lastTriaged;
+    if (typeof value.lastSeenUpdatedAt === 'string') entry.lastSeenUpdatedAt = value.lastSeenUpdatedAt;
+    if (typeof value.summary === 'string') entry.summary = value.summary;
+
+    if (Object.keys(entry).length > 0) {
+      acc[key] = entry;
+    }
+    return acc;
+  }, {});
+
+  return {
+    version: 2,
+    items,
+  };
+}
+
+function migrateLegacyDatabase(value: unknown): TriageDb {
+  if (!isRecord(value)) return createEmptyDatabase();
+
+  const items = Object.entries(value as LegacyTriageDb).reduce<Record<string, TriageDbEntry>>((acc, [key, legacyEntry]) => {
+    if (!isRecord(legacyEntry)) return acc;
+
+    const entry: TriageDbEntry = {};
+    const lastTriaged = typeof legacyEntry.lastTriaged === 'string' && isValidTimestamp(legacyEntry.lastTriaged)
+      ? legacyEntry.lastTriaged
+      : undefined;
+
+    if (lastTriaged) {
+      entry.lastTriaged = lastTriaged;
+      entry.lastSeenUpdatedAt = lastTriaged;
+    }
+
+    if (typeof legacyEntry.summary === 'string') {
+      entry.summary = legacyEntry.summary;
+    }
+
+    if (Object.keys(entry).length > 0) {
+      acc[key] = entry;
+    }
+    return acc;
+  }, {});
+
+  return {
+    version: 2,
+    items,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isValidTimestamp(value: string): boolean {
+  return Number.isFinite(Date.parse(value));
 }
 
 function getErrorMessage(error: unknown): string {

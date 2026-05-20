@@ -19,6 +19,9 @@ vi.mock('../src/issueProcessor', async () => {
   };
 });
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { Issue } from '../src/github';
 import type { Config } from '../src/config';
@@ -82,6 +85,13 @@ function makeClosedIssue(number: number, closedAt: string, updatedAt: string): I
   };
 }
 
+function makeDb(items: TriageDb['items'] = {}): TriageDb {
+  return {
+    version: 2,
+    items,
+  };
+}
+
 describe('listTargets', () => {
   it('uses explicit issue inputs before any other source', async () => {
     const gh = {
@@ -91,7 +101,7 @@ describe('listTargets', () => {
 
     const result = await listTargets({
       cfg: { ...baseConfig, issueNumbers: [3, 5] },
-      db: {},
+      db: makeDb(),
       gh,
       payload: { issue: { number: 99 } },
     });
@@ -108,7 +118,7 @@ describe('listTargets', () => {
 
     const result = await listTargets({
       cfg: baseConfig,
-      db: {},
+      db: makeDb(),
       gh,
       payload: { pull_request: { number: 77 } },
     });
@@ -125,9 +135,9 @@ describe('listTargets', () => {
       ]),
       listRecentlyClosedIssues: vi.fn(),
     };
-    const db: TriageDb = {
+    const db = makeDb({
       '4': { lastTriaged: '2024-04-02T00:00:00Z' },
-    };
+    });
 
     const result = await listTargets({
       cfg: baseConfig,
@@ -149,10 +159,10 @@ describe('listTargets', () => {
         makeClosedIssue(4, '2024-04-02T00:00:00Z', '2024-04-03T00:00:00Z'),
       ]),
     };
-    const db: TriageDb = {
+    const db = makeDb({
       '4': { lastTriaged: '2024-04-01T00:00:00Z' },
       '5': { lastTriaged: '2024-04-02T00:00:00Z' },
-    };
+    });
 
     const result = await listTargets({
       cfg: { ...baseConfig, extended: true },
@@ -210,7 +220,7 @@ describe('runAutoTriage automatic backlog caching', () => {
       .mockResolvedValueOnce({ name: 'cachedContents/pro', tokenCount: 20 });
     const stats = createStats();
 
-    await runAutoTriage({ cfg: baseConfig, db: {}, gh: gh as any, gemini: gemini as any, stats: stats as any });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, gemini: gemini as any, stats: stats as any });
 
     expect(gemini.createCache).toHaveBeenCalledTimes(2);
     expect(processIssueMock).toHaveBeenCalledOnce();
@@ -229,7 +239,7 @@ describe('runAutoTriage automatic backlog caching', () => {
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [5] },
-      db: {},
+      db: makeDb(),
       gh: gh as any,
       gemini: gemini as any,
       stats: stats as any,
@@ -249,7 +259,7 @@ describe('runAutoTriage automatic backlog caching', () => {
     const stats = createStats();
 
     await expect(
-      runAutoTriage({ cfg: baseConfig, db: {}, gh: gh as any, gemini: gemini as any, stats: stats as any })
+      runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, gemini: gemini as any, stats: stats as any })
     ).resolves.toBeUndefined();
 
     expect(gemini.createCache).toHaveBeenCalledTimes(2);
@@ -258,5 +268,32 @@ describe('runAutoTriage automatic backlog caching', () => {
     expect(options.autoDiscover).toBe(true);
     expect(options.cacheInfos.size).toBe(0);
     expect(gemini.deleteCache).not.toHaveBeenCalled();
+  });
+
+  it('saves the database after processing the item that reaches max-pro-runs', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-runner-db-'));
+    const dbPath = path.join(tempDir, 'triage-db.json');
+    const gh = createGitHub();
+    const gemini = createGemini();
+    const stats = createStats();
+
+    try {
+      await runAutoTriage({
+        cfg: { ...baseConfig, dbPath, dryRun: false, issueNumbers: [5], maxProRuns: 1 },
+        db: makeDb({ '5': { lastTriaged: '2024-04-01T00:00:00Z' } }),
+        gh: gh as any,
+        gemini: gemini as any,
+        stats: stats as any,
+      });
+
+      expect(JSON.parse(fs.readFileSync(dbPath, 'utf8'))).toEqual({
+        version: 2,
+        items: {
+          '5': { lastTriaged: '2024-04-01T00:00:00Z' },
+        },
+      });
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
