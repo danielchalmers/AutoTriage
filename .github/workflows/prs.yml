@@ -31,8 +31,8 @@ jobs:
           issues: ${{ github.event.pull_request.number }}
           prompt-path: examples/AutoTriage.prompt
           db-path: triage-db.json
-          model-fast: ""
-          model-pro: "gemini-3.1-flash-lite"
+          model-fast: "" # skip fast pass
+          model-pro: "gemini-3.5-flash"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

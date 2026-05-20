@@ -32,7 +32,7 @@ jobs:
           issues: ${{ github.event.issue.number }}
           prompt-path: examples/AutoTriage.prompt
           db-path: triage-db.json
-          model-fast: ""
+          model-fast: "" # skip fast pass
           model-pro: "gemini-3.1-flash-lite"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

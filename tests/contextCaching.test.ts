@@ -10,7 +10,7 @@ describe('context caching', () => {
     const systemPrompt = 'You are a triage assistant.'
     const userPrompt = 'Analyze this issue.'
     const schema = { type: 'OBJECT', properties: { summary: { type: 'STRING' } }, required: ['summary'] }
-    const model = 'gemini-3.1-flash-lite'
+    const model = 'gemini-3.5-flash'
 
     it('uses systemInstruction when no cache name is provided', () => {
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model)
@@ -47,7 +47,7 @@ describe('context caching', () => {
     })
 
     it('uses high thinking level for Gemini 3 requests', () => {
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3-flash-preview')
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3.5-flash')
       expect(payload.config?.temperature).toBeUndefined()
       expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: ThinkingLevel.HIGH })
     })

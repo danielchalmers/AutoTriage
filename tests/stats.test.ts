@@ -38,10 +38,10 @@ describe('RunStatistics', () => {
 
   describe('comprehensive scenario', () => {
     it('summarizes cache usage with hit rate and cached percentage', () => {
-      stats.setModelNames('gemini-3.1-flash-lite', 'gemini-3-flash-preview');
+      stats.setModelNames('gemini-3.1-flash-lite', 'gemini-3.5-flash');
       stats.trackCacheCreate({
         mode: 'pro',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3.5-flash',
         name: 'cache/pro',
         tokenCount: 8200,
       });
