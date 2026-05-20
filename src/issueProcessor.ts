@@ -108,7 +108,11 @@ export async function processIssue(
       { issue, operations: proPass.operations }
     );
 
-    updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title);
+    const completedAt = new Date().toISOString();
+    const lastTriaged = !cfg.dryRun && proPass.operations.length > 0
+      ? getCompletionWatermark(completedAt, (await gh.getIssue(issue.number)).updated_at)
+      : completedAt;
+    updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title, lastTriaged);
     return { triageUsed: true, fastRunUsed: fastPass.used };
   });
 }
@@ -261,6 +265,14 @@ async function executePlannedOperations(
       });
     },
   });
+}
+
+function getCompletionWatermark(completedAt: string, refreshedUpdatedAt?: string): string {
+  const completedMs = Date.parse(completedAt);
+  const refreshedMs = Date.parse(refreshedUpdatedAt ?? '');
+  if (!Number.isFinite(refreshedMs)) return completedAt;
+  if (!Number.isFinite(completedMs)) return refreshedUpdatedAt!;
+  return refreshedMs > completedMs ? refreshedUpdatedAt! : completedAt;
 }
 
 export function buildRunContext(

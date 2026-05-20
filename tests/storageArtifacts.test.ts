@@ -69,4 +69,15 @@ describe('updateDbEntry', () => {
     })
     expect(db['42']?.lastTriaged).not.toBe('2024-01-01T00:00:00.000Z')
   })
+
+  it('uses an explicit lastTriaged override when provided', () => {
+    const db: TriageDb = {}
+
+    updateDbEntry(db, 42, 'summary', '2024-05-01T00:00:00.000Z')
+
+    expect(db['42']).toMatchObject({
+      summary: 'summary',
+      lastTriaged: '2024-05-01T00:00:00.000Z',
+    })
+  })
 })

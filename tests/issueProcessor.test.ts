@@ -162,6 +162,10 @@ describe('processIssue', () => {
       addLabels: vi.fn().mockResolvedValue(undefined),
       removeLabel: vi.fn().mockResolvedValue(undefined),
       createComment: vi.fn().mockResolvedValue(undefined),
+      getIssue: vi.fn().mockResolvedValue({
+        ...baseIssue,
+        updated_at: '2024-04-12T00:00:00Z',
+      }),
       updateTitle: vi.fn().mockResolvedValue(undefined),
       updateIssueState: vi.fn().mockResolvedValue(undefined),
     } as any;
@@ -214,6 +218,8 @@ describe('processIssue', () => {
       expect(gemini.generateJson).toHaveBeenCalledTimes(2);
       expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
       expect(db['42']).toMatchObject({ summary: 'Pro summary' });
+      expect(db['42']?.lastTriaged).toBe('2024-04-12T00:00:00Z');
+      expect(gh.getIssue).toHaveBeenCalledWith(42);
 
       const artifactsDir = path.join(tempDir, 'artifacts');
       const files = fs.readdirSync(artifactsDir).sort();
@@ -224,6 +230,82 @@ describe('processIssue', () => {
       expect(files).toContain('42-operations.json');
       expect(fs.readFileSync(path.join(artifactsDir, '42-operations.json'), 'utf8')).toContain('"kind": "add_labels"');
     } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the local completion timestamp when running in dry-run mode', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-process-issue-'));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+    const db: TriageDb = {};
+    const stats = new RunStatistics();
+    const gh = {
+      listTimelineEvents: vi.fn().mockResolvedValue({
+        raw: timelineEvents,
+        filtered: timelineEvents,
+      }),
+      lastUpdated: vi.fn().mockReturnValue(Date.parse('2024-04-11T00:00:00Z')),
+      addLabels: vi.fn().mockResolvedValue(undefined),
+      removeLabel: vi.fn().mockResolvedValue(undefined),
+      createComment: vi.fn().mockResolvedValue(undefined),
+      getIssue: vi.fn(),
+      updateTitle: vi.fn().mockResolvedValue(undefined),
+      updateIssueState: vi.fn().mockResolvedValue(undefined),
+    } as any;
+    const gemini = {
+      generateJson: vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            summary: 'Fast summary',
+            operations: [{ kind: 'add_labels', labels: ['bug'], authorization: 'fast policy' }],
+          },
+          thoughts: 'Fast thoughts',
+          inputTokens: 10,
+          cachedInputTokens: 0,
+          outputTokens: 5,
+        })
+        .mockResolvedValueOnce({
+          data: {
+            summary: 'Pro summary',
+            operations: [{ kind: 'add_labels', labels: ['bug'], authorization: 'pro policy' }],
+          },
+          thoughts: 'Pro thoughts',
+          inputTokens: 20,
+          cachedInputTokens: 0,
+          outputTokens: 10,
+        }),
+    } as any;
+
+    try {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-04-11T12:00:00.000Z'));
+
+      const result = await processIssue(
+        {
+          cfg: createConfig({ dryRun: true }),
+          db,
+          gh,
+          gemini,
+          stats,
+        },
+        {
+          issue: baseIssue,
+          repoLabels: [{ name: 'bug' }],
+          autoDiscover: false,
+          systemPromptFast: 'fast system prompt',
+          systemPromptPro: 'pro system prompt',
+          cacheInfos: new Map(),
+          runTimestamp: '2026-05-19T16:16:13.737Z',
+        }
+      );
+
+      expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
+      expect(db['42']?.lastTriaged).toBe('2024-04-11T12:00:00.000Z');
+      expect(gh.getIssue).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
       cwdSpy.mockRestore();
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

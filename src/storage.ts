@@ -45,14 +45,15 @@ export function getDbEntry(db: TriageDb, issueNumber: number): TriageDbEntry {
 export function updateDbEntry(
   db: TriageDb,
   issueNumber: number,
-  summary: string
+  summary: string,
+  lastTriaged?: string
 ): void {
   const key = String(issueNumber);
   const existing = db[key] || {};
   const entry: TriageDbEntry = { ...existing };
 
   entry.summary = summary;
-  entry.lastTriaged = new Date().toISOString();
+  entry.lastTriaged = lastTriaged ?? new Date().toISOString();
 
   db[key] = entry;
 }
