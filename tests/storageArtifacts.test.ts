@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { saveArtifact, updateDbEntry } from '../src/storage'
+import { loadDatabase, saveArtifact, saveDatabase, updateDbEntry } from '../src/storage'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
@@ -41,32 +41,118 @@ describe('saveArtifact', () => {
 })
 
 describe('updateDbEntry', () => {
-  it('does not persist thoughts for new triage entries', () => {
-    const db: TriageDb = {}
+  it('writes summary, completion time, and consumed GitHub watermark', () => {
+    const db: TriageDb = { version: 2, items: {} }
 
-    updateDbEntry(db, 42, 'summary')
+    updateDbEntry(db, 42, 'summary', { lastSeenUpdatedAt: '2024-04-02T00:00:00.000Z' })
 
-    expect(db['42']).toMatchObject({
+    expect(db.items['42']).toMatchObject({
       summary: 'summary',
+      lastSeenUpdatedAt: '2024-04-02T00:00:00.000Z',
     })
-    expect(db['42']?.thoughts).toBeUndefined()
-    expect(db['42']?.lastTriaged).toEqual(expect.any(String))
+    expect(db.items['42']?.lastTriaged).toEqual(expect.any(String))
+  })
+})
+
+describe('loadDatabase', () => {
+  it('migrates legacy flat databases to v2 and drops thoughts', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-db-'))
+    const dbPath = path.join(tempDir, 'triage-db.json')
+    fs.writeFileSync(dbPath, JSON.stringify({
+      '42': {
+        lastTriaged: '2024-01-01T00:00:00.000Z',
+        summary: 'legacy summary',
+        thoughts: 'legacy thoughts',
+      },
+      '43': {
+        thoughts: 'drop me',
+      },
+      '44': {
+        summary: 'keep me',
+      },
+    }, null, 2))
+
+    try {
+      expect(loadDatabase(dbPath)).toEqual({
+        version: 2,
+        items: {
+          '42': {
+            lastTriaged: '2024-01-01T00:00:00.000Z',
+            lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z',
+            summary: 'legacy summary',
+          },
+          '44': {
+            summary: 'keep me',
+          },
+        },
+      })
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 
-  it('preserves legacy thoughts already present in existing entries', () => {
+  it('loads v2 databases from the items container', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-db-'))
+    const dbPath = path.join(tempDir, 'triage-db.json')
+    fs.writeFileSync(dbPath, JSON.stringify({
+      version: 2,
+      items: {
+        '42': {
+          lastTriaged: '2024-01-01T00:00:00.000Z',
+          lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
+          summary: 'v2 summary',
+          thoughts: 'ignored',
+        },
+      },
+    }, null, 2))
+
+    try {
+      expect(loadDatabase(dbPath)).toEqual({
+        version: 2,
+        items: {
+          '42': {
+            lastTriaged: '2024-01-01T00:00:00.000Z',
+            lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
+            summary: 'v2 summary',
+          },
+        },
+      })
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('saveDatabase', () => {
+  it('writes the v2 schema to disk', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-db-'))
+    const dbPath = path.join(tempDir, 'triage-db.json')
     const db: TriageDb = {
-      '42': {
-        thoughts: 'legacy thoughts',
-        lastTriaged: '2024-01-01T00:00:00.000Z',
+      version: 2,
+      items: {
+        '42': {
+          lastTriaged: '2024-01-01T00:00:00.000Z',
+          lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
+          summary: 'saved summary',
+        },
       },
     }
 
-    updateDbEntry(db, 42, 'updated summary')
+    try {
+      saveDatabase(db, dbPath, false)
 
-    expect(db['42']).toMatchObject({
-      summary: 'updated summary',
-      thoughts: 'legacy thoughts',
-    })
-    expect(db['42']?.lastTriaged).not.toBe('2024-01-01T00:00:00.000Z')
+      expect(JSON.parse(fs.readFileSync(dbPath, 'utf8'))).toEqual({
+        version: 2,
+        items: {
+          '42': {
+            lastTriaged: '2024-01-01T00:00:00.000Z',
+            lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
+            summary: 'saved summary',
+          },
+        },
+      })
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 })

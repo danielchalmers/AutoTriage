@@ -82,6 +82,13 @@ function makeClosedIssue(number: number, closedAt: string, updatedAt: string): I
   };
 }
 
+function makeDb(items: TriageDb['items'] = {}): TriageDb {
+  return {
+    version: 2,
+    items,
+  };
+}
+
 describe('listTargets', () => {
   it('uses explicit issue inputs before any other source', async () => {
     const gh = {
@@ -91,7 +98,7 @@ describe('listTargets', () => {
 
     const result = await listTargets({
       cfg: { ...baseConfig, issueNumbers: [3, 5] },
-      db: {},
+      db: makeDb(),
       gh,
       payload: { issue: { number: 99 } },
     });
@@ -108,7 +115,7 @@ describe('listTargets', () => {
 
     const result = await listTargets({
       cfg: baseConfig,
-      db: {},
+      db: makeDb(),
       gh,
       payload: { pull_request: { number: 77 } },
     });
@@ -125,9 +132,9 @@ describe('listTargets', () => {
       ]),
       listRecentlyClosedIssues: vi.fn(),
     };
-    const db: TriageDb = {
+    const db = makeDb({
       '4': { lastTriaged: '2024-04-02T00:00:00Z' },
-    };
+    });
 
     const result = await listTargets({
       cfg: baseConfig,
@@ -149,10 +156,10 @@ describe('listTargets', () => {
         makeClosedIssue(4, '2024-04-02T00:00:00Z', '2024-04-03T00:00:00Z'),
       ]),
     };
-    const db: TriageDb = {
+    const db = makeDb({
       '4': { lastTriaged: '2024-04-01T00:00:00Z' },
       '5': { lastTriaged: '2024-04-02T00:00:00Z' },
-    };
+    });
 
     const result = await listTargets({
       cfg: { ...baseConfig, extended: true },
@@ -210,7 +217,7 @@ describe('runAutoTriage automatic backlog caching', () => {
       .mockResolvedValueOnce({ name: 'cachedContents/pro', tokenCount: 20 });
     const stats = createStats();
 
-    await runAutoTriage({ cfg: baseConfig, db: {}, gh: gh as any, gemini: gemini as any, stats: stats as any });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, gemini: gemini as any, stats: stats as any });
 
     expect(gemini.createCache).toHaveBeenCalledTimes(2);
     expect(processIssueMock).toHaveBeenCalledOnce();
@@ -229,7 +236,7 @@ describe('runAutoTriage automatic backlog caching', () => {
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [5] },
-      db: {},
+      db: makeDb(),
       gh: gh as any,
       gemini: gemini as any,
       stats: stats as any,
@@ -249,7 +256,7 @@ describe('runAutoTriage automatic backlog caching', () => {
     const stats = createStats();
 
     await expect(
-      runAutoTriage({ cfg: baseConfig, db: {}, gh: gh as any, gemini: gemini as any, stats: stats as any })
+      runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, gemini: gemini as any, stats: stats as any })
     ).resolves.toBeUndefined();
 
     expect(gemini.createCache).toHaveBeenCalledTimes(2);

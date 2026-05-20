@@ -93,7 +93,7 @@ describe('processIssue', () => {
   it('skips the pro pass when the fast pass plans no operations', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-process-issue-'));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
-    const db: TriageDb = {};
+    const db: TriageDb = { version: 2, items: {} };
     const stats = new RunStatistics();
     const gh = {
       listTimelineEvents: vi.fn().mockResolvedValue({
@@ -134,7 +134,10 @@ describe('processIssue', () => {
 
       expect(result).toEqual({ triageUsed: false, fastRunUsed: true });
       expect(gemini.generateJson).toHaveBeenCalledTimes(1);
-      expect(db['42']).toMatchObject({ summary: 'Fast summary' });
+      expect(db.items['42']).toMatchObject({
+        summary: 'Fast summary',
+        lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
+      });
 
       const files = fs.readdirSync(path.join(tempDir, 'artifacts')).sort();
       expect(files).toContain('42-fast-analysis.json');
@@ -151,7 +154,7 @@ describe('processIssue', () => {
   it('runs the pro pass and executes planned operations after the fast pass', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-process-issue-'));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
-    const db: TriageDb = {};
+    const db: TriageDb = { version: 2, items: {} };
     const stats = new RunStatistics();
     const gh = {
       listTimelineEvents: vi.fn().mockResolvedValue({
@@ -159,6 +162,10 @@ describe('processIssue', () => {
         filtered: timelineEvents,
       }),
       lastUpdated: vi.fn().mockReturnValue(Date.parse('2024-04-11T00:00:00Z')),
+      getIssue: vi.fn().mockResolvedValue({
+        ...baseIssue,
+        updated_at: '2024-04-12T00:00:00Z',
+      }),
       addLabels: vi.fn().mockResolvedValue(undefined),
       removeLabel: vi.fn().mockResolvedValue(undefined),
       createComment: vi.fn().mockResolvedValue(undefined),
@@ -213,7 +220,11 @@ describe('processIssue', () => {
       expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
       expect(gemini.generateJson).toHaveBeenCalledTimes(2);
       expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
-      expect(db['42']).toMatchObject({ summary: 'Pro summary' });
+      expect(gh.getIssue).toHaveBeenCalledWith(42);
+      expect(db.items['42']).toMatchObject({
+        summary: 'Pro summary',
+        lastSeenUpdatedAt: '2024-04-12T00:00:00Z',
+      });
 
       const artifactsDir = path.join(tempDir, 'artifacts');
       const files = fs.readdirSync(artifactsDir).sort();
