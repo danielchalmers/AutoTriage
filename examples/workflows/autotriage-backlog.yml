@@ -35,7 +35,7 @@ jobs:
           restore-keys: triage-db-
 
       - name: AutoTriage - triage backlog
-        uses: danielchalmers/AutoTriage@v3
+        uses: danielchalmers/AutoTriage@v4
         with:
           issues: ${{ github.event.inputs.issues }}
           prompt-path: .github/AutoTriage.prompt

@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: AutoTriage
-        uses: danielchalmers/AutoTriage@v3
+        uses: danielchalmers/AutoTriage@v4
         with:
           dry-run: "true" # change to "false" after reviewing the plan output
 ```
