@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
 
 export interface TriageDbEntry {
   lastTriaged?: string;   // ISO timestamp of when triage was completed
@@ -188,37 +189,22 @@ export function loadReadme(readmePath?: string): string {
 }
 
 export function loadPrompt(promptPath?: string): string {
-  const loadBundledPrompt = () => {
-    const bundledPath = path.join(__dirname, 'AutoTriage.prompt');
-    return fs.readFileSync(bundledPath, 'utf8');
-  };
+  const bundledPath = path.join(__dirname, 'AutoTriage.prompt');
+  const resolvedPath = promptPath
+    ? (path.isAbsolute(promptPath) ? promptPath : path.join(process.cwd(), promptPath))
+    : undefined;
 
-  if (!promptPath) {
-    try {
-      return loadBundledPrompt();
-    } catch (bundledError) {
-      const bundledMessage = getErrorMessage(bundledError);
-      throw new Error(`Failed to load prompt. Bundled fallback: ${bundledMessage}`);
-    }
-  }
-
-  try {
-    // Try custom prompt path first
-    const resolvedPath = path.isAbsolute(promptPath)
-      ? promptPath
-      : path.join(process.cwd(), promptPath);
+  if (resolvedPath && fs.existsSync(resolvedPath)) {
     return fs.readFileSync(resolvedPath, 'utf8');
-  } catch (error) {
-    // Fall back to bundled default prompt
-    try {
-      return loadBundledPrompt();
-    } catch (bundledError) {
-      const customMessage = getErrorMessage(error);
-      const bundledMessage = getErrorMessage(bundledError);
-      throw new Error(
-        `Failed to load prompt. Custom path '${promptPath}': ${customMessage}. ` +
-        `Bundled fallback: ${bundledMessage}`
-      );
-    }
   }
+
+  if (fs.existsSync(bundledPath)) {
+    return fs.readFileSync(bundledPath, 'utf8');
+  }
+
+  const missingPaths = resolvedPath
+    ? `custom path '${promptPath}' and bundled fallback '${bundledPath}'`
+    : `bundled fallback '${bundledPath}'`;
+  console.warn(`⚠️ No AutoTriage prompt found at ${missingPaths}; using built-in label-only prompt.`);
+  return BUILTIN_LABEL_ONLY_PROMPT;
 }
