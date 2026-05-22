@@ -6,13 +6,15 @@
   "type": "commonjs",
   "scripts": {
     "build": "npm run typecheck && npm run clean && ncc build src/index.ts -o dist --minify --source-map --license licenses.txt && npm run copy-assets",
+    "check:dist": "node scripts/check-dist.cjs",
     "copy-assets": "node -e \"require('fs').cpSync('examples/AutoTriage.prompt', 'dist/AutoTriage.prompt')\"",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive:true, force:true})\"",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "dev": "tsc -w",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify": "npm run typecheck && npm run typecheck:test && npm test && npm run build && npm run check:dist"
   },
   "keywords": [
     "github-actions",
