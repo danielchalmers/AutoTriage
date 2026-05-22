@@ -156,7 +156,7 @@ function getErrorMessage(error: unknown): string {
 
 export function saveArtifact(issueNumber: number, name: string, contents: string): void {
   try {
-    const artifactsDir = path.join(process.cwd(), 'artifacts');
+    const artifactsDir = path.join(getWorkingDirectory(), 'artifacts');
     const fileName =
       name === 'prompt-system.md' || name === 'prompt-system-fast.md'
         ? name
@@ -169,6 +169,10 @@ export function saveArtifact(issueNumber: number, name: string, contents: string
     const message = getErrorMessage(err);
     console.error(`⚠️ Failed to save artifact ${name} for #${issueNumber}: ${message}`);
   }
+}
+
+function getWorkingDirectory(): string {
+  return process.cwd();
 }
 
 export function loadReadme(readmePath?: string): string {
