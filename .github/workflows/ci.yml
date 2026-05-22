@@ -29,9 +29,7 @@ jobs:
       - name: Build
         run: npm run build
       - name: Ensure dist is up to date
-        run: |
-          git status --porcelain
-          git diff --exit-code --name-only
+        run: npm run check:dist
       - name: Mock triage
         if: github.event_name == 'pull_request'
         uses: ./
