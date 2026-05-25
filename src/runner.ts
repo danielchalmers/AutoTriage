@@ -133,12 +133,12 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         throw err;
       }
 
+      saveDatabase(db, cfg.dbPath, cfg.dryRun);
+
       if (triagesPerformed >= cfg.maxProRuns) {
         console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
         break;
       }
-
-      saveDatabase(db, cfg.dbPath, cfg.dryRun);
     }
   } finally {
     for (const [, cacheInfo] of cacheInfos) {
