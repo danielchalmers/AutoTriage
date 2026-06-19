@@ -35,6 +35,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   const { cfg, db, gh, gemini, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
+  stats.setDiscovered(targets.length);
   const runTimestamp = new Date().toISOString();
   let triagesPerformed = 0;
   let fastRunsPerformed = 0;
@@ -97,11 +98,13 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
 
       if (!cfg.skipFastPass && remainingFastRuns <= 0) {
         console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
+        stats.setCapReached('fast');
         break;
       }
 
       if (remainingTriages <= 0) {
         console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
+        stats.setCapReached('pro');
         break;
       }
 
@@ -123,6 +126,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         if (err instanceof GeminiResponseError) {
           console.warn(`#${issueNumber}: ${err.message}`);
           stats.incrementFailed();
+          stats.recordItem({ issueNumber, outcome: 'failed', escalatedToPro: false });
           consecutiveFailures++;
           if (consecutiveFailures >= 3) {
             console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
@@ -137,6 +141,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
 
       if (triagesPerformed >= cfg.maxProRuns) {
         console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
+        stats.setCapReached('pro');
         break;
       }
     }
@@ -144,10 +149,12 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     for (const [, cacheInfo] of cacheInfos) {
       await gemini.deleteCache(cacheInfo.name);
     }
+    // Emit run telemetry even when the run aborts, so failed runs remain researchable.
+    stats.incrementGithubApiCalls(gh.getApiCallCount());
+    stats.printSummary();
+    saveArtifact(0, 'run-summary.json', JSON.stringify(stats.toJSON(), null, 2));
   }
 
-  stats.incrementGithubApiCalls(gh.getApiCallCount());
-  stats.printSummary();
   if (cfg.strictMode && stats.getFailed() > 0) {
     core.setFailed(`Strict mode enabled: ${stats.getFailed()} run(s) had errors.`);
   }

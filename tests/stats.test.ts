@@ -70,5 +70,107 @@ describe('RunStatistics', () => {
 
       expect(apiLine).toContain('GitHub API: 15 calls • 0 retries');
     });
+
+    it('reports thinking tokens on the token line when present', () => {
+      stats.setModelNames('', 'pro-model');
+      stats.trackProRun({
+        startTime: 0,
+        endTime: 16000,
+        inputTokens: 10000,
+        cachedInputTokens: 0,
+        outputTokens: 120,
+        thoughtsTokens: 5400,
+      });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+      const tokenLine = lines.find(line => line.includes('Tokens:'));
+
+      expect(tokenLine).toContain('120 output • 5.4k thinking');
+    });
+  });
+
+  describe('toJSON run summary', () => {
+    it('captures the funnel, per-pass thinking tokens, and per-item rows', () => {
+      stats.setRepository('octo', 'demo');
+      stats.setModelNames('fast-model', 'pro-model');
+      stats.setDiscovered(100);
+      stats.setCapReached('fast');
+      stats.incrementGithubApiCalls(12);
+
+      // Item 1: fast pass gates it out (no escalation).
+      stats.trackFastRun({
+        startTime: 0,
+        endTime: 1000,
+        inputTokens: 9000,
+        cachedInputTokens: 6000,
+        outputTokens: 5,
+        thoughtsTokens: 4000,
+        issueNumber: 1,
+        cacheName: 'cache/fast',
+      });
+      stats.recordItem({ issueNumber: 1, type: 'issue', outcome: 'skipped', skipReason: 'noop-fast', escalatedToPro: false });
+      stats.incrementSkipped();
+
+      // Item 2: escalates to pro, triaged, performs an action.
+      stats.trackFastRun({
+        startTime: 0,
+        endTime: 2000,
+        inputTokens: 9000,
+        cachedInputTokens: 6000,
+        outputTokens: 8,
+        thoughtsTokens: 3000,
+        issueNumber: 2,
+      });
+      stats.trackProRun({
+        startTime: 0,
+        endTime: 5000,
+        inputTokens: 11000,
+        cachedInputTokens: 8000,
+        outputTokens: 120,
+        thoughtsTokens: 6000,
+        issueNumber: 2,
+        cacheName: 'cache/pro',
+      });
+      stats.recordItem({ issueNumber: 2, type: 'pull request', outcome: 'triaged', escalatedToPro: true });
+      stats.trackAction({ issueNumber: 2, type: 'add_labels', details: '+bug' });
+      stats.incrementTriaged();
+
+      const json = stats.toJSON() as any;
+
+      expect(json.schemaVersion).toBe(1);
+      expect(json.repo).toBe('octo/demo');
+      expect(json.models).toEqual({ fast: 'fast-model', pro: 'pro-model' });
+      expect(json.github).toEqual({ calls: 12, retries: 0 });
+      expect(json.funnel).toMatchObject({
+        discovered: 100,
+        processed: 2,
+        triaged: 1,
+        skipped: 1,
+        failed: 0,
+        escalatedToPro: 1,
+        capReached: 'fast',
+      });
+      expect(json.funnel.skipReasons).toEqual({ 'noop-fast': 1 });
+      expect(json.fast.thoughtsTokens).toBe(7000);
+      expect(json.pro.thoughtsTokens).toBe(6000);
+      expect(json.actions).toEqual({ total: 1, byKind: { add_labels: 1 } });
+
+      const item1 = json.items.find((i: any) => i.number === 1);
+      expect(item1).toMatchObject({ type: 'issue', outcome: 'skipped', skipReason: 'noop-fast', escalatedToPro: false });
+      expect(item1.fast.thoughtsTokens).toBe(4000);
+      expect(item1.pro).toBeNull();
+
+      const item2 = json.items.find((i: any) => i.number === 2);
+      expect(item2).toMatchObject({ type: 'pull request', outcome: 'triaged', escalatedToPro: true });
+      expect(item2.pro.thoughtsTokens).toBe(6000);
+      expect(item2.operations).toEqual(['add_labels']);
+    });
+
+    it('serializes an empty run without throwing', () => {
+      expect(() => JSON.stringify(stats.toJSON())).not.toThrow();
+      const json = stats.toJSON() as any;
+      expect(json.funnel.capReached).toBe('none');
+      expect(json.items).toEqual([]);
+    });
   });
 });

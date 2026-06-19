@@ -14,6 +14,8 @@ export interface GeminiJsonResult<T> {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
+  thoughtsTokens: number;
+  totalTokens: number;
 }
 
 export function buildJsonPayload(
@@ -145,12 +147,17 @@ export class GeminiClient {
         .replace(/(\r?\n\s*){2,}/g, '\n')
         .trim();
 
-      // Extract token usage from response metadata
+      // Extract token usage from response metadata. thoughtsTokenCount is the
+      // hidden thinking budget Gemini 3 spends before emitting candidates; it is
+      // billed but excluded from candidatesTokenCount, so capture it explicitly
+      // to make per-pass thinking cost measurable.
       const inputTokens = response.usageMetadata?.promptTokenCount ?? 0;
       const cachedInputTokens = response.usageMetadata?.cachedContentTokenCount ?? 0;
       const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
+      const thoughtsTokens = response.usageMetadata?.thoughtsTokenCount ?? 0;
+      const totalTokens = response.usageMetadata?.totalTokenCount ?? 0;
 
-      return { data, thoughts: collapsedThoughts, inputTokens, cachedInputTokens, outputTokens };
+      return { data, thoughts: collapsedThoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens, totalTokens };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }
