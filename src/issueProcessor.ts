@@ -89,6 +89,13 @@ export async function processIssue(
       updateDbEntry(db, issue.number, fastPass.plan?.analysis.summary || issue.title, {
         lastSeenUpdatedAt: getConsumedUpdatedAt(issue),
       });
+      stats.recordItem({
+        issueNumber: issue.number,
+        type: issue.type,
+        outcome: 'skipped',
+        skipReason: 'noop-fast',
+        escalatedToPro: false,
+      });
       return { triageUsed: false, fastRunUsed: fastPass.used };
     }
 
@@ -113,6 +120,12 @@ export async function processIssue(
     const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations);
     updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title, {
       lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
+    });
+    stats.recordItem({
+      issueNumber: issue.number,
+      type: issue.type,
+      outcome: 'triaged',
+      escalatedToPro: fastPass.used,
     });
     return { triageUsed: true, fastRunUsed: fastPass.used };
   });
@@ -348,7 +361,7 @@ export async function generateAnalysis(
 
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500);
+  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens, totalTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500);
   const endTime = Date.now();
 
   const modelRunStats = {
@@ -357,6 +370,9 @@ export async function generateAnalysis(
     inputTokens,
     cachedInputTokens,
     outputTokens,
+    thoughtsTokens,
+    totalTokens,
+    issueNumber: issue.number,
     ...(cacheInfo ? { cacheName: cacheInfo.name } : {}),
   };
   if (isFastModel) {

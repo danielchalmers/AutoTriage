@@ -6,7 +6,10 @@ export interface ModelRunStats {
   inputTokens: number;
   cachedInputTokens?: number;
   outputTokens: number;
+  thoughtsTokens?: number;
+  totalTokens?: number;
   cacheName?: string;
+  issueNumber?: number;
 }
 
 export interface CacheCreateStats {
@@ -22,6 +25,19 @@ export interface ActionDetail {
   details: string;
 }
 
+export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
+export type SkipReason = 'noop-fast' | 'other';
+
+export interface ItemRecord {
+  issueNumber: number;
+  type?: string;
+  outcome: ItemOutcome;
+  skipReason?: SkipReason;
+  escalatedToPro: boolean;
+}
+
+export type CapReached = 'fast' | 'pro' | 'none';
+
 export class RunStatistics {
   private fastRuns: ModelRunStats[] = [];
   private proRuns: ModelRunStats[] = [];
@@ -36,6 +52,9 @@ export class RunStatistics {
   private repo = '';
   private modelFast = '';
   private modelPro = '';
+  private discovered = 0;
+  private capReached: CapReached = 'none';
+  private items = new Map<number, ItemRecord>();
 
   setRepository(owner: string, repo: string): void {
     this.owner = owner;
@@ -61,6 +80,18 @@ export class RunStatistics {
 
   trackAction(action: ActionDetail): void {
     this.actionsPerformed.push(action);
+  }
+
+  setDiscovered(count: number): void {
+    this.discovered = count;
+  }
+
+  setCapReached(cap: CapReached): void {
+    this.capReached = cap;
+  }
+
+  recordItem(record: ItemRecord): void {
+    this.items.set(record.issueNumber, record);
   }
 
   incrementTriaged(): void {
@@ -115,6 +146,7 @@ export class RunStatistics {
     inputTokens: number;
     outputTokens: number;
     cachedInputTokens: number;
+    thoughtsTokens: number;
     cacheHitRuns: number;
     cacheReferencedRuns: number;
   } {
@@ -126,6 +158,7 @@ export class RunStatistics {
         inputTokens: 0,
         outputTokens: 0,
         cachedInputTokens: 0,
+        thoughtsTokens: 0,
         cacheHitRuns: 0,
         cacheReferencedRuns: 0,
       };
@@ -140,6 +173,7 @@ export class RunStatistics {
     const inputTokens = runs.reduce((sum, r) => sum + r.inputTokens, 0);
     const cachedInputTokens = runs.reduce((sum, r) => sum + (r.cachedInputTokens ?? 0), 0);
     const outputTokens = runs.reduce((sum, r) => sum + r.outputTokens, 0);
+    const thoughtsTokens = runs.reduce((sum, r) => sum + (r.thoughtsTokens ?? 0), 0);
     const cacheHitRuns = runs.filter(r => (r.cachedInputTokens ?? 0) > 0).length;
     const cacheReferencedRuns = runs.filter(r => r.cacheName).length;
 
@@ -150,6 +184,7 @@ export class RunStatistics {
       inputTokens,
       outputTokens,
       cachedInputTokens,
+      thoughtsTokens,
       cacheHitRuns,
       cacheReferencedRuns,
     };
@@ -176,7 +211,8 @@ export class RunStatistics {
     );
     console.log(
       `    Tokens: ${this.formatTokens(stats.inputTokens)} input • ` +
-      `${this.formatTokens(stats.outputTokens)} output`
+      `${this.formatTokens(stats.outputTokens)} output` +
+      (stats.thoughtsTokens > 0 ? ` • ${this.formatTokens(stats.thoughtsTokens)} thinking` : '')
     );
 
     const cacheCreate = this.getCacheCreateStats(mode);
@@ -234,5 +270,111 @@ export class RunStatistics {
         console.log(`  #${issueNumber}: ${parts.join(', ')}`);
       }
     }
+  }
+
+  private summarizeRuns(mode: 'fast' | 'pro', runs: ModelRunStats[]) {
+    const stats = this.calculateStats(runs);
+    const cacheCreate = this.getCacheCreateStats(mode);
+    return {
+      runs: runs.length,
+      totalMs: Math.round(stats.total),
+      avgMs: runs.length > 0 ? Math.round(stats.avg) : 0,
+      p95Ms: Math.round(stats.p95),
+      inputTokens: stats.inputTokens,
+      cachedInputTokens: stats.cachedInputTokens,
+      thoughtsTokens: stats.thoughtsTokens,
+      outputTokens: stats.outputTokens,
+      cacheCreatedTokens: cacheCreate.tokenCount,
+    };
+  }
+
+  private perItemModel(runs: ModelRunStats[], issueNumber: number) {
+    const matching = runs.filter(r => r.issueNumber === issueNumber);
+    if (matching.length === 0) return null;
+    return {
+      ms: matching.reduce((sum, r) => sum + (r.endTime - r.startTime), 0),
+      inputTokens: matching.reduce((sum, r) => sum + r.inputTokens, 0),
+      cachedInputTokens: matching.reduce((sum, r) => sum + (r.cachedInputTokens ?? 0), 0),
+      thoughtsTokens: matching.reduce((sum, r) => sum + (r.thoughtsTokens ?? 0), 0),
+      outputTokens: matching.reduce((sum, r) => sum + r.outputTokens, 0),
+    };
+  }
+
+  /**
+   * Serialize this run into a machine-readable summary. Written as the
+   * `run-summary.json` artifact so runs can be aggregated across history for
+   * research, rather than scraped from the human-facing log lines.
+   */
+  toJSON(): Record<string, unknown> {
+    const skipReasons: Record<string, number> = {};
+    let escalatedToPro = 0;
+    for (const item of this.items.values()) {
+      if (item.escalatedToPro) escalatedToPro++;
+      if (item.outcome === 'skipped') {
+        const reason = item.skipReason ?? 'other';
+        skipReasons[reason] = (skipReasons[reason] ?? 0) + 1;
+      }
+    }
+
+    const actionsByIssue = new Map<number, string[]>();
+    const actionsByKind: Record<string, number> = {};
+    for (const action of this.actionsPerformed) {
+      if (!actionsByIssue.has(action.issueNumber)) actionsByIssue.set(action.issueNumber, []);
+      actionsByIssue.get(action.issueNumber)!.push(action.type);
+      actionsByKind[action.type] = (actionsByKind[action.type] ?? 0) + 1;
+    }
+
+    const issueNumbers = new Set<number>([
+      ...this.items.keys(),
+      ...this.fastRuns.map(r => r.issueNumber).filter((n): n is number => n !== undefined),
+      ...this.proRuns.map(r => r.issueNumber).filter((n): n is number => n !== undefined),
+      ...actionsByIssue.keys(),
+    ]);
+
+    const items = Array.from(issueNumbers)
+      .sort((a, b) => a - b)
+      .map(number => {
+        const record = this.items.get(number);
+        return {
+          number,
+          ...(record?.type ? { type: record.type } : {}),
+          ...(record?.outcome ? { outcome: record.outcome } : {}),
+          ...(record?.skipReason ? { skipReason: record.skipReason } : {}),
+          escalatedToPro: record?.escalatedToPro ?? false,
+          fast: this.perItemModel(this.fastRuns, number),
+          pro: this.perItemModel(this.proRuns, number),
+          operations: actionsByIssue.get(number) ?? [],
+        };
+      });
+
+    return {
+      schemaVersion: 1,
+      repo: this.owner && this.repo ? `${this.owner}/${this.repo}` : '',
+      models: {
+        fast: this.modelFast || null,
+        pro: this.modelPro || null,
+      },
+      github: {
+        calls: this.githubApiCalls,
+        retries: this.githubApiRetries,
+      },
+      funnel: {
+        discovered: this.discovered,
+        processed: this.triaged + this.skipped + this.failed,
+        triaged: this.triaged,
+        skipped: this.skipped,
+        failed: this.failed,
+        escalatedToPro,
+        capReached: this.capReached,
+        skipReasons,
+      },
+      fast: this.summarizeRuns('fast', this.fastRuns),
+      pro: this.summarizeRuns('pro', this.proRuns),
+      actions: {
+        total: this.actionsPerformed.length,
+        byKind: actionsByKind,
+      },
+      items,
+    };
   }
 }

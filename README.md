@@ -72,6 +72,16 @@ Here's what a typical thought process looks like:
 
 See MudBlazor's [workflows](https://github.com/MudBlazor/MudBlazor/actions) to browse artifacts, or view the [actual prompt](https://github.com/MudBlazor/MudBlazor/blob/dev/.github/AutoTriage.prompt).
 
+## Run summary
+
+Each run writes a machine-readable `run-summary.json` to the `artifacts/` directory (alongside the per-issue prompts and analyses). It mirrors the `📊 Run Statistics` log in structured form so runs can be aggregated across history rather than scraped from logs. It includes:
+
+- `funnel` - items discovered, processed, triaged, skipped, escalated to the pro pass, which run cap was hit, and skip reasons.
+- `fast` / `pro` - per-pass duration percentiles and token usage, including `thoughtsTokens` (the hidden thinking budget Gemini bills but excludes from output tokens).
+- `items` - per-item rows with outcome, pass timing/tokens, and the operations performed.
+
+Upload it by including `artifacts/` in your workflow's `upload-artifact` step.
+
 ## License
 
 [MIT](./LICENSE)

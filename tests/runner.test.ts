@@ -192,6 +192,10 @@ describe('runAutoTriage automatic backlog caching', () => {
       incrementGithubApiCalls: vi.fn(),
       printSummary: vi.fn(),
       getFailed: vi.fn().mockReturnValue(0),
+      setDiscovered: vi.fn(),
+      setCapReached: vi.fn(),
+      recordItem: vi.fn(),
+      toJSON: vi.fn().mockReturnValue({}),
     };
   }
 
