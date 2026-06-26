@@ -18,20 +18,32 @@ export interface GeminiJsonResult<T> {
   totalTokens: number;
 }
 
+/**
+ * Thinking level for the cheap fast gate. The fast pass mostly applies
+ * mechanical staleness/labeling rules and only decides whether to escalate to
+ * the pro pass, so it does not need a HIGH thinking budget — which on real
+ * MudBlazor runs accounts for ~90% of the action's thinking tokens (billed at
+ * the output rate) while 95% of fast items are no-ops. Pro keeps HIGH because
+ * it makes the final public-action decision.
+ */
+export const FAST_THINKING_LEVEL = ThinkingLevel.LOW;
+export const PRO_THINKING_LEVEL = ThinkingLevel.HIGH;
+
 export function buildJsonPayload(
   systemPrompt: string,
   userPrompt: string,
   schema: unknown,
   model: string,
   cachedContentName?: string,
-  useFlexTier?: boolean
+  useFlexTier?: boolean,
+  thinkingLevel: ThinkingLevel = PRO_THINKING_LEVEL
 ): GenerateContentParameters {
   const config: NonNullable<GenerateContentParameters['config']> = {
     responseMimeType: 'application/json',
     responseSchema: schema as any,
     thinkingConfig: {
       includeThoughts: true,
-      thinkingLevel: ThinkingLevel.HIGH,
+      thinkingLevel,
     }
   };
 

@@ -7,7 +7,7 @@ import {
   buildUserPrompt,
   getPromptLimits,
 } from './analysis';
-import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
+import { FAST_THINKING_LEVEL, GeminiCacheInfo, GeminiClient, PRO_THINKING_LEVEL, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, planOperations } from './triage';
@@ -356,7 +356,8 @@ export async function generateAnalysis(
     schema,
     model,
     cacheInfo?.name,
-    useFlexTier
+    useFlexTier,
+    isFastModel ? FAST_THINKING_LEVEL : PRO_THINKING_LEVEL
   );
 
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));

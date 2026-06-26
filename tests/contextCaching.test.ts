@@ -1,6 +1,6 @@
 import { ThinkingLevel } from '@google/genai'
 import { describe, it, expect } from 'vitest'
-import { buildJsonPayload } from '../src/gemini'
+import { buildJsonPayload, FAST_THINKING_LEVEL, PRO_THINKING_LEVEL } from '../src/gemini'
 import { buildSystemPrompt, buildUserPrompt, type FastPassPlan } from '../src/analysis'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -50,6 +50,13 @@ describe('context caching', () => {
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3-flash-preview')
       expect(payload.config?.temperature).toBeUndefined()
       expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: ThinkingLevel.HIGH })
+    })
+
+    it('honors an explicit per-pass thinking level', () => {
+      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, undefined, false, FAST_THINKING_LEVEL)
+      expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: FAST_THINKING_LEVEL })
+      expect(FAST_THINKING_LEVEL).toBe(ThinkingLevel.LOW)
+      expect(PRO_THINKING_LEVEL).toBe(ThinkingLevel.HIGH)
     })
 
     it('opts into flex service tier with long timeout when enabled', () => {
