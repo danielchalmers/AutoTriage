@@ -59,9 +59,9 @@ The PROMPT MAP is navigational only. If it appears to conflict with a detailed r
 
 === SECTION: OUTPUT FORMAT ===
 JSON OUTPUT CONTRACT:
-- Return exactly one valid JSON object. Do not wrap it in markdown, comments, extra text, or code fences. Avoid trailing commas.
-- Include only the fields defined below. Drop any field whose value would be null, an empty string, or an empty array (required fields excepted).
-- Use UTF-8 plain text for all string values. Markdown is allowed only inside comment operation body values.
+- Your reply is decoded against an enforced response schema, so valid JSON syntax, field types, quoting, and escaping are already guaranteed by the harness. Do not spend reasoning re-checking or re-formatting the output; put all of your effort into the triage decision itself.
+- Populate only the fields defined below, and use an empty operations array when no public action is authorized.
+- String values are plain text; Markdown is allowed only inside comment operation body values.
 
 FIELD CATALOG:
 - summary (required, internal): one sentence that captures the issue's problem, context, and effort so duplicates are easy to spot.
