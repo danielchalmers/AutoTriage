@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const processIssueMock = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ triageUsed: true, fastRunUsed: true })
@@ -177,10 +177,17 @@ describe('listTargets', () => {
 });
 
 describe('runAutoTriage automatic backlog caching', () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
     githubContextMock.payload = {};
     processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: true });
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
   });
 
   function createStats() {
@@ -299,5 +306,40 @@ describe('runAutoTriage automatic backlog caching', () => {
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('logs remaining backlog items when max fast runs is reached', async () => {
+    const gh = createGitHub();
+    gh.getIssue
+      .mockResolvedValueOnce(makeIssue(5, '2024-04-05T00:00:00Z'))
+      .mockResolvedValueOnce(makeIssue(6, '2024-04-06T00:00:00Z'));
+    const gemini = createGemini();
+    const stats = createStats();
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxFastRuns: 1 },
+      db: makeDb(),
+      gh: gh as any,
+      gemini: gemini as any,
+      stats: stats as any,
+    });
+
+    expect(logSpy).toHaveBeenCalledWith('⏳ Max fast runs (1) reached with 2 item(s) remaining');
+  });
+
+  it('logs remaining backlog items when max pro runs is reached', async () => {
+    const gh = createGitHub();
+    const gemini = createGemini();
+    const stats = createStats();
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 },
+      db: makeDb(),
+      gh: gh as any,
+      gemini: gemini as any,
+      stats: stats as any,
+    });
+
+    expect(logSpy).toHaveBeenCalledWith('⏳ Max pro runs (1) reached with 2 item(s) remaining');
   });
 });

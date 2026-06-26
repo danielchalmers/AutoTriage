@@ -31,6 +31,10 @@ export interface ListTargetsDeps {
   payload?: any;
 }
 
+function logMaxRunsReached(mode: 'fast' | 'pro', maxRuns: number, remainingItems: number): void {
+  console.log(`⏳ Max ${mode} runs (${maxRuns}) reached with ${remainingItems} item(s) remaining`);
+}
+
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   const { cfg, db, gh, gemini, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
@@ -92,18 +96,19 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   }
 
   try {
-    for (const issueNumber of targets) {
+    for (const [index, issueNumber] of targets.entries()) {
       const remainingTriages = cfg.maxProRuns - triagesPerformed;
       const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
+      const remainingItems = targets.length - index;
 
       if (!cfg.skipFastPass && remainingFastRuns <= 0) {
-        console.log(`⏳ Max fast runs (${cfg.maxFastRuns}) reached`);
+        logMaxRunsReached('fast', cfg.maxFastRuns, remainingItems);
         stats.setCapReached('fast');
         break;
       }
 
       if (remainingTriages <= 0) {
-        console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
+        logMaxRunsReached('pro', cfg.maxProRuns, remainingItems);
         stats.setCapReached('pro');
         break;
       }
@@ -140,7 +145,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       saveDatabase(db, cfg.dbPath, cfg.dryRun);
 
       if (triagesPerformed >= cfg.maxProRuns) {
-        console.log(`⏳ Max pro runs (${cfg.maxProRuns}) reached`);
+        logMaxRunsReached('pro', cfg.maxProRuns, targets.length - index - 1);
         stats.setCapReached('pro');
         break;
       }
