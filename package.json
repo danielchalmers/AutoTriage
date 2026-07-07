@@ -5,9 +5,8 @@
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
-    "build": "npm run typecheck && npm run clean && ncc build src/index.ts -o dist --minify --source-map --license licenses.txt && npm run copy-assets",
+    "build": "npm run typecheck && npm run clean && ncc build src/index.ts -o dist --minify --source-map --license licenses.txt",
     "check:dist": "node scripts/check-dist.cjs",
-    "copy-assets": "node -e \"require('fs').cpSync('examples/AutoTriage.prompt', 'dist/AutoTriage.prompt')\"",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive:true, force:true})\"",
     "typecheck": "tsc --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json",
