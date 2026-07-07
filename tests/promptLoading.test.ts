@@ -17,27 +17,12 @@ describe('prompt loading', () => {
     }
   })
 
-  it('falls back to bundled prompt when custom file does not exist', async () => {
-    // Create a temporary bundled prompt file for testing
-    const bundledPath = path.join(__dirname, '..', 'src', 'AutoTriage.prompt')
-    const testContent = '# Test bundled prompt content'
-    fs.writeFileSync(bundledPath, testContent)
-    
-    try {
-      const nonExistentPath = path.join(__dirname, 'does-not-exist.txt')
-      const result = await loadPrompt(nonExistentPath)
-      expect(result).toBe(testContent)
-    } finally {
-      fs.unlinkSync(bundledPath)
-    }
-  })
-
-  it('uses the built-in prompt when no path is provided and the bundled prompt is missing', async () => {
+  it('uses the built-in label-only prompt when no path is provided', async () => {
     const result = await loadPrompt('')
     expect(result).toBe(BUILTIN_LABEL_ONLY_PROMPT)
   })
 
-  it('uses the built-in prompt when custom and bundled prompts are both missing', async () => {
+  it('uses the built-in label-only prompt when the custom prompt is missing', async () => {
     const result = await loadPrompt(path.join(__dirname, 'does-not-exist.txt'))
     expect(result).toBe(BUILTIN_LABEL_ONLY_PROMPT)
   })

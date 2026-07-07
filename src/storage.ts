@@ -193,7 +193,6 @@ export function loadReadme(readmePath?: string): string {
 }
 
 export function loadPrompt(promptPath?: string): string {
-  const bundledPath = path.join(__dirname, 'AutoTriage.prompt');
   const resolvedPath = promptPath
     ? (path.isAbsolute(promptPath) ? promptPath : path.join(process.cwd(), promptPath))
     : undefined;
@@ -202,13 +201,7 @@ export function loadPrompt(promptPath?: string): string {
     return fs.readFileSync(resolvedPath, 'utf8');
   }
 
-  if (fs.existsSync(bundledPath)) {
-    return fs.readFileSync(bundledPath, 'utf8');
-  }
-
-  const missingPaths = resolvedPath
-    ? `custom path '${promptPath}' and bundled fallback '${bundledPath}'`
-    : `bundled fallback '${bundledPath}'`;
-  console.warn(`⚠️ No AutoTriage prompt found at ${missingPaths}; using built-in label-only prompt.`);
+  const missing = resolvedPath ? `custom path '${promptPath}'` : 'no prompt path configured';
+  console.warn(`⚠️ No AutoTriage prompt found (${missing}); using built-in label-only prompt.`);
   return BUILTIN_LABEL_ONLY_PROMPT;
 }

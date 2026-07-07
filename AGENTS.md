@@ -24,8 +24,9 @@ Preserve these invariants:
 - Action entry point: `dist/index.js`.
 - Source of truth: TypeScript under `src/`.
 - Generated bundle: `dist/` is committed, but never edited manually.
-- Default prompt asset: `examples/AutoTriage.prompt` is copied to
-  `dist/AutoTriage.prompt` during build.
+- Default runtime prompt: with no `.github/AutoTriage.prompt` configured, the
+  built-in label-only prompt (`src/prompt.ts`) is used. The
+  `examples/AutoTriage.prompt` file is a copy-paste starting point, not bundled.
 - Unit tests must not require real GitHub or Gemini credentials.
 - Public action behavior must stay aligned across `action.yml`, `README.md`,
   tests, and generated `dist/`.
@@ -44,7 +45,7 @@ Start with the smallest useful context:
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.
 - `tests/` - Vitest coverage and examples of expected behavior.
 - `action.yml` - public GitHub Action metadata.
-- `examples/AutoTriage.prompt` - bundled fallback prompt.
+- `examples/AutoTriage.prompt` - example starting-point prompt to copy into a repo (not bundled).
 - `.github/workflows/` - CI expectations.
 - `dist/` - generated action bundle.
 
@@ -86,9 +87,8 @@ git diff --exit-code --name-only
 ```
 
 Docs-only changes usually do not require `npm run build`. Changes to `src/`,
-`examples/AutoTriage.prompt`, `package.json`, `package-lock.json`,
-`action.yml`, or bundling behavior require build verification and updated
-`dist/` output when the bundle changes.
+`package.json`, `package-lock.json`, `action.yml`, or bundling behavior require
+build verification and updated `dist/` output when the bundle changes.
 
 ## Development Commands
 
@@ -98,10 +98,8 @@ Docs-only changes usually do not require `npm run build`. Changes to `src/`,
 - `npm test` - run Vitest once.
 - `npm run test:watch` - run Vitest in watch mode.
 - `npm run dev` - run TypeScript in watch mode.
-- `npm run build` - type-check, clean `dist/`, bundle with `ncc`, and copy the
-  fallback prompt asset.
+- `npm run build` - type-check, clean `dist/`, and bundle with `ncc`.
 - `npm run clean` - remove `dist/`.
-- `npm run copy-assets` - copy `examples/AutoTriage.prompt` into `dist/`.
 
 ## Change Rules
 
@@ -125,12 +123,11 @@ When changing inputs, defaults, permissions, or runtime behavior:
 
 ### Prompt Changes
 
-When changing prompt loading or prompt assets:
+When changing prompt loading or the built-in fallback:
 
 - Test custom prompt path behavior.
-- Test bundled fallback behavior.
+- Test built-in label-only fallback behavior.
 - Test missing or invalid prompt behavior when applicable.
-- Rebuild so `dist/AutoTriage.prompt` matches the source asset.
 
 ### Dependency Changes
 
