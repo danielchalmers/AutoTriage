@@ -1,5 +1,9 @@
 # AutoTriage — AI issue & pull request triage for GitHub
 
+[![CI](https://github.com/danielchalmers/AutoTriage/actions/workflows/ci.yml/badge.svg)](https://github.com/danielchalmers/AutoTriage/actions/workflows/ci.yml)
+[![Latest tag](https://img.shields.io/github/v/tag/danielchalmers/AutoTriage?label=latest)](https://github.com/danielchalmers/AutoTriage/tags)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+
 AutoTriage is a GitHub Action that triages issues and pull requests against a plain-text policy in your repo: it applies labels, asks for missing details, retitles unclear reports, and handles stale items. It runs in your existing workflow and calls the Gemini API with your key — no bot to host, no third-party service.
 
 [MudBlazor](https://github.com/MudBlazor/MudBlazor) runs AutoTriage on every new issue, PR, and comment — see their [workflow runs](https://github.com/MudBlazor/MudBlazor/actions) and [policy prompt](https://github.com/MudBlazor/MudBlazor/blob/dev/.github/AutoTriage.prompt).
@@ -81,7 +85,3 @@ Each run writes a machine-readable `run-summary.json` to the `artifacts/` direct
 - `items` — per-item rows with outcome, pass timing/tokens, and the operations performed.
 
 Upload it by including `artifacts/` in your workflow's `upload-artifact` step.
-
-## License
-
-[MIT](./LICENSE)
