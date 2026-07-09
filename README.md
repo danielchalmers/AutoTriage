@@ -72,9 +72,6 @@ A real reasoning transcript from MudBlazor's runs:
 | `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
 | `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
 
-> [!IMPORTANT]
-> AutoTriage is officially supported with Gemini 3 models. Other Gemini model families may still work, but they are considered use-at-your-own-risk.
-
 ## Run summary
 
 Each run writes a machine-readable `run-summary.json` to the `artifacts/` directory (alongside the per-issue prompts and analyses). It mirrors the `📊 Run Statistics` log in structured form so runs can be aggregated across history rather than scraped from logs. It includes:
