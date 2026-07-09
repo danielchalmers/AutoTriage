@@ -1,18 +1,8 @@
 # AutoTriage — AI issue & pull request triage for GitHub
 
-[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-AutoTriage-blue?logo=github)](https://github.com/marketplace/actions/autotriage)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-
 AutoTriage is a GitHub Action that triages issues and pull requests against a plain-text policy in your repo: it applies labels, asks for missing details, retitles unclear reports, and handles stale items. It runs in your existing workflow and calls the Gemini API with your key — no bot to host, no third-party service.
 
-## Why
-
-- **The policy is a markdown file**, not code — triage rules live in `.github/AutoTriage.prompt`, versioned and reviewed like everything else. Without one, a built-in label-only policy works out of the box.
-- **Deny-by-default.** The model can only emit five operation kinds — add/remove labels, comment, retitle, change state — and each operation must cite the policy clause that authorizes it. It cannot push code, edit issue bodies, or merge PRs. Ambiguous authorization means no action.
-- **Dry-run first.** With `dry-run: "true"`, the full plan and reasoning are logged without changing anything.
-- **Bounded cost.** An optional fast-model gate screens items before the review model, and per-run caps keep backlog sweeps predictable. You pay only for Gemini tokens on your own key.
-- **Auditable.** Every run uploads per-item reasoning transcripts and a machine-readable `run-summary.json`.
-- **Proven in production.** [MudBlazor](https://github.com/MudBlazor/MudBlazor) runs AutoTriage on every new issue, PR, and comment — see their [workflow runs](https://github.com/MudBlazor/MudBlazor/actions) and [policy prompt](https://github.com/MudBlazor/MudBlazor/blob/dev/.github/AutoTriage.prompt).
+[MudBlazor](https://github.com/MudBlazor/MudBlazor) runs AutoTriage on every new issue, PR, and comment — see their [workflow runs](https://github.com/MudBlazor/MudBlazor/actions) and [policy prompt](https://github.com/MudBlazor/MudBlazor/blob/dev/.github/AutoTriage.prompt).
 
 ## Quick start
 
