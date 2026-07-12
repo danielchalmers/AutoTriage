@@ -327,6 +327,61 @@ describe('runAutoTriage automatic backlog caching', () => {
     expect(logSpy).toHaveBeenCalledWith('⏳ Max fast runs (1) reached with 2 item(s) remaining');
   });
 
+  it('continues past an unexpected per-item error and processes the rest of the backlog', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const gh = createGitHub();
+    const gemini = createGemini();
+    const stats = createStats();
+    processIssueMock
+      .mockRejectedValueOnce(new Error('socket hang up'))
+      .mockResolvedValueOnce({ triageUsed: true, fastRunUsed: true });
+
+    try {
+      await runAutoTriage({
+        cfg: { ...baseConfig, issueNumbers: [5, 6] },
+        db: makeDb(),
+        gh: gh as any,
+        gemini: gemini as any,
+        stats: stats as any,
+      });
+
+      expect(processIssueMock).toHaveBeenCalledTimes(2);
+      expect(stats.incrementFailed).toHaveBeenCalledOnce();
+      expect(stats.recordItem).toHaveBeenCalledWith({ issueNumber: 5, outcome: 'failed', escalatedToPro: false });
+      expect(stats.incrementTriaged).toHaveBeenCalledOnce();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('#5: unexpected error: '));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('socket hang up'));
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('stops processing after three consecutive unexpected failures', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const gh = createGitHub();
+    const gemini = createGemini();
+    const stats = createStats();
+    processIssueMock.mockRejectedValue(new Error('socket hang up'));
+
+    try {
+      await runAutoTriage({
+        cfg: { ...baseConfig, issueNumbers: [5, 6, 7, 8] },
+        db: makeDb(),
+        gh: gh as any,
+        gemini: gemini as any,
+        stats: stats as any,
+      });
+
+      expect(processIssueMock).toHaveBeenCalledTimes(3);
+      expect(stats.incrementFailed).toHaveBeenCalledTimes(3);
+      expect(errorSpy).toHaveBeenCalledWith('Analysis failed 3 consecutive times; stopping further processing.');
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
   it('logs remaining backlog items when max pro runs is reached', async () => {
     const gh = createGitHub();
     const gemini = createGemini();
