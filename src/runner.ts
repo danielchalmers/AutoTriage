@@ -128,18 +128,24 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         if (fastRunUsed) fastRunsPerformed++;
         consecutiveFailures = 0;
       } catch (err) {
+        // Any per-item failure — model or otherwise (e.g. a transient GitHub
+        // API error) — is recorded and skipped so one bad item can't abort the
+        // remaining backlog. The consecutive-failure breaker below still stops
+        // the run if errors cascade (auth loss, outage).
         if (err instanceof GeminiResponseError) {
           console.warn(`#${issueNumber}: ${err.message}`);
-          stats.incrementFailed();
-          stats.recordItem({ issueNumber, outcome: 'failed', escalatedToPro: false });
-          consecutiveFailures++;
-          if (consecutiveFailures >= 3) {
-            console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
-            break;
-          }
-          continue;
+        } else {
+          const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+          console.warn(`#${issueNumber}: unexpected error: ${detail}`);
         }
-        throw err;
+        stats.incrementFailed();
+        stats.recordItem({ issueNumber, outcome: 'failed', escalatedToPro: false });
+        consecutiveFailures++;
+        if (consecutiveFailures >= 3) {
+          console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
+          break;
+        }
+        continue;
       }
 
       saveDatabase(db, cfg.dbPath, cfg.dryRun);
