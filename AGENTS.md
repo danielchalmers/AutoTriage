@@ -98,7 +98,7 @@ build verification and updated `dist/` output when the bundle changes.
 - `npm test` - run Vitest once.
 - `npm run test:watch` - run Vitest in watch mode.
 - `npm run dev` - run TypeScript in watch mode.
-- `npm run build` - type-check, clean `dist/`, and bundle with `ncc`.
+- `npm run build` - type-check, clean `dist/`, and bundle with `esbuild` into a single minified `dist/index.js` (third-party license notices appended at the end; no source map or code-split chunks).
 - `npm run clean` - remove `dist/`.
 
 ## Change Rules
