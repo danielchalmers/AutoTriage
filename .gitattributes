@@ -11,4 +11,5 @@
 *.prompt text eol=lf
 *.txt text eol=lf
 
-*.map -text
+# Generated bundle: collapse in diffs and exclude from language stats
+dist/** -diff linguist-generated=true
