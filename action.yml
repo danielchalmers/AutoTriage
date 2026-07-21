@@ -42,7 +42,7 @@ inputs:
   model-pro:
     description: "Review model for final planning."
     required: false
-    default: "gemini-3.1-flash-lite"
+    default: "gemini-3.5-flash-lite"
   prompt-path:
     description: "Repo-relative path to the triage prompt."
     required: false
