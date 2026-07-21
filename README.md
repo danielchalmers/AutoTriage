@@ -53,7 +53,7 @@ For each item — the triggering issue/PR, an explicit `issues` list, or auto-di
 
 A real reasoning transcript from MudBlazor's runs:
 
-> 💭 Thinking with gemini-3.1-flash-lite...
+> 💭 Thinking with gemini-3.5-flash-lite...
 >
 > Okay, so I've got a pull request to triage. It's titled "Docs: Update cookie consent prompt design," so immediately I'm thinking documentation updates. The author is a maintainer — they're likely familiar with the project's standards. Now, let's consult the ASSISTANT BEHAVIOR POLICY. Since the author is a maintainer, I can skip sections related to encouraging contributions and missing information. The main thing I need to focus on is labeling. The title starts with "Docs:", and the changes are specifically about the documentation site, which makes the `docs` label the most appropriate. No comments or state changes are needed. The title is fine as it is.
 >
@@ -72,7 +72,7 @@ A real reasoning transcript from MudBlazor's runs:
 | `max-fast-runs` | Maximum fast-model analyses per run. | `100` |
 | `max-pro-runs` | Maximum review-model analyses per run. | `20` |
 | `model-fast` | Fast-pass model. Leave blank to skip. | `""` (skip) |
-| `model-pro` | Review model for final planning. | `gemini-3.1-flash-lite` |
+| `model-pro` | Review model for final planning. | `gemini-3.5-flash-lite` |
 | `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
 | `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
 

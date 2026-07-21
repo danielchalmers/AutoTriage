@@ -134,7 +134,7 @@ describe('getConfig model inputs', () => {
   it('defaults the pro model to flash-lite', () => {
     const cfg = getConfig();
 
-    expect(cfg.modelPro).toBe('gemini-3.1-flash-lite');
+    expect(cfg.modelPro).toBe('gemini-3.5-flash-lite');
   });
 
   it('uses a valid budget scale and falls back for invalid values', () => {

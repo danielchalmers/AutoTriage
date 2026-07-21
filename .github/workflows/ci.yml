@@ -37,8 +37,8 @@ jobs:
           issues: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '3 6' }}
           prompt-path: examples/AutoTriage.prompt
           dry-run: true
-          model-fast: gemini-3.1-flash-lite
-          model-pro: gemini-3.1-flash-lite # Save API usage by using a cheap model again but we can still test two-pass system.
+          model-fast: gemini-3.5-flash-lite
+          model-pro: gemini-3.5-flash-lite # Save API usage by using a cheap model again but we can still test two-pass system.
           strict-mode: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
