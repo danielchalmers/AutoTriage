@@ -41,14 +41,6 @@ function hashPrompt(text: string): string {
   return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16)}`;
 }
 
-// Best-effort HTTP status extraction: Gemini errors embed the raw response
-// body (e.g. {"error":{"code":503,...}}) in the message.
-function extractErrorStatus(err: unknown): number | undefined {
-  const message = err instanceof Error ? err.message : String(err);
-  const match = message.match(/"code"\s*:\s*(\d{3})\b/);
-  return match ? Number(match[1]) : undefined;
-}
-
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   const { cfg, db, gh, gemini, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
@@ -165,14 +157,11 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         }
         stats.incrementFailed();
         const passFailure = getPassFailure(err);
-        const errorStatus = extractErrorStatus(err);
         stats.recordItem({
           issueNumber,
           outcome: 'failed',
           escalatedToPro: passFailure?.escalatedToPro ?? false,
-          ...(passFailure?.failedPass ? { failedPass: passFailure.failedPass } : {}),
-          ...(passFailure?.fastPlan ? { fastPlan: passFailure.fastPlan } : {}),
-          ...(errorStatus !== undefined ? { errorStatus } : {}),
+          failedPass: passFailure?.failedPass,
         });
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {

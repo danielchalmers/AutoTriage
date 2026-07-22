@@ -44,11 +44,10 @@ export interface ItemRecord {
   outcome: ItemOutcome;
   skipReason?: SkipReason;
   escalatedToPro: boolean;
-  fastPlan?: PlanSummary;
-  proPlan?: PlanSummary;
-  agreement?: PlanAgreement;
-  failedPass?: 'fast' | 'pro';
-  errorStatus?: number;
+  fastPlan?: PlanSummary | undefined;
+  proPlan?: PlanSummary | undefined;
+  agreement?: PlanAgreement | undefined;
+  failedPass?: 'fast' | 'pro' | undefined;
 }
 
 export interface RunConfigSnapshot {
@@ -65,33 +64,23 @@ export interface PromptHashes {
   pro: string;
 }
 
-// Summarize a planned-operations array (model output, so treated as untrusted)
-// into the comparable PlanSummary shape.
-export function summarizePlan(operations: unknown[]): PlanSummary {
-  const kinds = new Set<string>();
-  const labels = new Set<string>();
-  for (const op of operations) {
-    if (!op || typeof op !== 'object') continue;
-    const record = op as Record<string, unknown>;
-    if (typeof record.kind !== 'string') continue;
-    kinds.add(record.kind);
-    const sign = record.kind === 'add_labels' ? '+' : record.kind === 'remove_labels' ? '-' : null;
-    if (sign && Array.isArray(record.labels)) {
-      for (const label of record.labels) {
-        if (typeof label === 'string') labels.add(sign + label);
-      }
-    }
-  }
-  return { kinds: [...kinds].sort(), labels: [...labels].sort() };
+// Summarize planned operations into the comparable PlanSummary shape.
+export function summarizePlan(operations: Array<{ kind: string; labels?: string[] }>): PlanSummary {
+  const sign = (kind: string) => (kind === 'add_labels' ? '+' : kind === 'remove_labels' ? '-' : null);
+  const labels = operations.flatMap(op => sign(op.kind) ? (op.labels ?? []).map(l => sign(op.kind) + l) : []);
+  return {
+    kinds: [...new Set(operations.map(op => op.kind))].sort(),
+    labels: [...new Set(labels)].sort(),
+  };
 }
 
 // Compare an escalated fast plan against the pro plan that reviewed it.
 export function comparePlans(fastPlan: PlanSummary, proPlan: PlanSummary): PlanAgreement {
   if (proPlan.kinds.length === 0) return 'pro-vetoed';
-  const equal =
-    fastPlan.kinds.join('\n') === proPlan.kinds.join('\n') &&
-    fastPlan.labels.join('\n') === proPlan.labels.join('\n');
-  return equal ? 'identical' : 'differed';
+  const same = (a: string[], b: string[]) => a.join('\n') === b.join('\n');
+  return same(fastPlan.kinds, proPlan.kinds) && same(fastPlan.labels, proPlan.labels)
+    ? 'identical'
+    : 'differed';
 }
 
 export type CapReached = 'fast' | 'pro' | 'none';
@@ -413,11 +402,11 @@ export class RunStatistics {
           ...(record?.outcome ? { outcome: record.outcome } : {}),
           ...(record?.skipReason ? { skipReason: record.skipReason } : {}),
           escalatedToPro: record?.escalatedToPro ?? false,
-          ...(record?.fastPlan ? { fastPlan: record.fastPlan } : {}),
-          ...(record?.proPlan ? { proPlan: record.proPlan } : {}),
-          ...(record?.agreement ? { agreement: record.agreement } : {}),
-          ...(record?.failedPass ? { failedPass: record.failedPass } : {}),
-          ...(record?.errorStatus !== undefined ? { errorStatus: record.errorStatus } : {}),
+          // undefined fields are dropped by JSON serialization.
+          fastPlan: record?.fastPlan,
+          proPlan: record?.proPlan,
+          agreement: record?.agreement,
+          failedPass: record?.failedPass,
           fast: this.perItemModel(this.fastRuns, number),
           pro: this.perItemModel(this.proRuns, number),
           operations: actionsByIssue.get(number) ?? [],

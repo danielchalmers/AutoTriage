@@ -369,11 +369,7 @@ describe('processIssue', () => {
       }
 
       expect(caught).toBeInstanceOf(Error);
-      expect(getPassFailure(caught)).toEqual({
-        failedPass: 'pro',
-        escalatedToPro: true,
-        fastPlan: { kinds: ['add_labels'], labels: ['+bug'] },
-      });
+      expect(getPassFailure(caught)).toEqual({ failedPass: 'pro', escalatedToPro: true });
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tempDir, { recursive: true, force: true });

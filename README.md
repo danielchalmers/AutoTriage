@@ -83,6 +83,6 @@ Each run writes a machine-readable `run-summary.json` to the `artifacts/` direct
 - `config` / `promptHash` — the run's effective settings and truncated hashes of the assembled system prompts, so runs can be segmented by configuration and policy version.
 - `funnel` — items discovered, processed, triaged, skipped, escalated to the pro pass, which run cap was hit, skip reasons, and `planAgreement` (how often the pro pass confirmed, vetoed, or amended the fast pass's plan).
 - `fast` / `pro` — per-pass duration percentiles and token usage, including `thoughtsTokens` (the hidden thinking budget Gemini bills but excludes from output tokens).
-- `items` — per-item rows with outcome, pass timing/tokens, the operations performed, what each pass planned (`fastPlan` / `proPlan` / `agreement`), and for failures, which pass failed (`failedPass`) and the HTTP status when one could be extracted (`errorStatus`).
+- `items` — per-item rows with outcome, pass timing/tokens, the operations performed, what each pass planned (`fastPlan` / `proPlan` / `agreement`), and for failures, which pass failed (`failedPass`).
 
 Upload it by including `artifacts/` in your workflow's `upload-artifact` step.

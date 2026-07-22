@@ -72,7 +72,6 @@ interface ProPassResult {
 export interface PassFailure {
   failedPass: 'fast' | 'pro';
   escalatedToPro: boolean;
-  fastPlan?: PlanSummary;
 }
 
 const passFailures = new WeakMap<object, PassFailure>();
@@ -108,7 +107,7 @@ export async function processIssue(
       throw tagPassFailure(err, { failedPass: 'fast', escalatedToPro: false });
     }
     const fastPlan = fastPass.used && fastPass.plan
-      ? summarizePlan(fastPass.plan.operations)
+      ? summarizePlan(fastPass.plan.operations as PlannedOperation[])
       : undefined;
 
     if (fastPass.shouldSkipPro) {
@@ -122,7 +121,8 @@ export async function processIssue(
         outcome: 'skipped',
         skipReason: 'noop-fast',
         escalatedToPro: false,
-        ...(fastPlan ? { fastPlan, agreement: 'fast-noop' as const } : {}),
+        fastPlan,
+        agreement: fastPlan && 'fast-noop',
       });
       return { triageUsed: false, fastRunUsed: fastPass.used };
     }
@@ -142,11 +142,7 @@ export async function processIssue(
         }
       );
     } catch (err) {
-      throw tagPassFailure(err, {
-        failedPass: 'pro',
-        escalatedToPro: fastPass.used,
-        ...(fastPlan ? { fastPlan } : {}),
-      });
+      throw tagPassFailure(err, { failedPass: 'pro', escalatedToPro: fastPass.used });
     }
 
     await executePlannedOperations(
@@ -164,9 +160,9 @@ export async function processIssue(
       type: issue.type,
       outcome: 'triaged',
       escalatedToPro: fastPass.used,
-      ...(fastPlan ? { fastPlan } : {}),
+      fastPlan,
       proPlan,
-      ...(fastPlan ? { agreement: comparePlans(fastPlan, proPlan) } : {}),
+      agreement: fastPlan && comparePlans(fastPlan, proPlan),
     });
     return { triageUsed: true, fastRunUsed: fastPass.used };
   });
