@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { RunStatistics } from '../src/stats';
+import { RunStatistics, comparePlans, summarizePlan } from '../src/stats';
 
 describe('RunStatistics', () => {
   let stats: RunStatistics;
@@ -137,7 +137,7 @@ describe('RunStatistics', () => {
 
       const json = stats.toJSON() as any;
 
-      expect(json.schemaVersion).toBe(1);
+      expect(json.schemaVersion).toBe(2);
       expect(json.repo).toBe('octo/demo');
       expect(json.models).toEqual({ fast: 'fast-model', pro: 'pro-model' });
       expect(json.github).toEqual({ calls: 12, retries: 0 });
@@ -171,6 +171,91 @@ describe('RunStatistics', () => {
       const json = stats.toJSON() as any;
       expect(json.funnel.capReached).toBe('none');
       expect(json.items).toEqual([]);
+      expect(json.config).toBeNull();
+      expect(json.promptHash).toBeNull();
+    });
+
+    it('captures config, prompt hashes, plan agreement, and failure attribution', () => {
+      stats.setRunConfig({
+        dryRun: false,
+        extended: true,
+        skipFastPass: false,
+        maxFastRuns: 30,
+        maxProRuns: 20,
+        thinkingLevel: 'high',
+      });
+      stats.setPromptHashes({ fast: 'sha256:aaaa', pro: 'sha256:bbbb' });
+
+      // Screened out by the fast pass.
+      stats.recordItem({
+        issueNumber: 1,
+        outcome: 'skipped',
+        skipReason: 'noop-fast',
+        escalatedToPro: false,
+        fastPlan: { kinds: [], labels: [] },
+        agreement: 'fast-noop',
+      });
+      // Escalated; pro planned nothing.
+      stats.recordItem({
+        issueNumber: 2,
+        outcome: 'triaged',
+        escalatedToPro: true,
+        fastPlan: { kinds: ['add_labels'], labels: ['+bug'] },
+        proPlan: { kinds: [], labels: [] },
+        agreement: 'pro-vetoed',
+      });
+      // Escalated; pro pass died on a 503.
+      stats.recordItem({
+        issueNumber: 3,
+        outcome: 'failed',
+        escalatedToPro: true,
+        fastPlan: { kinds: ['comment'], labels: [] },
+        failedPass: 'pro',
+        errorStatus: 503,
+      });
+
+      const json = stats.toJSON() as any;
+
+      expect(json.config).toMatchObject({ maxFastRuns: 30, thinkingLevel: 'high' });
+      expect(json.promptHash).toEqual({ fast: 'sha256:aaaa', pro: 'sha256:bbbb' });
+      expect(json.funnel.planAgreement).toEqual({ 'fast-noop': 1, 'pro-vetoed': 1 });
+      expect(json.funnel.escalatedToPro).toBe(2);
+
+      const item2 = json.items.find((i: any) => i.number === 2);
+      expect(item2.fastPlan).toEqual({ kinds: ['add_labels'], labels: ['+bug'] });
+      expect(item2.agreement).toBe('pro-vetoed');
+
+      const item3 = json.items.find((i: any) => i.number === 3);
+      expect(item3).toMatchObject({ failedPass: 'pro', errorStatus: 503, escalatedToPro: true });
+    });
+  });
+
+  describe('plan summarization', () => {
+    it('summarizes operations into sorted kinds and signed labels', () => {
+      expect(
+        summarizePlan([
+          { kind: 'comment', body: 'hi', authorization: 'x' },
+          { kind: 'add_labels', labels: ['bug', 'regression'], authorization: 'x' },
+          { kind: 'remove_labels', labels: ['stale'], authorization: 'x' },
+        ])
+      ).toEqual({
+        kinds: ['add_labels', 'comment', 'remove_labels'],
+        labels: ['+bug', '+regression', '-stale'],
+      });
+    });
+
+    it('ignores malformed model output instead of throwing', () => {
+      expect(summarizePlan([null, 42, { labels: ['x'] }, { kind: 'add_labels', labels: [7] }])).toEqual({
+        kinds: ['add_labels'],
+        labels: [],
+      });
+    });
+
+    it('compares escalated plans', () => {
+      const fast = { kinds: ['add_labels'], labels: ['+bug'] };
+      expect(comparePlans(fast, { kinds: [], labels: [] })).toBe('pro-vetoed');
+      expect(comparePlans(fast, { kinds: ['add_labels'], labels: ['+bug'] })).toBe('identical');
+      expect(comparePlans(fast, { kinds: ['add_labels'], labels: ['+docs'] })).toBe('differed');
     });
   });
 });

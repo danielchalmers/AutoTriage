@@ -28,12 +28,70 @@ export interface ActionDetail {
 export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
 export type SkipReason = 'noop-fast' | 'other';
 
+// Compact, comparable form of what a pass planned: sorted unique operation
+// kinds plus signed label changes (`+bug`, `-stale`).
+export interface PlanSummary {
+  kinds: string[];
+  labels: string[];
+}
+
+// How the fast pass's plan relates to the pro pass's plan for one item.
+export type PlanAgreement = 'fast-noop' | 'identical' | 'pro-vetoed' | 'differed';
+
 export interface ItemRecord {
   issueNumber: number;
   type?: string;
   outcome: ItemOutcome;
   skipReason?: SkipReason;
   escalatedToPro: boolean;
+  fastPlan?: PlanSummary;
+  proPlan?: PlanSummary;
+  agreement?: PlanAgreement;
+  failedPass?: 'fast' | 'pro';
+  errorStatus?: number;
+}
+
+export interface RunConfigSnapshot {
+  dryRun: boolean;
+  extended: boolean;
+  skipFastPass: boolean;
+  maxFastRuns: number;
+  maxProRuns: number;
+  thinkingLevel: string;
+}
+
+export interface PromptHashes {
+  fast: string | null;
+  pro: string;
+}
+
+// Summarize a planned-operations array (model output, so treated as untrusted)
+// into the comparable PlanSummary shape.
+export function summarizePlan(operations: unknown[]): PlanSummary {
+  const kinds = new Set<string>();
+  const labels = new Set<string>();
+  for (const op of operations) {
+    if (!op || typeof op !== 'object') continue;
+    const record = op as Record<string, unknown>;
+    if (typeof record.kind !== 'string') continue;
+    kinds.add(record.kind);
+    const sign = record.kind === 'add_labels' ? '+' : record.kind === 'remove_labels' ? '-' : null;
+    if (sign && Array.isArray(record.labels)) {
+      for (const label of record.labels) {
+        if (typeof label === 'string') labels.add(sign + label);
+      }
+    }
+  }
+  return { kinds: [...kinds].sort(), labels: [...labels].sort() };
+}
+
+// Compare an escalated fast plan against the pro plan that reviewed it.
+export function comparePlans(fastPlan: PlanSummary, proPlan: PlanSummary): PlanAgreement {
+  if (proPlan.kinds.length === 0) return 'pro-vetoed';
+  const equal =
+    fastPlan.kinds.join('\n') === proPlan.kinds.join('\n') &&
+    fastPlan.labels.join('\n') === proPlan.labels.join('\n');
+  return equal ? 'identical' : 'differed';
 }
 
 export type CapReached = 'fast' | 'pro' | 'none';
@@ -55,6 +113,8 @@ export class RunStatistics {
   private discovered = 0;
   private capReached: CapReached = 'none';
   private items = new Map<number, ItemRecord>();
+  private runConfig: RunConfigSnapshot | null = null;
+  private promptHashes: PromptHashes | null = null;
 
   setRepository(owner: string, repo: string): void {
     this.owner = owner;
@@ -88,6 +148,14 @@ export class RunStatistics {
 
   setCapReached(cap: CapReached): void {
     this.capReached = cap;
+  }
+
+  setRunConfig(config: RunConfigSnapshot): void {
+    this.runConfig = config;
+  }
+
+  setPromptHashes(hashes: PromptHashes): void {
+    this.promptHashes = hashes;
   }
 
   recordItem(record: ItemRecord): void {
@@ -307,9 +375,13 @@ export class RunStatistics {
    */
   toJSON(): Record<string, unknown> {
     const skipReasons: Record<string, number> = {};
+    const planAgreement: Record<string, number> = {};
     let escalatedToPro = 0;
     for (const item of this.items.values()) {
       if (item.escalatedToPro) escalatedToPro++;
+      if (item.agreement) {
+        planAgreement[item.agreement] = (planAgreement[item.agreement] ?? 0) + 1;
+      }
       if (item.outcome === 'skipped') {
         const reason = item.skipReason ?? 'other';
         skipReasons[reason] = (skipReasons[reason] ?? 0) + 1;
@@ -341,6 +413,11 @@ export class RunStatistics {
           ...(record?.outcome ? { outcome: record.outcome } : {}),
           ...(record?.skipReason ? { skipReason: record.skipReason } : {}),
           escalatedToPro: record?.escalatedToPro ?? false,
+          ...(record?.fastPlan ? { fastPlan: record.fastPlan } : {}),
+          ...(record?.proPlan ? { proPlan: record.proPlan } : {}),
+          ...(record?.agreement ? { agreement: record.agreement } : {}),
+          ...(record?.failedPass ? { failedPass: record.failedPass } : {}),
+          ...(record?.errorStatus !== undefined ? { errorStatus: record.errorStatus } : {}),
           fast: this.perItemModel(this.fastRuns, number),
           pro: this.perItemModel(this.proRuns, number),
           operations: actionsByIssue.get(number) ?? [],
@@ -348,12 +425,14 @@ export class RunStatistics {
       });
 
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       repo: this.owner && this.repo ? `${this.owner}/${this.repo}` : '',
       models: {
         fast: this.modelFast || null,
         pro: this.modelPro || null,
       },
+      config: this.runConfig,
+      promptHash: this.promptHashes,
       github: {
         calls: this.githubApiCalls,
         retries: this.githubApiRetries,
@@ -367,6 +446,7 @@ export class RunStatistics {
         escalatedToPro,
         capReached: this.capReached,
         skipReasons,
+        planAgreement,
       },
       fast: this.summarizeRuns('fast', this.fastRuns),
       pro: this.summarizeRuns('pro', this.proRuns),

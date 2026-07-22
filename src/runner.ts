@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
+import { createHash } from 'node:crypto';
 import {
   buildSystemPrompt,
   getPromptLimits,
@@ -9,9 +10,9 @@ import {
   buildAutoDiscoverQueue,
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
 } from './autoDiscover';
-import { GeminiCacheInfo, GeminiClient, GeminiResponseError } from './gemini';
+import { GeminiCacheInfo, GeminiClient, GeminiResponseError, THINKING_LEVEL } from './gemini';
 import { GitHubClient } from './github';
-import { IssueProcessorDeps, processIssue } from './issueProcessor';
+import { IssueProcessorDeps, getPassFailure, processIssue } from './issueProcessor';
 import { RunStatistics } from './stats';
 import type { Config } from './config';
 import { TriageDb, saveArtifact, saveDatabase } from './storage';
@@ -33,6 +34,19 @@ export interface ListTargetsDeps {
 
 function logMaxRunsReached(mode: 'fast' | 'pro', maxRuns: number, remainingItems: number): void {
   console.log(`⏳ Max ${mode} runs (${maxRuns}) reached with ${remainingItems} item(s) remaining`);
+}
+
+// Truncated content hash so run summaries can be segmented by prompt version.
+function hashPrompt(text: string): string {
+  return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16)}`;
+}
+
+// Best-effort HTTP status extraction: Gemini errors embed the raw response
+// body (e.g. {"error":{"code":503,...}}) in the message.
+function extractErrorStatus(err: unknown): number | undefined {
+  const message = err instanceof Error ? err.message : String(err);
+  const match = message.match(/"code"\s*:\s*(\d{3})\b/);
+  return match ? Number(match[1]) : undefined;
 }
 
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
@@ -64,6 +78,19 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   );
   saveArtifact(0, 'prompt-system-fast.md', systemPromptFast);
   saveArtifact(0, 'prompt-system.md', systemPromptPro);
+
+  stats.setRunConfig({
+    dryRun: cfg.dryRun,
+    extended: cfg.extended,
+    skipFastPass: cfg.skipFastPass,
+    maxFastRuns: cfg.maxFastRuns,
+    maxProRuns: cfg.maxProRuns,
+    thinkingLevel: String(THINKING_LEVEL).toLowerCase(),
+  });
+  stats.setPromptHashes({
+    fast: cfg.skipFastPass ? null : hashPrompt(systemPromptFast),
+    pro: hashPrompt(systemPromptPro),
+  });
 
   const cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo> = new Map();
   if (autoDiscover) {
@@ -137,7 +164,16 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
           console.warn(`#${issueNumber}: unexpected error: ${detail}`);
         }
         stats.incrementFailed();
-        stats.recordItem({ issueNumber, outcome: 'failed', escalatedToPro: false });
+        const passFailure = getPassFailure(err);
+        const errorStatus = extractErrorStatus(err);
+        stats.recordItem({
+          issueNumber,
+          outcome: 'failed',
+          escalatedToPro: passFailure?.escalatedToPro ?? false,
+          ...(passFailure?.failedPass ? { failedPass: passFailure.failedPass } : {}),
+          ...(passFailure?.fastPlan ? { fastPlan: passFailure.fastPlan } : {}),
+          ...(errorStatus !== undefined ? { errorStatus } : {}),
+        });
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {
           console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);

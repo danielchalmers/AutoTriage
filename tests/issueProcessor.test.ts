@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { buildRunContext, processIssue } from '../src/issueProcessor';
+import { buildRunContext, getPassFailure, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
 import type { TriageDb } from '../src/storage';
@@ -139,6 +139,12 @@ describe('processIssue', () => {
         lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
       });
 
+      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
+      expect(item).toMatchObject({
+        agreement: 'fast-noop',
+        fastPlan: { kinds: [], labels: [] },
+      });
+
       const files = fs.readdirSync(path.join(tempDir, 'artifacts')).sort();
       expect(files).toContain('42-fast-analysis.json');
       expect(files).toContain('42-prompt-fast-user.md');
@@ -220,6 +226,13 @@ describe('processIssue', () => {
       expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
       expect(gemini.generateJson).toHaveBeenCalledTimes(2);
       expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+
+      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
+      expect(item).toMatchObject({
+        agreement: 'identical',
+        fastPlan: { kinds: ['add_labels'], labels: ['+bug'] },
+        proPlan: { kinds: ['add_labels'], labels: ['+bug'] },
+      });
       expect(gh.getIssue).toHaveBeenCalledWith(42);
       expect(db.items['42']).toMatchObject({
         summary: 'Pro summary',
@@ -302,6 +315,66 @@ describe('processIssue', () => {
       });
     } finally {
       warnSpy.mockRestore();
+      cwdSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('tags errors with the failing pass so the runner can attribute them', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-process-issue-'));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+    const db: TriageDb = { version: 2, items: {} };
+    const stats = new RunStatistics();
+    const gh = {
+      listTimelineEvents: vi.fn().mockResolvedValue({
+        raw: timelineEvents,
+        filtered: timelineEvents,
+      }),
+      lastUpdated: vi.fn().mockReturnValue(Date.parse('2024-04-11T00:00:00Z')),
+    } as any;
+    const gemini = {
+      generateJson: vi
+        .fn()
+        // Fast pass escalates, then the pro pass dies.
+        .mockResolvedValueOnce({
+          data: {
+            summary: 'Fast summary',
+            operations: [{ kind: 'add_labels', labels: ['bug'], authorization: 'fast policy' }],
+          },
+          thoughts: 'Fast thoughts',
+          inputTokens: 10,
+          cachedInputTokens: 0,
+          outputTokens: 5,
+        })
+        .mockRejectedValueOnce(new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}')),
+    } as any;
+
+    try {
+      let caught: unknown;
+      try {
+        await processIssue(
+          { cfg: createConfig(), db, gh, gemini, stats },
+          {
+            issue: baseIssue,
+            repoLabels: [{ name: 'bug' }],
+            autoDiscover: false,
+            systemPromptFast: 'fast system prompt',
+            systemPromptPro: 'pro system prompt',
+            cacheInfos: new Map(),
+            runTimestamp: '2026-05-19T16:16:13.737Z',
+          }
+        );
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect(getPassFailure(caught)).toEqual({
+        failedPass: 'pro',
+        escalatedToPro: true,
+        fastPlan: { kinds: ['add_labels'], labels: ['+bug'] },
+      });
+    } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
