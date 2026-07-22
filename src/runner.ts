@@ -12,7 +12,7 @@ import {
 } from './autoDiscover';
 import { GeminiCacheInfo, GeminiClient, GeminiResponseError, THINKING_LEVEL } from './gemini';
 import { GitHubClient } from './github';
-import { IssueProcessorDeps, getPassFailure, processIssue } from './issueProcessor';
+import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import { RunStatistics } from './stats';
 import type { Config } from './config';
 import { TriageDb, saveArtifact, saveDatabase } from './storage';
@@ -133,6 +133,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       }
 
       try {
+        stats.beginPass(null);
         const issue = await gh.getIssue(issueNumber);
         const { triageUsed, fastRunUsed } = await processIssue(
           { cfg, db, gh, gemini, stats },
@@ -156,12 +157,12 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
           console.warn(`#${issueNumber}: unexpected error: ${detail}`);
         }
         stats.incrementFailed();
-        const passFailure = getPassFailure(err);
+        const failedPass = stats.getCurrentPass();
         stats.recordItem({
           issueNumber,
           outcome: 'failed',
-          escalatedToPro: passFailure?.escalatedToPro ?? false,
-          failedPass: passFailure?.failedPass,
+          escalatedToPro: failedPass === 'pro',
+          failedPass: failedPass ?? undefined,
         });
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { buildRunContext, getPassFailure, processIssue } from '../src/issueProcessor';
+import { buildRunContext, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
 import type { TriageDb } from '../src/storage';
@@ -320,16 +320,13 @@ describe('processIssue', () => {
     }
   });
 
-  it('tags errors with the failing pass so the runner can attribute them', async () => {
+  it('marks the pass in flight so a thrown error can be attributed', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-process-issue-'));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
     const db: TriageDb = { version: 2, items: {} };
     const stats = new RunStatistics();
     const gh = {
-      listTimelineEvents: vi.fn().mockResolvedValue({
-        raw: timelineEvents,
-        filtered: timelineEvents,
-      }),
+      listTimelineEvents: vi.fn().mockResolvedValue({ raw: timelineEvents, filtered: timelineEvents }),
       lastUpdated: vi.fn().mockReturnValue(Date.parse('2024-04-11T00:00:00Z')),
     } as any;
     const gemini = {
@@ -346,13 +343,12 @@ describe('processIssue', () => {
           cachedInputTokens: 0,
           outputTokens: 5,
         })
-        .mockRejectedValueOnce(new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}')),
+        .mockRejectedValueOnce(new Error('503 UNAVAILABLE')),
     } as any;
 
     try {
-      let caught: unknown;
-      try {
-        await processIssue(
+      await expect(
+        processIssue(
           { cfg: createConfig(), db, gh, gemini, stats },
           {
             issue: baseIssue,
@@ -363,13 +359,9 @@ describe('processIssue', () => {
             cacheInfos: new Map(),
             runTimestamp: '2026-05-19T16:16:13.737Z',
           }
-        );
-      } catch (err) {
-        caught = err;
-      }
-
-      expect(caught).toBeInstanceOf(Error);
-      expect(getPassFailure(caught)).toEqual({ failedPass: 'pro', escalatedToPro: true });
+        )
+      ).rejects.toThrow('503');
+      expect(stats.getCurrentPass()).toBe('pro');
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tempDir, { recursive: true, force: true });

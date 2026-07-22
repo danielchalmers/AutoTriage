@@ -104,6 +104,7 @@ export class RunStatistics {
   private items = new Map<number, ItemRecord>();
   private runConfig: RunConfigSnapshot | null = null;
   private promptHashes: PromptHashes | null = null;
+  private currentPass: 'fast' | 'pro' | null = null;
 
   setRepository(owner: string, repo: string): void {
     this.owner = owner;
@@ -145,6 +146,16 @@ export class RunStatistics {
 
   setPromptHashes(hashes: PromptHashes): void {
     this.promptHashes = hashes;
+  }
+
+  // Items are processed one at a time, so the pass in flight identifies which
+  // model call a thrown error escaped from. Reset to null between items.
+  beginPass(pass: 'fast' | 'pro' | null): void {
+    this.currentPass = pass;
+  }
+
+  getCurrentPass(): 'fast' | 'pro' | null {
+    return this.currentPass;
   }
 
   recordItem(record: ItemRecord): void {

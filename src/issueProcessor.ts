@@ -67,24 +67,6 @@ interface ProPassResult {
   operations: PlannedOperation[];
 }
 
-// Which pass an error escaped from, so the runner can attribute the failure in
-// telemetry. Stored in a WeakMap rather than mutating the error object.
-export interface PassFailure {
-  failedPass: 'fast' | 'pro';
-  escalatedToPro: boolean;
-}
-
-const passFailures = new WeakMap<object, PassFailure>();
-
-export function getPassFailure(err: unknown): PassFailure | undefined {
-  return typeof err === 'object' && err !== null ? passFailures.get(err) : undefined;
-}
-
-function tagPassFailure(err: unknown, info: PassFailure): unknown {
-  if (typeof err === 'object' && err !== null) passFailures.set(err, info);
-  return err;
-}
-
 export async function processIssue(
   deps: IssueProcessorDeps,
   options: ProcessIssueOptions
@@ -97,15 +79,10 @@ export async function processIssue(
       { cfg, db, gh },
       { issue, autoDiscover }
     );
-    let fastPass: FastPassResult;
-    try {
-      fastPass = await runFastPass(
-        { cfg, gemini, stats },
-        { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context }
-      );
-    } catch (err) {
-      throw tagPassFailure(err, { failedPass: 'fast', escalatedToPro: false });
-    }
+    const fastPass = await runFastPass(
+      { cfg, gemini, stats },
+      { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context }
+    );
     const fastPlan = fastPass.used && fastPass.plan
       ? summarizePlan(fastPass.plan.operations as PlannedOperation[])
       : undefined;
@@ -127,23 +104,18 @@ export async function processIssue(
       return { triageUsed: false, fastRunUsed: fastPass.used };
     }
 
-    let proPass: ProPassResult;
-    try {
-      proPass = await runProPass(
-        { cfg, gemini, stats },
-        {
-          issue,
-          repoLabels,
-          systemPromptPro,
-          cacheInfos,
-          runTimestamp,
-          context,
-          ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
-        }
-      );
-    } catch (err) {
-      throw tagPassFailure(err, { failedPass: 'pro', escalatedToPro: fastPass.used });
-    }
+    const proPass = await runProPass(
+      { cfg, gemini, stats },
+      {
+        issue,
+        repoLabels,
+        systemPromptPro,
+        cacheInfos,
+        runTimestamp,
+        context,
+        ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
+      }
+    );
 
     await executePlannedOperations(
       { cfg, gh, stats },
@@ -397,6 +369,7 @@ export async function generateAnalysis(
   );
 
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
+  stats.beginPass(isFastModel ? 'fast' : 'pro');
   const startTime = Date.now();
   const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens, totalTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500);
   const endTime = Date.now();

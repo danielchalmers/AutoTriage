@@ -204,6 +204,8 @@ describe('runAutoTriage automatic backlog caching', () => {
       setRunConfig: vi.fn(),
       setPromptHashes: vi.fn(),
       recordItem: vi.fn(),
+      beginPass: vi.fn(),
+      getCurrentPass: vi.fn().mockReturnValue(null),
       toJSON: vi.fn().mockReturnValue({}),
     };
   }
