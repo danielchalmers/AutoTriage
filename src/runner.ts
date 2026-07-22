@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
+import { createHash } from 'node:crypto';
 import {
   buildSystemPrompt,
   getPromptLimits,
@@ -9,7 +10,7 @@ import {
   buildAutoDiscoverQueue,
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
 } from './autoDiscover';
-import { GeminiCacheInfo, GeminiClient, GeminiResponseError } from './gemini';
+import { GeminiCacheInfo, GeminiClient, GeminiResponseError, THINKING_LEVEL } from './gemini';
 import { GitHubClient } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import { RunStatistics } from './stats';
@@ -33,6 +34,11 @@ export interface ListTargetsDeps {
 
 function logMaxRunsReached(mode: 'fast' | 'pro', maxRuns: number, remainingItems: number): void {
   console.log(`⏳ Max ${mode} runs (${maxRuns}) reached with ${remainingItems} item(s) remaining`);
+}
+
+// Truncated content hash so run summaries can be segmented by prompt version.
+function hashPrompt(text: string): string {
+  return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16)}`;
 }
 
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
@@ -64,6 +70,19 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   );
   saveArtifact(0, 'prompt-system-fast.md', systemPromptFast);
   saveArtifact(0, 'prompt-system.md', systemPromptPro);
+
+  stats.setRunConfig({
+    dryRun: cfg.dryRun,
+    extended: cfg.extended,
+    skipFastPass: cfg.skipFastPass,
+    maxFastRuns: cfg.maxFastRuns,
+    maxProRuns: cfg.maxProRuns,
+    thinkingLevel: String(THINKING_LEVEL).toLowerCase(),
+  });
+  stats.setPromptHashes({
+    fast: cfg.skipFastPass ? null : hashPrompt(systemPromptFast),
+    pro: hashPrompt(systemPromptPro),
+  });
 
   const cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo> = new Map();
   if (autoDiscover) {
@@ -114,6 +133,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       }
 
       try {
+        stats.beginPass(null);
         const issue = await gh.getIssue(issueNumber);
         const { triageUsed, fastRunUsed } = await processIssue(
           { cfg, db, gh, gemini, stats },
@@ -137,7 +157,13 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
           console.warn(`#${issueNumber}: unexpected error: ${detail}`);
         }
         stats.incrementFailed();
-        stats.recordItem({ issueNumber, outcome: 'failed', escalatedToPro: false });
+        const failedPass = stats.getCurrentPass();
+        stats.recordItem({
+          issueNumber,
+          outcome: 'failed',
+          escalatedToPro: failedPass === 'pro',
+          failedPass: failedPass ?? undefined,
+        });
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {
           console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);

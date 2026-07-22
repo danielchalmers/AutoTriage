@@ -9,7 +9,7 @@ import {
 } from './analysis';
 import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
-import { RunStatistics } from './stats';
+import { PlanSummary, RunStatistics, comparePlans, summarizePlan } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, planOperations } from './triage';
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
@@ -83,6 +83,9 @@ export async function processIssue(
       { cfg, gemini, stats },
       { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context }
     );
+    const fastPlan = fastPass.used && fastPass.plan
+      ? summarizePlan(fastPass.plan.operations as PlannedOperation[])
+      : undefined;
 
     if (fastPass.shouldSkipPro) {
       console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
@@ -95,6 +98,8 @@ export async function processIssue(
         outcome: 'skipped',
         skipReason: 'noop-fast',
         escalatedToPro: false,
+        fastPlan,
+        agreement: fastPlan && 'fast-noop',
       });
       return { triageUsed: false, fastRunUsed: fastPass.used };
     }
@@ -121,11 +126,15 @@ export async function processIssue(
     updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title, {
       lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
     });
+    const proPlan = summarizePlan(proPass.operations);
     stats.recordItem({
       issueNumber: issue.number,
       type: issue.type,
       outcome: 'triaged',
       escalatedToPro: fastPass.used,
+      fastPlan,
+      proPlan,
+      agreement: fastPlan && comparePlans(fastPlan, proPlan),
     });
     return { triageUsed: true, fastRunUsed: fastPass.used };
   });
@@ -360,6 +369,7 @@ export async function generateAnalysis(
   );
 
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
+  stats.beginPass(isFastModel ? 'fast' : 'pro');
   const startTime = Date.now();
   const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens, totalTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500);
   const endTime = Date.now();

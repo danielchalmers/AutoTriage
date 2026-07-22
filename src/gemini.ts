@@ -1,5 +1,8 @@
 import { GenerateContentResponse, GoogleGenAI, ThinkingLevel, type GenerateContentParameters } from '@google/genai';
 
+// Single source of truth for the thinking budget, also stamped into run telemetry.
+export const THINKING_LEVEL = ThinkingLevel.HIGH;
+
 export interface GeminiCacheInfo {
   name: string;
   tokenCount: number;
@@ -31,7 +34,7 @@ export function buildJsonPayload(
     responseSchema: schema as any,
     thinkingConfig: {
       includeThoughts: true,
-      thinkingLevel: ThinkingLevel.HIGH,
+      thinkingLevel: THINKING_LEVEL,
     }
   };
 

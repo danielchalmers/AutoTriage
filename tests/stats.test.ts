@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { RunStatistics } from '../src/stats';
+import { RunStatistics, comparePlans, summarizePlan } from '../src/stats';
 
 describe('RunStatistics', () => {
   let stats: RunStatistics;
@@ -96,6 +96,15 @@ describe('RunStatistics', () => {
       stats.setDiscovered(100);
       stats.setCapReached('fast');
       stats.incrementGithubApiCalls(12);
+      stats.setRunConfig({
+        dryRun: false,
+        extended: true,
+        skipFastPass: false,
+        maxFastRuns: 30,
+        maxProRuns: 20,
+        thinkingLevel: 'high',
+      });
+      stats.setPromptHashes({ fast: 'sha256:aaaa', pro: 'sha256:bbbb' });
 
       // Item 1: fast pass gates it out (no escalation).
       stats.trackFastRun({
@@ -108,7 +117,15 @@ describe('RunStatistics', () => {
         issueNumber: 1,
         cacheName: 'cache/fast',
       });
-      stats.recordItem({ issueNumber: 1, type: 'issue', outcome: 'skipped', skipReason: 'noop-fast', escalatedToPro: false });
+      stats.recordItem({
+        issueNumber: 1,
+        type: 'issue',
+        outcome: 'skipped',
+        skipReason: 'noop-fast',
+        escalatedToPro: false,
+        fastPlan: { kinds: [], labels: [] },
+        agreement: 'fast-noop',
+      });
       stats.incrementSkipped();
 
       // Item 2: escalates to pro, triaged, performs an action.
@@ -131,26 +148,41 @@ describe('RunStatistics', () => {
         issueNumber: 2,
         cacheName: 'cache/pro',
       });
-      stats.recordItem({ issueNumber: 2, type: 'pull request', outcome: 'triaged', escalatedToPro: true });
+      stats.recordItem({
+        issueNumber: 2,
+        type: 'pull request',
+        outcome: 'triaged',
+        escalatedToPro: true,
+        fastPlan: { kinds: ['add_labels'], labels: ['+bug'] },
+        proPlan: { kinds: ['add_labels'], labels: ['+bug'] },
+        agreement: 'identical',
+      });
       stats.trackAction({ issueNumber: 2, type: 'add_labels', details: '+bug' });
       stats.incrementTriaged();
 
+      // Item 3: escalated but the pro call failed.
+      stats.recordItem({ issueNumber: 3, outcome: 'failed', escalatedToPro: true, failedPass: 'pro' });
+      stats.incrementFailed();
+
       const json = stats.toJSON() as any;
 
-      expect(json.schemaVersion).toBe(1);
+      expect(json.schemaVersion).toBe(2);
       expect(json.repo).toBe('octo/demo');
       expect(json.models).toEqual({ fast: 'fast-model', pro: 'pro-model' });
+      expect(json.config).toMatchObject({ maxFastRuns: 30, thinkingLevel: 'high' });
+      expect(json.promptHash).toEqual({ fast: 'sha256:aaaa', pro: 'sha256:bbbb' });
       expect(json.github).toEqual({ calls: 12, retries: 0 });
       expect(json.funnel).toMatchObject({
         discovered: 100,
-        processed: 2,
+        processed: 3,
         triaged: 1,
         skipped: 1,
-        failed: 0,
-        escalatedToPro: 1,
+        failed: 1,
+        escalatedToPro: 2,
         capReached: 'fast',
       });
       expect(json.funnel.skipReasons).toEqual({ 'noop-fast': 1 });
+      expect(json.funnel.planAgreement).toEqual({ 'fast-noop': 1, identical: 1 });
       expect(json.fast.thoughtsTokens).toBe(7000);
       expect(json.pro.thoughtsTokens).toBe(6000);
       expect(json.actions).toEqual({ total: 1, byKind: { add_labels: 1 } });
@@ -161,9 +193,13 @@ describe('RunStatistics', () => {
       expect(item1.pro).toBeNull();
 
       const item2 = json.items.find((i: any) => i.number === 2);
-      expect(item2).toMatchObject({ type: 'pull request', outcome: 'triaged', escalatedToPro: true });
+      expect(item2).toMatchObject({ type: 'pull request', outcome: 'triaged', escalatedToPro: true, agreement: 'identical' });
+      expect(item2.fastPlan).toEqual({ kinds: ['add_labels'], labels: ['+bug'] });
       expect(item2.pro.thoughtsTokens).toBe(6000);
       expect(item2.operations).toEqual(['add_labels']);
+
+      const item3 = json.items.find((i: any) => i.number === 3);
+      expect(item3).toMatchObject({ outcome: 'failed', escalatedToPro: true, failedPass: 'pro' });
     });
 
     it('serializes an empty run without throwing', () => {
@@ -171,6 +207,26 @@ describe('RunStatistics', () => {
       const json = stats.toJSON() as any;
       expect(json.funnel.capReached).toBe('none');
       expect(json.items).toEqual([]);
+      expect(json.config).toBeNull();
+      expect(json.promptHash).toBeNull();
+    });
+
+  });
+
+  describe('plan summarization', () => {
+    it('summarizes and compares plans', () => {
+      const fast = summarizePlan([
+        { kind: 'comment' },
+        { kind: 'add_labels', labels: ['regression', 'bug'] },
+        { kind: 'remove_labels', labels: ['stale'] },
+      ]);
+      expect(fast).toEqual({
+        kinds: ['add_labels', 'comment', 'remove_labels'],
+        labels: ['+bug', '+regression', '-stale'],
+      });
+      expect(comparePlans(fast, { kinds: [], labels: [] })).toBe('pro-vetoed');
+      expect(comparePlans(fast, fast)).toBe('identical');
+      expect(comparePlans(fast, { kinds: ['add_labels'], labels: ['+bug'] })).toBe('differed');
     });
   });
 });
