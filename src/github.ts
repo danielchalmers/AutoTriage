@@ -38,9 +38,8 @@ export type TimelineEvent = {
   from?: string;
   to?: string;
   assignee?: string;
+  assigner?: string;
   requested_reviewer?: string;
-  commit_id?: string;
-  commit_url?: string;
   sha?: string;
   author?: string;
   message?: string;
@@ -48,7 +47,6 @@ export type TimelineEvent = {
   state_reason?: string;
   merged?: boolean;
   milestone?: string | null;
-  project?: string | null;
 };
 
 export class GitHubClient {
@@ -200,8 +198,6 @@ export class GitHubClient {
         actor_association: event.actor?.author_association || event.author_association,
         created_at: event.created_at,
         updated_at: event.updated_at,
-        //commit_id: event.commit_id,
-        //commit_url: event.commit_url,
       };
       switch (event.event) {
         case 'committed':
@@ -276,20 +272,6 @@ export class GitHubClient {
     await this.octokit.rest.issues.update({ owner: this.owner, repo: this.repo, issue_number, title });
   }
 
-  async closeIssue(
-    issue_number: number,
-    reason: 'completed' | 'not_planned' | 'reopened' | undefined = 'not_planned'
-  ): Promise<void> {
-    this.incrementApiCalls();
-    await this.octokit.rest.issues.update({
-      owner: this.owner,
-      repo: this.repo,
-      issue_number,
-      state: 'closed',
-      state_reason: reason,
-    });
-  }
-
   async updateIssueState(
     issue_number: number,
     state: 'open' | 'closed',
@@ -322,15 +304,5 @@ export class GitHubClient {
     }, 0);
 
     return issueUpdatedMs > latestEventMs ? issueUpdatedMs : latestEventMs;
-  }
-
-  hasUpdated(
-    issue: Issue,
-    timelineEvents: Array<TimelineEvent>,
-    lastTriaged: Date | undefined
-  ): boolean {
-    if (!lastTriaged) return true; // No prior triage => treat as updated.
-    const latestUpdateMs = this.lastUpdated(issue, timelineEvents);
-    return latestUpdateMs > lastTriaged.getTime();
   }
 }

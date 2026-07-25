@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import {
   AnalysisResult,
   FastPassPlan,
+  RepoLabel,
   buildAnalysisResultSchema,
   buildUserPrompt,
   getPromptLimits,
@@ -14,7 +15,6 @@ import { PlannedOperation, describeOperation, executeOperations, planOperations 
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
 
-type RepoLabel = { name: string; description?: string | null };
 type LastUpdatedFn = (issue: Issue, timelineEvents: TimelineEvent[]) => number;
 
 export interface IssueProcessorDeps {
@@ -371,7 +371,7 @@ export async function generateAnalysis(
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
   stats.beginPass(isFastModel ? 'fast' : 'pro');
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens, totalTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500);
+  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500);
   const endTime = Date.now();
 
   const modelRunStats = {
@@ -381,7 +381,6 @@ export async function generateAnalysis(
     cachedInputTokens,
     outputTokens,
     thoughtsTokens,
-    totalTokens,
     issueNumber: issue.number,
     ...(cacheInfo ? { cacheName: cacheInfo.name } : {}),
   };

@@ -24,15 +24,15 @@ function setInputs(values: Record<string, string>) {
   mocks.getInput.mockImplementation((name: string) => values[name] ?? '');
 }
 
-describe('getConfig boolean inputs', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.GITHUB_TOKEN = 'token';
-    process.env.GEMINI_API_KEY = 'gemini-key';
-    process.env.GITHUB_REPOSITORY = 'danielchalmers/AutoTriage';
-    setInputs({});
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  process.env.GITHUB_TOKEN = 'token';
+  process.env.GEMINI_API_KEY = 'gemini-key';
+  process.env.GITHUB_REPOSITORY = 'danielchalmers/AutoTriage';
+  setInputs({});
+});
 
+describe('getConfig boolean inputs', () => {
   it('defaults booleans to false when inputs are not set', () => {
     const cfg = getConfig();
     expect(cfg.dryRun).toBe(false);
@@ -55,14 +55,6 @@ describe('getConfig boolean inputs', () => {
 });
 
 describe('getConfig integer and list inputs', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.GITHUB_TOKEN = 'token';
-    process.env.GEMINI_API_KEY = 'gemini-key';
-    process.env.GITHUB_REPOSITORY = 'danielchalmers/AutoTriage';
-    setInputs({});
-  });
-
   it('keeps only positive integer issue numbers', () => {
     setInputs({ issues: '12, 0, -4, nope, 8.5 34' });
     const cfg = getConfig();
@@ -105,14 +97,6 @@ describe('getConfig integer and list inputs', () => {
 });
 
 describe('getConfig model inputs', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.GITHUB_TOKEN = 'token';
-    process.env.GEMINI_API_KEY = 'gemini-key';
-    process.env.GITHUB_REPOSITORY = 'danielchalmers/AutoTriage';
-    setInputs({});
-  });
-
   it('treats blank model-fast input as skip-fast-pass', () => {
     setInputs({ 'model-fast': '   ' });
 
