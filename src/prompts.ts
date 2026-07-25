@@ -169,19 +169,3 @@ The following plan was produced by a faster preliminary model. Treat it as draft
 ${JSON.stringify(fastPassPlan, null, 2)}` : ''}
 `;
 }
-
-export async function buildPrompt(
-  issue: Issue,
-  promptPath: string,
-  readmePath: string,
-  timelineEvents: TimelineEvent[],
-  repoLabels: RepoLabel[],
-  additionalInstructions?: string,
-  mode: PromptPassMode = 'pro',
-  limits?: Partial<PromptPassLimits>,
-  runTimestamp?: string,
-) {
-  const systemPrompt = buildSystemPrompt(promptPath, readmePath, repoLabels, additionalInstructions, mode, limits);
-  const userPrompt = buildUserPrompt(issue, timelineEvents, mode, limits, undefined, undefined, runTimestamp);
-  return { systemPrompt, userPrompt };
-}

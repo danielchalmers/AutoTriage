@@ -23,9 +23,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { listTargets, runAutoTriage } from '../src/runner';
-import { Issue } from '../src/github';
 import type { Config } from '../src/config';
-import { TriageDb } from '../src/storage';
+import { makeClosedIssue, makeDb, makeIssue } from './fixtures';
 
 const baseConfig: Config = {
   owner: 'owner',
@@ -51,46 +50,6 @@ const baseConfig: Config = {
   extended: false,
   strictMode: false,
 };
-
-const baseIssue: Omit<Issue, 'number' | 'updated_at' | 'created_at'> = {
-  title: 'Sample',
-  state: 'open',
-  type: 'issue',
-  author: 'octocat',
-  user_type: 'User',
-  draft: false,
-  locked: false,
-  milestone: null,
-  comments: 0,
-  reactions: 0,
-  labels: [],
-  assignees: [],
-  body: null,
-};
-
-function makeIssue(number: number, updatedAt: string): Issue {
-  return {
-    ...baseIssue,
-    number,
-    updated_at: updatedAt,
-    created_at: updatedAt,
-  };
-}
-
-function makeClosedIssue(number: number, closedAt: string, updatedAt: string): Issue {
-  return {
-    ...makeIssue(number, updatedAt),
-    state: 'closed',
-    closed_at: closedAt,
-  };
-}
-
-function makeDb(items: TriageDb['items'] = {}): TriageDb {
-  return {
-    version: 2,
-    items,
-  };
-}
 
 describe('listTargets', () => {
   it('uses explicit issue inputs before any other source', async () => {

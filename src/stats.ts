@@ -7,7 +7,6 @@ export interface ModelRunStats {
   cachedInputTokens?: number;
   outputTokens: number;
   thoughtsTokens?: number;
-  totalTokens?: number;
   cacheName?: string;
   issueNumber?: number;
 }

@@ -6,9 +6,6 @@ export const THINKING_LEVEL = ThinkingLevel.HIGH;
 export interface GeminiCacheInfo {
   name: string;
   tokenCount: number;
-  createTime?: string;
-  expireTime?: string;
-  displayName?: string;
 }
 
 export interface GeminiJsonResult<T> {
@@ -18,7 +15,6 @@ export interface GeminiJsonResult<T> {
   cachedInputTokens: number;
   outputTokens: number;
   thoughtsTokens: number;
-  totalTokens: number;
 }
 
 export function buildJsonPayload(
@@ -103,9 +99,6 @@ export class GeminiClient {
     return {
       name: cache.name,
       tokenCount: cache.usageMetadata?.totalTokenCount ?? 0,
-      ...(cache.createTime ? { createTime: cache.createTime } : {}),
-      ...(cache.expireTime ? { expireTime: cache.expireTime } : {}),
-      ...(cache.displayName ? { displayName: cache.displayName } : {}),
     };
   }
 
@@ -158,9 +151,8 @@ export class GeminiClient {
       const cachedInputTokens = response.usageMetadata?.cachedContentTokenCount ?? 0;
       const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
       const thoughtsTokens = response.usageMetadata?.thoughtsTokenCount ?? 0;
-      const totalTokens = response.usageMetadata?.totalTokenCount ?? 0;
 
-      return { data, thoughts: collapsedThoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens, totalTokens };
+      return { data, thoughts: collapsedThoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens };
     } catch {
       throw new GeminiResponseError('Unable to parse JSON from Gemini response');
     }

@@ -177,10 +177,6 @@ These are good follow-up investments because OpenAI's harness engineering post
 argues that durable agent leverage comes from legible repository systems,
 mechanical checks, and feedback loops rather than repeated manual guidance.
 
-- Add `npm run verify` to run typecheck, test typecheck, tests, build, and the
-  `dist/` freshness check in one command.
-- Add a focused `npm run check:dist` script so local and CI checks share the
-  same generated-output invariant.
 - Add representative GitHub issue, pull request, and comment fixtures for
   behavior tests.
 - Add model-response fixtures for Gemini planning edge cases.

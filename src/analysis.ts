@@ -157,4 +157,4 @@ export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
   };
 }
 
-export { buildPrompt, buildSystemPrompt, buildUserPrompt } from './prompts';
+export { buildSystemPrompt, buildUserPrompt } from './prompts';
