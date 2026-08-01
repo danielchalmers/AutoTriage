@@ -1,5 +1,6 @@
 import { Issue } from './github';
 import { TriageDb, TriageDbEntry, getDbEntry } from './storage';
+import { parseTimestamp } from './util';
 
 // Orders auto-discover targets so anything new or updated since our last triage is processed first.
 // If skipUnchanged is true, issues that are already in the database and haven't changed are excluded.
@@ -17,17 +18,14 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchan
       // Preserve GitHub's recency order inside prioritized bucket to keep cycling smoothly.
       prioritized.push(issue.number);
     } else {
-      // Skip unchanged issues if requested
       if (skipUnchanged) continue;
-      
-      // Track lastTriaged timestamp for sorting secondary bucket
-      // safeParseDate returns 0 for missing/undefined values, sorting them first
-      const lastTriagedMs = safeParseDate(entry?.lastTriaged);
+
+      // parseTimestamp returns 0 for missing values, which sorts never-triaged items first.
+      const lastTriagedMs = parseTimestamp(entry?.lastTriaged);
       secondary.push({ number: issue.number, lastTriagedMs });
     }
   }
 
-  // Sort secondary by lastTriaged (oldest first)
   secondary.sort((a, b) => a.lastTriagedMs - b.lastTriagedMs);
 
   return prioritized.concat(secondary.map(item => item.number));
@@ -37,9 +35,9 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchan
 export function filterPreviouslyTriagedClosedIssuesWithNewActivity(issues: Issue[], db: TriageDb): Issue[] {
   return (issues || []).filter(issue => {
     const entry = getDbEntry(db, issue.number);
-    const triagedMs = safeParseDate(entry?.lastTriaged);
+    const triagedMs = parseTimestamp(entry?.lastTriaged);
     if (triagedMs === 0) return false; // Never triaged before (or invalid timestamp)
-    const closedMs = safeParseDate(issue.closed_at);
+    const closedMs = parseTimestamp(issue.closed_at);
     const updatedMs = getLastUpdatedMs(issue);
     const baselineMs = Math.max(getActivityBaselineMs(entry), closedMs);
     return updatedMs > baselineMs;
@@ -47,7 +45,7 @@ export function filterPreviouslyTriagedClosedIssuesWithNewActivity(issues: Issue
 }
 
 function getLastUpdatedMs(issue: Issue): number {
-  return safeParseDate(issue.updated_at) || safeParseDate(issue.created_at);
+  return parseTimestamp(issue.updated_at) || parseTimestamp(issue.created_at);
 }
 
 function shouldPrioritize(lastUpdatedMs: number, entry?: TriageDbEntry): boolean {
@@ -59,11 +57,5 @@ function shouldPrioritize(lastUpdatedMs: number, entry?: TriageDbEntry): boolean
 }
 
 function getActivityBaselineMs(entry?: TriageDbEntry): number {
-  return safeParseDate(entry?.lastSeenUpdatedAt ?? entry?.lastTriaged);
-}
-
-function safeParseDate(value?: string | null): number {
-  if (!value) return 0;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return parseTimestamp(entry?.lastSeenUpdatedAt ?? entry?.lastTriaged);
 }

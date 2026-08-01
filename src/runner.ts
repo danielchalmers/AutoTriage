@@ -3,7 +3,6 @@ import * as github from '@actions/github';
 import { createHash } from 'node:crypto';
 import {
   buildSystemPrompt,
-  getPromptLimits,
   normalizeRepoLabels,
 } from './analysis';
 import {
@@ -13,8 +12,10 @@ import {
 import { GeminiCacheInfo, GeminiResponseError, THINKING_LEVEL } from './gemini';
 import { GitHubClient } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
+import type { RunStatistics } from './stats';
 import type { Config } from './config';
 import { TriageDb, saveArtifact, saveDatabase } from './storage';
+import { errorDetail, errorMessage } from './util';
 
 export type AutoTriageDeps = IssueProcessorDeps;
 
@@ -25,8 +26,10 @@ export interface ListTargetsDeps {
   payload?: any;
 }
 
-function logMaxRunsReached(mode: 'fast' | 'pro', maxRuns: number, remainingItems: number): void {
+// Every run cap is reported the same way: log the remaining backlog and stamp which cap stopped the run.
+function reportCapReached(stats: RunStatistics, mode: 'fast' | 'pro', maxRuns: number, remainingItems: number): void {
   console.log(`⏳ Max ${mode} runs (${maxRuns}) reached with ${remainingItems} item(s) remaining`);
+  stats.setCapReached(mode);
 }
 
 // Truncated content hash so run summaries can be segmented by prompt version.
@@ -48,18 +51,16 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   console.log(`▶️ Discovered ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (extended: ${cfg.extended})`);
   console.log(`⏳ Fast runs limited to ${cfg.maxFastRuns} item(s), Pro runs limited to ${cfg.maxProRuns} item(s)`);
 
-  const fastLimits = getPromptLimits(cfg, 'fast');
-  const proLimits = getPromptLimits(cfg, 'pro');
   const systemPromptFast = cfg.skipFastPass
     ? ''
-    : buildSystemPrompt(cfg.promptPath, cfg.readmePath, repoLabels, cfg.additionalInstructions, 'fast', fastLimits);
+    : buildSystemPrompt(cfg.promptPath, cfg.readmePath, repoLabels, cfg.additionalInstructions, 'fast', cfg.limits.fast);
   const systemPromptPro = buildSystemPrompt(
     cfg.promptPath,
     cfg.readmePath,
     repoLabels,
     cfg.additionalInstructions,
     'pro',
-    proLimits
+    cfg.limits.pro
   );
   saveArtifact(0, 'prompt-system-fast.md', systemPromptFast);
   saveArtifact(0, 'prompt-system.md', systemPromptPro);
@@ -79,31 +80,18 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
 
   const cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo> = new Map();
   if (autoDiscover) {
-    if (!cfg.skipFastPass) {
+    const cacheTargets = [
+      ...(cfg.skipFastPass ? [] : [{ mode: 'fast' as const, model: cfg.modelFast, systemPrompt: systemPromptFast }]),
+      { mode: 'pro' as const, model: cfg.modelPro, systemPrompt: systemPromptPro },
+    ];
+    for (const { mode, model, systemPrompt } of cacheTargets) {
       try {
-        const cacheInfo = await gemini.createCache(cfg.modelFast, systemPromptFast, `autotriage-fast-${cfg.owner}/${cfg.repo}`);
-        cacheInfos.set('fast', cacheInfo);
-        stats.trackCacheCreate({
-          mode: 'fast',
-          model: cfg.modelFast,
-          name: cacheInfo.name,
-          tokenCount: cacheInfo.tokenCount,
-        });
+        const cacheInfo = await gemini.createCache(model, systemPrompt, `autotriage-${mode}-${cfg.owner}/${cfg.repo}`);
+        cacheInfos.set(mode, cacheInfo);
+        stats.trackCacheCreate({ mode, model, name: cacheInfo.name, tokenCount: cacheInfo.tokenCount });
       } catch (err) {
-        console.warn(`⚠️ Context caching unavailable for ${cfg.modelFast}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(`⚠️ Context caching unavailable for ${model}, falling back to uncached: ${errorMessage(err)}`);
       }
-    }
-    try {
-      const cacheInfo = await gemini.createCache(cfg.modelPro, systemPromptPro, `autotriage-pro-${cfg.owner}/${cfg.repo}`);
-      cacheInfos.set('pro', cacheInfo);
-      stats.trackCacheCreate({
-        mode: 'pro',
-        model: cfg.modelPro,
-        name: cacheInfo.name,
-        tokenCount: cacheInfo.tokenCount,
-      });
-    } catch (err) {
-      console.warn(`⚠️ Context caching unavailable for ${cfg.modelPro}, falling back to uncached: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -114,14 +102,12 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       const remainingItems = targets.length - index;
 
       if (!cfg.skipFastPass && remainingFastRuns <= 0) {
-        logMaxRunsReached('fast', cfg.maxFastRuns, remainingItems);
-        stats.setCapReached('fast');
+        reportCapReached(stats, 'fast', cfg.maxFastRuns, remainingItems);
         break;
       }
 
       if (remainingTriages <= 0) {
-        logMaxRunsReached('pro', cfg.maxProRuns, remainingItems);
-        stats.setCapReached('pro');
+        reportCapReached(stats, 'pro', cfg.maxProRuns, remainingItems);
         break;
       }
 
@@ -141,13 +127,12 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         if (fastRunUsed) fastRunsPerformed++;
         consecutiveFailures = 0;
       } catch (err) {
-        // Any per-item failure — model or otherwise (e.g. a transient GitHub API error) — is recorded and skipped so one bad item can't abort the remaining backlog.
+        // Any per-item failure, model or otherwise (e.g. a transient GitHub API error), is recorded and skipped so one bad item can't abort the remaining backlog.
         // The consecutive-failure breaker below still stops the run if errors cascade (auth loss, outage).
         if (err instanceof GeminiResponseError) {
           console.warn(`#${issueNumber}: ${err.message}`);
         } else {
-          const detail = err instanceof Error ? err.stack ?? err.message : String(err);
-          console.warn(`#${issueNumber}: unexpected error: ${detail}`);
+          console.warn(`#${issueNumber}: unexpected error: ${errorDetail(err)}`);
         }
         stats.incrementFailed();
         const failedPass = stats.getCurrentPass();
@@ -168,8 +153,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       saveDatabase(db, cfg.dbPath, cfg.dryRun);
 
       if (triagesPerformed >= cfg.maxProRuns) {
-        logMaxRunsReached('pro', cfg.maxProRuns, targets.length - index - 1);
-        stats.setCapReached('pro');
+        reportCapReached(stats, 'pro', cfg.maxProRuns, targets.length - index - 1);
         break;
       }
     }

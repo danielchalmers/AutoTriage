@@ -2,12 +2,19 @@ import type { AnalysisResult, ModelOperation } from './analysis';
 import type { Issue } from './github';
 import chalk from 'chalk';
 
+// A planned operation is a model operation plus the thought log we attach to comments.
+// Deriving it keeps ModelOperation the single statement of what an operation is, so adding a kind there makes the switches below fail to compile until they handle it.
 export type PlannedOperation =
-  | { kind: 'add_labels'; labels: string[]; authorization: string }
-  | { kind: 'remove_labels'; labels: string[]; authorization: string }
-  | { kind: 'comment'; body: string; authorization: string; thoughts?: string }
-  | { kind: 'set_title'; title: string; authorization: string }
-  | { kind: 'set_state'; state: 'open' | 'completed' | 'not_planned'; authorization: string };
+  | Exclude<ModelOperation, { kind: 'comment' }>
+  | (Extract<ModelOperation, { kind: 'comment' }> & { thoughts?: string });
+
+const OPERATION_KINDS: readonly ModelOperation['kind'][] = [
+  'add_labels',
+  'remove_labels',
+  'comment',
+  'set_title',
+  'set_state',
+];
 
 export interface GitHubWriteClient {
   addLabels(issueNumber: number, labels: string[]): Promise<void>;
@@ -111,13 +118,9 @@ function filterLabels(labels: unknown, repoLabels: string[] | undefined): string
 
 function hasAuthorization(op: unknown): op is ModelOperation {
   if (!op || typeof op !== 'object') return false;
-  const maybe = op as { kind?: unknown; authorization?: unknown };
-  const validKind = maybe.kind === 'add_labels'
-    || maybe.kind === 'remove_labels'
-    || maybe.kind === 'comment'
-    || maybe.kind === 'set_title'
-    || maybe.kind === 'set_state';
-  return validKind && typeof maybe.authorization === 'string' && maybe.authorization.trim().length > 0;
+  const { kind, authorization } = op as { kind?: unknown; authorization?: unknown };
+  return OPERATION_KINDS.includes(kind as ModelOperation['kind'])
+    && typeof authorization === 'string' && authorization.trim().length > 0;
 }
 
 export function planOperations(

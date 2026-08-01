@@ -18,6 +18,7 @@ export interface CacheCreateStats {
   tokenCount: number;
 }
 
+// Stated independently of the operation union: this is the run-summary artifact's contract.
 export interface ActionDetail {
   issueNumber: number;
   type: 'add_labels' | 'remove_labels' | 'comment' | 'set_title' | 'set_state';
@@ -27,8 +28,7 @@ export interface ActionDetail {
 export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
 export type SkipReason = 'noop-fast' | 'other';
 
-// Compact, comparable form of what a pass planned: sorted unique operation
-// kinds plus signed label changes (`+bug`, `-stale`).
+// Compact, comparable form of what a pass planned: sorted unique operation kinds plus signed label changes (`+bug`, `-stale`).
 export interface PlanSummary {
   kinds: string[];
   labels: string[];
@@ -61,6 +61,30 @@ export interface RunConfigSnapshot {
 export interface PromptHashes {
   fast: string | null;
   pro: string;
+}
+
+function countKey(counts: Record<string, number>, key: string): void {
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
+function groupByIssue<T>(actions: ActionDetail[], select: (action: ActionDetail) => T): Map<number, T[]> {
+  const grouped = new Map<number, T[]>();
+  for (const action of actions) {
+    const bucket = grouped.get(action.issueNumber);
+    if (bucket) bucket.push(select(action));
+    else grouped.set(action.issueNumber, [select(action)]);
+  }
+  return grouped;
+}
+
+// Token totals, emitted in the key order the run-summary artifact uses.
+function sumTokens(runs: ModelRunStats[]) {
+  return {
+    inputTokens: runs.reduce((sum, r) => sum + r.inputTokens, 0),
+    cachedInputTokens: runs.reduce((sum, r) => sum + (r.cachedInputTokens ?? 0), 0),
+    thoughtsTokens: runs.reduce((sum, r) => sum + (r.thoughtsTokens ?? 0), 0),
+    outputTokens: runs.reduce((sum, r) => sum + r.outputTokens, 0),
+  };
 }
 
 // Summarize planned operations into the comparable PlanSummary shape.
@@ -147,8 +171,8 @@ export class RunStatistics {
     this.promptHashes = hashes;
   }
 
-  // Items are processed one at a time, so the pass in flight identifies which
-  // model call a thrown error escaped from. Reset to null between items.
+  // Items are processed one at a time, so the pass in flight identifies which model call a thrown error escaped from.
+  // Reset to null between items.
   beginPass(pass: 'fast' | 'pro' | null): void {
     this.currentPass = pass;
   }
@@ -206,54 +230,17 @@ export class RunStatistics {
     return `${percent.toFixed(1)}%`;
   }
 
-  private calculateStats(runs: ModelRunStats[]): {
-    total: number;
-    avg: number;
-    p95: number;
-    inputTokens: number;
-    outputTokens: number;
-    cachedInputTokens: number;
-    thoughtsTokens: number;
-    cacheHitRuns: number;
-    cacheReferencedRuns: number;
-  } {
-    if (runs.length === 0) {
-      return {
-        total: 0,
-        avg: 0,
-        p95: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        cachedInputTokens: 0,
-        thoughtsTokens: 0,
-        cacheHitRuns: 0,
-        cacheReferencedRuns: 0,
-      };
-    }
-
+  private calculateStats(runs: ModelRunStats[]) {
     const durations = runs.map(r => r.endTime - r.startTime);
     const total = durations.reduce((sum, d) => sum + d, 0);
-    const avg = total / runs.length;
     const sorted = [...durations].sort((a, b) => a - b);
     const p95Index = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
-    const p95 = sorted[p95Index] ?? 0;
-    const inputTokens = runs.reduce((sum, r) => sum + r.inputTokens, 0);
-    const cachedInputTokens = runs.reduce((sum, r) => sum + (r.cachedInputTokens ?? 0), 0);
-    const outputTokens = runs.reduce((sum, r) => sum + r.outputTokens, 0);
-    const thoughtsTokens = runs.reduce((sum, r) => sum + (r.thoughtsTokens ?? 0), 0);
-    const cacheHitRuns = runs.filter(r => (r.cachedInputTokens ?? 0) > 0).length;
-    const cacheReferencedRuns = runs.filter(r => r.cacheName).length;
 
     return {
       total,
-      avg,
-      p95,
-      inputTokens,
-      outputTokens,
-      cachedInputTokens,
-      thoughtsTokens,
-      cacheHitRuns,
-      cacheReferencedRuns,
+      avg: runs.length > 0 ? total / runs.length : 0,
+      p95: sorted[p95Index] ?? 0,
+      ...sumTokens(runs),
     };
   }
 
@@ -321,20 +308,10 @@ export class RunStatistics {
     if (this.actionsPerformed.length > 0) {
       console.log('\n' + chalk.bold('🎬 Actions Performed:'));
 
-      const byIssue = new Map<number, ActionDetail[]>();
-      for (const action of this.actionsPerformed) {
-        if (!byIssue.has(action.issueNumber)) {
-          byIssue.set(action.issueNumber, []);
-        }
-        byIssue.get(action.issueNumber)!.push(action);
-      }
+      const byIssue = groupByIssue(this.actionsPerformed, action => action.details);
 
-      const sortedIssues = Array.from(byIssue.keys()).sort((a, b) => a - b);
-
-      for (const issueNumber of sortedIssues) {
-        const actions = byIssue.get(issueNumber)!;
-        const parts = actions.map(a => a.details);
-        console.log(`  #${issueNumber}: ${parts.join(', ')}`);
+      for (const [issueNumber, details] of [...byIssue].sort(([a], [b]) => a - b)) {
+        console.log(`  #${issueNumber}: ${details.join(', ')}`);
       }
     }
   }
@@ -345,12 +322,9 @@ export class RunStatistics {
     return {
       runs: runs.length,
       totalMs: Math.round(stats.total),
-      avgMs: runs.length > 0 ? Math.round(stats.avg) : 0,
+      avgMs: Math.round(stats.avg),
       p95Ms: Math.round(stats.p95),
-      inputTokens: stats.inputTokens,
-      cachedInputTokens: stats.cachedInputTokens,
-      thoughtsTokens: stats.thoughtsTokens,
-      outputTokens: stats.outputTokens,
+      ...sumTokens(runs),
       cacheCreatedTokens: cacheCreate.tokenCount,
     };
   }
@@ -360,17 +334,13 @@ export class RunStatistics {
     if (matching.length === 0) return null;
     return {
       ms: matching.reduce((sum, r) => sum + (r.endTime - r.startTime), 0),
-      inputTokens: matching.reduce((sum, r) => sum + r.inputTokens, 0),
-      cachedInputTokens: matching.reduce((sum, r) => sum + (r.cachedInputTokens ?? 0), 0),
-      thoughtsTokens: matching.reduce((sum, r) => sum + (r.thoughtsTokens ?? 0), 0),
-      outputTokens: matching.reduce((sum, r) => sum + r.outputTokens, 0),
+      ...sumTokens(matching),
     };
   }
 
   /**
-   * Serialize this run into a machine-readable summary. Written as the
-   * `run-summary.json` artifact so runs can be aggregated across history for
-   * research, rather than scraped from the human-facing log lines.
+   * Serialize this run into a machine-readable summary.
+   * Written as the `run-summary.json` artifact so runs can be aggregated across history for research, rather than scraped from the human-facing log lines.
    */
   toJSON(): Record<string, unknown> {
     const skipReasons: Record<string, number> = {};
@@ -378,21 +348,14 @@ export class RunStatistics {
     let escalatedToPro = 0;
     for (const item of this.items.values()) {
       if (item.escalatedToPro) escalatedToPro++;
-      if (item.agreement) {
-        planAgreement[item.agreement] = (planAgreement[item.agreement] ?? 0) + 1;
-      }
-      if (item.outcome === 'skipped') {
-        const reason = item.skipReason ?? 'other';
-        skipReasons[reason] = (skipReasons[reason] ?? 0) + 1;
-      }
+      if (item.agreement) countKey(planAgreement, item.agreement);
+      if (item.outcome === 'skipped') countKey(skipReasons, item.skipReason ?? 'other');
     }
 
-    const actionsByIssue = new Map<number, string[]>();
+    const actionsByIssue = groupByIssue(this.actionsPerformed, action => action.type);
     const actionsByKind: Record<string, number> = {};
     for (const action of this.actionsPerformed) {
-      if (!actionsByIssue.has(action.issueNumber)) actionsByIssue.set(action.issueNumber, []);
-      actionsByIssue.get(action.issueNumber)!.push(action.type);
-      actionsByKind[action.type] = (actionsByKind[action.type] ?? 0) + 1;
+      countKey(actionsByKind, action.type);
     }
 
     const issueNumbers = new Set<number>([

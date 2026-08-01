@@ -20,36 +20,11 @@ vi.mock('../src/issueProcessor', async () => {
 });
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { listTargets, runAutoTriage } from '../src/runner';
-import type { Config } from '../src/config';
-import { makeClosedIssue, makeDb, makeIssue } from './fixtures';
+import { makeClosedIssue, makeConfig, makeDb, makeIssue, withTempDir } from './fixtures';
 
-const baseConfig: Config = {
-  owner: 'owner',
-  repo: 'repo',
-  token: 'token',
-  geminiApiKey: 'key',
-  dryRun: true,
-  promptPath: 'examples/AutoTriage.prompt',
-  readmePath: 'README.md',
-  skipFastPass: false,
-  modelFast: 'fast-model',
-  modelPro: 'pro-model',
-  maxFastTimelineEvents: 12,
-  maxProTimelineEvents: 40,
-  maxFastReadmeChars: 0,
-  maxProReadmeChars: 120000,
-  maxFastIssueBodyChars: 4000,
-  maxProIssueBodyChars: 20000,
-  maxFastTimelineTextChars: 600,
-  maxProTimelineTextChars: 4000,
-  maxProRuns: 20,
-  maxFastRuns: 100,
-  extended: false,
-  strictMode: false,
-};
+const baseConfig = makeConfig();
 
 describe('listTargets', () => {
   it('uses explicit issue inputs before any other source', async () => {
@@ -245,13 +220,12 @@ describe('runAutoTriage automatic backlog caching', () => {
   });
 
   it('saves the database after processing the item that reaches max-pro-runs', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-runner-db-'));
-    const dbPath = path.join(tempDir, 'triage-db.json');
-    const gh = createGitHub();
-    const gemini = createGemini();
-    const stats = createStats();
+    await withTempDir(async (tempDir) => {
+      const dbPath = path.join(tempDir, 'triage-db.json');
+      const gh = createGitHub();
+      const gemini = createGemini();
+      const stats = createStats();
 
-    try {
       await runAutoTriage({
         cfg: { ...baseConfig, dbPath, dryRun: false, issueNumbers: [5], maxProRuns: 1 },
         db: makeDb({ '5': { lastTriaged: '2024-04-01T00:00:00Z' } }),
@@ -266,9 +240,7 @@ describe('runAutoTriage automatic backlog caching', () => {
           '5': { lastTriaged: '2024-04-01T00:00:00Z' },
         },
       });
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    }
+    });
   });
 
   it('logs remaining backlog items when max fast runs is reached', async () => {

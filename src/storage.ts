@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
+import { errorMessage } from './util';
 
 export interface TriageDbEntry {
   lastTriaged?: string;   // ISO timestamp of when triage was completed
@@ -12,14 +13,6 @@ export interface TriageDb {
   version: 2;
   items: Record<string, TriageDbEntry>;
 }
-
-type LegacyTriageDbEntry = {
-  lastTriaged?: unknown;
-  summary?: unknown;
-  thoughts?: unknown;
-};
-
-type LegacyTriageDb = Record<string, LegacyTriageDbEntry>;
 
 function createEmptyDatabase(): TriageDb {
   return {
@@ -42,7 +35,7 @@ export function loadDatabase(dbPath?: string): TriageDb {
     console.info(`📊 Loaded ${dbPath} with ${Object.keys(db.items).length} entries`);
     return db;
   } catch (err) {
-    const message = getErrorMessage(err);
+    const message = errorMessage(err);
     console.error(`⚠️ Failed to load ${dbPath}: ${message}. Starting with empty database.`);
     return createEmptyDatabase();
   }
@@ -55,7 +48,7 @@ export function saveDatabase(db: TriageDb, dbPath?: string, dryRun?: boolean): v
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
   } catch (err) {
-    const message = getErrorMessage(err);
+    const message = errorMessage(err);
     console.error(`⚠️ Failed to save ${dbPath}: ${message}`);
   }
 }
@@ -89,20 +82,16 @@ function isV2Database(value: unknown): value is TriageDb {
   return isRecord(value) && value.version === 2 && isRecord(value.items);
 }
 
-function normalizeV2Database(db: TriageDb): TriageDb {
-  const items = Object.entries(db.items).reduce<Record<string, TriageDbEntry>>((acc, [key, value]) => {
-    if (!isRecord(value)) return acc;
-
-    const entry: TriageDbEntry = {};
-    if (typeof value.lastTriaged === 'string') entry.lastTriaged = value.lastTriaged;
-    if (typeof value.lastSeenUpdatedAt === 'string') entry.lastSeenUpdatedAt = value.lastSeenUpdatedAt;
-    if (typeof value.summary === 'string') entry.summary = value.summary;
-
+// Both readers walk a raw item map and keep only entries that yielded at least one recognized field.
+function collectEntries(source: object, toEntry: (raw: Record<string, unknown>) => TriageDbEntry): TriageDb {
+  const items: Record<string, TriageDbEntry> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!isRecord(value)) continue;
+    const entry = toEntry(value);
     if (Object.keys(entry).length > 0) {
-      acc[key] = entry;
+      items[key] = entry;
     }
-    return acc;
-  }, {});
+  }
 
   return {
     version: 2,
@@ -110,14 +99,24 @@ function normalizeV2Database(db: TriageDb): TriageDb {
   };
 }
 
+function normalizeV2Database(db: TriageDb): TriageDb {
+  return collectEntries(db.items, value => {
+    const entry: TriageDbEntry = {};
+    if (typeof value.lastTriaged === 'string') entry.lastTriaged = value.lastTriaged;
+    if (typeof value.lastSeenUpdatedAt === 'string') entry.lastSeenUpdatedAt = value.lastSeenUpdatedAt;
+    if (typeof value.summary === 'string') entry.summary = value.summary;
+    return entry;
+  });
+}
+
 function migrateLegacyDatabase(value: unknown): TriageDb {
   if (!isRecord(value)) return createEmptyDatabase();
 
-  const items = Object.entries(value as LegacyTriageDb).reduce<Record<string, TriageDbEntry>>((acc, [key, legacyEntry]) => {
-    if (!isRecord(legacyEntry)) return acc;
-
+  return collectEntries(value, legacyEntry => {
     const entry: TriageDbEntry = {};
-    const lastTriaged = typeof legacyEntry.lastTriaged === 'string' && isValidTimestamp(legacyEntry.lastTriaged)
+    // Legacy rows had no separate watermark, so the triage time doubles as one.
+    // Any parseable date counts, including pre-1970 ones, so keep the finite check rather than a positive-value test.
+    const lastTriaged = typeof legacyEntry.lastTriaged === 'string' && Number.isFinite(Date.parse(legacyEntry.lastTriaged))
       ? legacyEntry.lastTriaged
       : undefined;
 
@@ -130,28 +129,12 @@ function migrateLegacyDatabase(value: unknown): TriageDb {
       entry.summary = legacyEntry.summary;
     }
 
-    if (Object.keys(entry).length > 0) {
-      acc[key] = entry;
-    }
-    return acc;
-  }, {});
-
-  return {
-    version: 2,
-    items,
-  };
+    return entry;
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isValidTimestamp(value: string): boolean {
-  return Number.isFinite(Date.parse(value));
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export function saveArtifact(issueNumber: number, name: string, contents: string): void {
@@ -166,32 +149,31 @@ export function saveArtifact(issueNumber: number, name: string, contents: string
     fs.mkdirSync(artifactsDir, { recursive: true });
     fs.writeFileSync(filePath, contents, 'utf8');
   } catch (err) {
-    const message = getErrorMessage(err);
+    const message = errorMessage(err);
     console.error(`⚠️ Failed to save artifact ${name} for #${issueNumber}: ${message}`);
   }
+}
+
+function resolveFromCwd(filePath: string): string {
+  return path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
 }
 
 export function loadReadme(readmePath?: string): string {
   if (!readmePath) return '';
 
   try {
-    const resolved = path.isAbsolute(readmePath)
-      ? readmePath
-      : path.join(process.cwd(), readmePath);
-
+    const resolved = resolveFromCwd(readmePath);
     if (!fs.existsSync(resolved)) return '';
     return fs.readFileSync(resolved, 'utf8');
   } catch (err) {
-    const message = getErrorMessage(err);
+    const message = errorMessage(err);
     console.warn(`⚠️ Failed to read README at '${readmePath}': ${message}`);
     return '';
   }
 }
 
 export function loadPrompt(promptPath?: string): string {
-  const resolvedPath = promptPath
-    ? (path.isAbsolute(promptPath) ? promptPath : path.join(process.cwd(), promptPath))
-    : undefined;
+  const resolvedPath = promptPath ? resolveFromCwd(promptPath) : undefined;
 
   if (resolvedPath && fs.existsSync(resolvedPath)) {
     return fs.readFileSync(resolvedPath, 'utf8');

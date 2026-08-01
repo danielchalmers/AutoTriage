@@ -124,13 +124,13 @@ describe('getConfig model inputs', () => {
   it('uses a valid budget scale and falls back for invalid values', () => {
     setInputs({ 'budget-scale': '1.5' });
     const scaled = getConfig();
-    expect(scaled.maxFastTimelineEvents).toBe(18);
-    expect(scaled.maxProTimelineEvents).toBe(60);
+    expect(scaled.limits.fast.timelineEvents).toBe(18);
+    expect(scaled.limits.pro.timelineEvents).toBe(60);
 
     setInputs({ 'budget-scale': '-2' });
     const fallback = getConfig();
-    expect(fallback.maxFastTimelineEvents).toBe(12);
-    expect(fallback.maxProTimelineEvents).toBe(40);
+    expect(fallback.limits.fast.timelineEvents).toBe(12);
+    expect(fallback.limits.pro.timelineEvents).toBe(40);
   });
 
   it('always uses README.md for README context', () => {

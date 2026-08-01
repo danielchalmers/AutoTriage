@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import type { Config } from './config';
+import type { Config, PromptPassLimits } from './config';
 
 const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
@@ -60,23 +60,31 @@ function parseOptionalInput(name: string): string | undefined {
 }
 
 function parseModelFastInput(): { modelFast: string; skipFastPass: boolean } {
-  const normalized = normalizeInput(core.getInput('model-fast'));
-  if (!normalized) {
-    return { modelFast: DEFAULT_MODEL_FAST, skipFastPass: true };
-  }
-  return { modelFast: normalized, skipFastPass: false };
+  // An omitted or blank model-fast is how a workflow opts out of the screening pass.
+  const normalized = parseOptionalInput('model-fast');
+  return normalized
+    ? { modelFast: normalized, skipFastPass: false }
+    : { modelFast: DEFAULT_MODEL_FAST, skipFastPass: true };
 }
 
 function applyMultiplier(base: number, multiplier: number): number {
   return Math.max(0, Math.floor(base * multiplier));
 }
 
+function scaleLimits(base: PromptPassLimits, multiplier: number): PromptPassLimits {
+  return {
+    readmeChars: applyMultiplier(base.readmeChars, multiplier),
+    issueBodyChars: applyMultiplier(base.issueBodyChars, multiplier),
+    timelineEvents: applyMultiplier(base.timelineEvents, multiplier),
+    timelineTextChars: applyMultiplier(base.timelineTextChars, multiplier),
+  };
+}
+
 /**
- * Resolve runtime config. Throws early with actionable messages if mandatory
- * secrets (GITHUB_TOKEN, GEMINI_API_KEY) are missing or repo context is absent.
+ * Resolve runtime config.
+ * Throws early with actionable messages if mandatory secrets (GITHUB_TOKEN, GEMINI_API_KEY) are missing or repo context is absent.
  */
 export function getConfig(): Config {
-  // Resolve repo context robustly
   let { owner, repo } = github.context.repo as { owner?: string; repo?: string };
   owner = owner || '';
   repo = repo || '';
@@ -105,14 +113,11 @@ export function getConfig(): Config {
   const { modelFast, skipFastPass } = parseModelFastInput();
   const modelPro = parseInputOrDefault('model-pro', DEFAULT_MODEL_PRO);
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
-  const maxFastTimelineEvents = applyMultiplier(12, multiplier);
-  const maxProTimelineEvents = applyMultiplier(40, multiplier);
-  const maxFastReadmeChars = applyMultiplier(0, multiplier);
-  const maxProReadmeChars = applyMultiplier(120000, multiplier);
-  const maxFastIssueBodyChars = applyMultiplier(4000, multiplier);
-  const maxProIssueBodyChars = applyMultiplier(20000, multiplier);
-  const maxFastTimelineTextChars = applyMultiplier(600, multiplier);
-  const maxProTimelineTextChars = applyMultiplier(4000, multiplier);
+  // The fast pass reads a trimmed slice of the same context the pro pass gets; budget-scale moves both together.
+  const limits = {
+    fast: scaleLimits({ readmeChars: 0, issueBodyChars: 4000, timelineEvents: 12, timelineTextChars: 600 }, multiplier),
+    pro: scaleLimits({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 }, multiplier),
+  };
   const maxProRuns = parsePositiveIntegerInput('max-pro-runs', DEFAULT_MAX_PRO_RUNS);
   const maxFastRuns = parsePositiveIntegerInput('max-fast-runs', DEFAULT_MAX_FAST_RUNS);
   const issueNumbers = parsePositiveIntegerList(core.getInput('issues'));
@@ -136,14 +141,7 @@ export function getConfig(): Config {
     ...(dbPath ? { dbPath } : {}),
     modelFast,
     modelPro,
-    maxFastTimelineEvents,
-    maxProTimelineEvents,
-    maxFastReadmeChars,
-    maxProReadmeChars,
-    maxFastIssueBodyChars,
-    maxProIssueBodyChars,
-    maxFastTimelineTextChars,
-    maxProTimelineTextChars,
+    limits,
     maxProRuns,
     maxFastRuns,
     ...(additionalInstructions ? { additionalInstructions } : {}),

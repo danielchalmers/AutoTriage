@@ -1,4 +1,5 @@
 import { GenerateContentResponse, GoogleGenAI, ThinkingLevel, type GenerateContentParameters } from '@google/genai';
+import { errorMessage } from './util';
 
 // Single source of truth for the thinking budget, also stamped into run telemetry.
 export const THINKING_LEVEL = ThinkingLevel.HIGH;
@@ -114,18 +115,15 @@ export class GeminiClient {
   }
 
   private async parseJson<T>(response: GenerateContentResponse): Promise<GeminiJsonResult<T>> {
-    // Manually extract text from parts to avoid warnings about non-text parts
-    // when Gemini 3 thinking responses include dedicated thought parts.
+    // Manually extract text from parts to avoid warnings about non-text parts when Gemini 3 thinking responses include dedicated thought parts.
     const thoughts: string[] = [];
     const textParts: string[] = [];
     
     for (const p of response.candidates?.[0]?.content?.parts ?? []) {
       if (typeof p.text === 'string') {
         if (p.thought) {
-          // This is a thought part - collect it separately
           thoughts.push(p.text);
         } else {
-          // This is a regular text part - use it for JSON parsing
           textParts.push(p.text);
         }
       }
@@ -143,10 +141,8 @@ export class GeminiClient {
         .replace(/(\r?\n\s*){2,}/g, '\n')
         .trim();
 
-      // Extract token usage from response metadata. thoughtsTokenCount is the
-      // hidden thinking budget Gemini 3 spends before emitting candidates; it is
-      // billed but excluded from candidatesTokenCount, so capture it explicitly
-      // to make per-pass thinking cost measurable.
+      // Extract token usage from response metadata.
+      // thoughtsTokenCount is the hidden thinking budget Gemini 3 spends before emitting candidates; it is billed but excluded from candidatesTokenCount, so capture it explicitly to make per-pass thinking cost measurable.
       const inputTokens = response.usageMetadata?.promptTokenCount ?? 0;
       const cachedInputTokens = response.usageMetadata?.cachedContentTokenCount ?? 0;
       const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
@@ -181,8 +177,6 @@ export class GeminiClient {
       await this.sleep(backoff);
     }
 
-    throw new GeminiResponseError(
-      lastError instanceof Error ? lastError.message : String(lastError)
-    );
+    throw new GeminiResponseError(errorMessage(lastError));
   }
 }
