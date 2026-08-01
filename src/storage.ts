@@ -114,8 +114,8 @@ function migrateLegacyDatabase(value: unknown): TriageDb {
 
   return collectEntries(value, legacyEntry => {
     const entry: TriageDbEntry = {};
-    // Legacy rows had no separate watermark, so the triage time doubles as one. Any parseable date
-    // counts, including pre-1970 ones, so keep the finite check rather than a positive-value test.
+    // Legacy rows had no separate watermark, so the triage time doubles as one.
+    // Any parseable date counts, including pre-1970 ones, so keep the finite check rather than a positive-value test.
     const lastTriaged = typeof legacyEntry.lastTriaged === 'string' && Number.isFinite(Date.parse(legacyEntry.lastTriaged))
       ? legacyEntry.lastTriaged
       : undefined;

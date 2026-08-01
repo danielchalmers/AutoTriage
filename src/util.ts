@@ -1,4 +1,5 @@
-// Small helpers shared across modules. Kept dependency-free so any module can import them without creating cycles.
+// Small helpers shared across modules.
+// Kept dependency-free so any module can import them without creating cycles.
 
 // Message-only form, for warnings where a stack would be noise.
 export function errorMessage(error: unknown): string {

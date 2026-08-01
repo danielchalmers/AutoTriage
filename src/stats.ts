@@ -28,8 +28,7 @@ export interface ActionDetail {
 export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
 export type SkipReason = 'noop-fast' | 'other';
 
-// Compact, comparable form of what a pass planned: sorted unique operation
-// kinds plus signed label changes (`+bug`, `-stale`).
+// Compact, comparable form of what a pass planned: sorted unique operation kinds plus signed label changes (`+bug`, `-stale`).
 export interface PlanSummary {
   kinds: string[];
   labels: string[];
@@ -172,8 +171,8 @@ export class RunStatistics {
     this.promptHashes = hashes;
   }
 
-  // Items are processed one at a time, so the pass in flight identifies which
-  // model call a thrown error escaped from. Reset to null between items.
+  // Items are processed one at a time, so the pass in flight identifies which model call a thrown error escaped from.
+  // Reset to null between items.
   beginPass(pass: 'fast' | 'pro' | null): void {
     this.currentPass = pass;
   }
@@ -340,9 +339,8 @@ export class RunStatistics {
   }
 
   /**
-   * Serialize this run into a machine-readable summary. Written as the
-   * `run-summary.json` artifact so runs can be aggregated across history for
-   * research, rather than scraped from the human-facing log lines.
+   * Serialize this run into a machine-readable summary.
+   * Written as the `run-summary.json` artifact so runs can be aggregated across history for research, rather than scraped from the human-facing log lines.
    */
   toJSON(): Record<string, unknown> {
     const skipReasons: Record<string, number> = {};

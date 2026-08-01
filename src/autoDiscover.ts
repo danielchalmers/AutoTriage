@@ -18,17 +18,14 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchan
       // Preserve GitHub's recency order inside prioritized bucket to keep cycling smoothly.
       prioritized.push(issue.number);
     } else {
-      // Skip unchanged issues if requested
       if (skipUnchanged) continue;
 
-      // Track lastTriaged timestamp for sorting secondary bucket
-      // parseTimestamp returns 0 for missing/undefined values, sorting them first
+      // parseTimestamp returns 0 for missing values, which sorts never-triaged items first.
       const lastTriagedMs = parseTimestamp(entry?.lastTriaged);
       secondary.push({ number: issue.number, lastTriagedMs });
     }
   }
 
-  // Sort secondary by lastTriaged (oldest first)
   secondary.sort((a, b) => a.lastTriagedMs - b.lastTriagedMs);
 
   return prioritized.concat(secondary.map(item => item.number));

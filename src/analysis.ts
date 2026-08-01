@@ -17,9 +17,8 @@ export type FastPassPlan = {
   operations: unknown[];
 };
 
-// Every operation shares the kind/payload/authorization skeleton. The payload must be spread rather
-// than set through a computed key: a computed key collapses `properties` to an index signature and
-// the label-schema tests lose the `in` narrowing they rely on.
+// Every operation shares the kind/payload/authorization skeleton.
+// The payload must be spread rather than set through a computed key: a computed key collapses `properties` to an index signature and the label-schema tests lose the `in` narrowing they rely on.
 function operationSchema<T extends object>(kinds: readonly string[], payload: T) {
   return {
     type: 'OBJECT',
@@ -63,11 +62,9 @@ export function normalizeRepoLabels<T extends { name: string; description?: stri
 
 /**
  * Build a schema that constrains label values to actual repository labels.
- * This ensures the AI returns labels in the exact format they exist in the repository,
- * preventing issues like "breaking change" being converted to "breaking_change".
+ * This ensures the AI returns labels in the exact format they exist in the repository, preventing issues like "breaking change" being converted to "breaking_change".
  */
 export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
-  // If no repository labels are available, fall back to unconstrained schema
   if (repoLabels.length === 0) {
     return AnalysisResultSchema;
   }

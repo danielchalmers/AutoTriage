@@ -2,9 +2,8 @@ import type { AnalysisResult, ModelOperation } from './analysis';
 import type { Issue } from './github';
 import chalk from 'chalk';
 
-// A planned operation is a model operation plus the thought log we attach to comments. Deriving it
-// keeps ModelOperation the single statement of what an operation is, so adding a kind there makes
-// the switches below fail to compile until they handle it.
+// A planned operation is a model operation plus the thought log we attach to comments.
+// Deriving it keeps ModelOperation the single statement of what an operation is, so adding a kind there makes the switches below fail to compile until they handle it.
 export type PlannedOperation =
   | Exclude<ModelOperation, { kind: 'comment' }>
   | (Extract<ModelOperation, { kind: 'comment' }> & { thoughts?: string });
