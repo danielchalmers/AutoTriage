@@ -1,4 +1,5 @@
 import * as github from '@actions/github';
+import { parseTimestamp } from './util';
 
 export type Issue = {
   title: string;
@@ -291,15 +292,9 @@ export class GitHubClient {
     issue: Issue,
     timelineEvents: Array<TimelineEvent>
   ): number {
-    const parseTs = (s?: string): number => {
-      if (!s) return 0;
-      const v = Date.parse(s);
-      return Number.isFinite(v) ? v : 0;
-    };
-
-    const issueUpdatedMs = parseTs(issue.updated_at);
+    const issueUpdatedMs = parseTimestamp(issue.updated_at);
     const latestEventMs = (timelineEvents || []).reduce((max, ev) => {
-      const ts = parseTs(ev?.created_at);
+      const ts = parseTimestamp(ev?.created_at);
       return ts > max ? ts : max;
     }, 0);
 

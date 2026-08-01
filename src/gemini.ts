@@ -1,4 +1,5 @@
 import { GenerateContentResponse, GoogleGenAI, ThinkingLevel, type GenerateContentParameters } from '@google/genai';
+import { errorMessage } from './util';
 
 // Single source of truth for the thinking budget, also stamped into run telemetry.
 export const THINKING_LEVEL = ThinkingLevel.HIGH;
@@ -181,8 +182,6 @@ export class GeminiClient {
       await this.sleep(backoff);
     }
 
-    throw new GeminiResponseError(
-      lastError instanceof Error ? lastError.message : String(lastError)
-    );
+    throw new GeminiResponseError(errorMessage(lastError));
   }
 }

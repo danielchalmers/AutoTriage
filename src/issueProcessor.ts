@@ -3,17 +3,18 @@ import chalk from 'chalk';
 import {
   AnalysisResult,
   FastPassPlan,
+  PromptPassMode,
   RepoLabel,
   buildAnalysisResultSchema,
   buildUserPrompt,
-  getPromptLimits,
 } from './analysis';
 import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
-import { PlanSummary, RunStatistics, comparePlans, summarizePlan } from './stats';
+import { RunStatistics, comparePlans, summarizePlan } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, planOperations } from './triage';
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
+import { errorMessage, parseTimestamp } from './util';
 
 type LastUpdatedFn = (issue: Issue, timelineEvents: TimelineEvent[]) => number;
 
@@ -46,25 +47,20 @@ export interface GenerateAnalysisOptions {
   useFlexTier?: boolean;
 }
 
-type PromptLimits = ReturnType<typeof getPromptLimits>;
-
 interface IssueContext {
-  fastTimelineEvents: TimelineEvent[];
-  proTimelineEvents: TimelineEvent[];
-  fastLimits: PromptLimits;
-  proLimits: PromptLimits;
+  timelineEvents: Record<PromptPassMode, TimelineEvent[]>;
   runContext: string;
+}
+
+interface PassResult {
+  analysis: AnalysisResult;
+  operations: PlannedOperation[];
 }
 
 interface FastPassResult {
   used: boolean;
-  plan?: FastPassPlan;
+  plan?: PassResult;
   shouldSkipPro: boolean;
-}
-
-interface ProPassResult {
-  analysis: AnalysisResult;
-  operations: PlannedOperation[];
 }
 
 export async function processIssue(
@@ -84,7 +80,7 @@ export async function processIssue(
       { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context }
     );
     const fastPlan = fastPass.used && fastPass.plan
-      ? summarizePlan(fastPass.plan.operations as PlannedOperation[])
+      ? summarizePlan(fastPass.plan.operations)
       : undefined;
 
     if (fastPass.shouldSkipPro) {
@@ -104,12 +100,13 @@ export async function processIssue(
       return { triageUsed: false, fastRunUsed: fastPass.used };
     }
 
-    const proPass = await runProPass(
+    const proPass = await runPass(
       { cfg, gemini, stats },
       {
+        mode: 'pro',
         issue,
         repoLabels,
-        systemPromptPro,
+        systemPrompt: systemPromptPro,
         cacheInfos,
         runTimestamp,
         context,
@@ -154,7 +151,7 @@ async function resolveConsumedIssue(
     return await gh.getIssue(issue.number);
   } catch (err) {
     console.warn(
-      `⚠️ Failed to refresh #${issue.number} after applying operations: ${getErrorMessage(err)}. ` +
+      `⚠️ Failed to refresh #${issue.number} after applying operations: ${errorMessage(err)}. ` +
       'Using the pre-action updated_at watermark.'
     );
     return issue;
@@ -165,10 +162,6 @@ function getConsumedUpdatedAt(issue: Pick<Issue, 'updated_at' | 'created_at'>): 
   return issue.updated_at || issue.created_at;
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 async function loadIssueContext(
   deps: Pick<IssueProcessorDeps, 'cfg' | 'db' | 'gh'>,
   options: Pick<ProcessIssueOptions, 'issue' | 'autoDiscover'>
@@ -176,14 +169,12 @@ async function loadIssueContext(
   const { cfg, db, gh } = deps;
   const { issue, autoDiscover } = options;
   const dbEntry = getDbEntry(db, issue.number);
-  const timelineFetchLimit = Math.max(cfg.maxFastTimelineEvents, cfg.maxProTimelineEvents);
+  const timelineFetchLimit = Math.max(cfg.limits.fast.timelineEvents, cfg.limits.pro.timelineEvents);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
     issue.number,
     timelineFetchLimit,
     issue.type === 'pull request'
   );
-  const fastLimits = getPromptLimits(cfg, 'fast');
-  const proLimits = getPromptLimits(cfg, 'pro');
   const runContext = buildRunContext(
     issue,
     rawTimelineEvents,
@@ -195,12 +186,54 @@ async function loadIssueContext(
   saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
   return {
-    fastTimelineEvents: timelineEvents.slice(-fastLimits.timelineEvents),
-    proTimelineEvents: timelineEvents.slice(-proLimits.timelineEvents),
-    fastLimits,
-    proLimits,
+    timelineEvents: {
+      fast: timelineEvents.slice(-cfg.limits.fast.timelineEvents),
+      pro: timelineEvents.slice(-cfg.limits.pro.timelineEvents),
+    },
     runContext,
   };
+}
+
+// The two passes differ only in which model, prompt, limits, and artifact name they use, so they share one body.
+async function runPass(
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'gemini' | 'stats'>,
+  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'cacheInfos' | 'runTimestamp'> & {
+    mode: PromptPassMode;
+    systemPrompt: string;
+    context: IssueContext;
+    fastPassPlan?: FastPassPlan;
+  }
+): Promise<PassResult> {
+  const { cfg, gemini, stats } = deps;
+  const { mode, issue, repoLabels, systemPrompt, cacheInfos, runTimestamp, context, fastPassPlan } = options;
+  const isFast = mode === 'fast';
+
+  const userPrompt = buildUserPrompt(
+    issue,
+    context.timelineEvents[mode],
+    mode,
+    cfg.limits[mode],
+    context.runContext,
+    fastPassPlan,
+    runTimestamp
+  );
+  saveArtifact(issue.number, isFast ? 'prompt-fast-user.md' : 'prompt-user.md', userPrompt);
+
+  const { data: analysis, ops: operations } = await generateAnalysis(
+    { gemini, stats },
+    {
+      issue,
+      model: isFast ? cfg.modelFast : cfg.modelPro,
+      systemPrompt,
+      userPrompt,
+      repoLabels,
+      isFastModel: isFast,
+      cacheInfo: cacheInfos.get(mode),
+      useFlexTier: cacheInfos.has(mode),
+    }
+  );
+
+  return { analysis, operations };
 }
 
 async function runFastPass(
@@ -209,84 +242,13 @@ async function runFastPass(
     context: IssueContext;
   }
 ): Promise<FastPassResult> {
-  const { cfg, gemini, stats } = deps;
-  const { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context } = options;
-
-  if (cfg.skipFastPass) {
+  if (deps.cfg.skipFastPass) {
     console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
     return { used: false, shouldSkipPro: false };
   }
 
-  const fastUserPrompt = buildUserPrompt(
-    issue,
-    context.fastTimelineEvents,
-    'fast',
-    context.fastLimits,
-    context.runContext,
-    undefined,
-    runTimestamp
-  );
-  saveArtifact(issue.number, 'prompt-fast-user.md', fastUserPrompt);
-
-  const { data: analysis, ops: operations } = await generateAnalysis(
-    { gemini, stats },
-    {
-      issue,
-      model: cfg.modelFast,
-      systemPrompt: systemPromptFast,
-      userPrompt: fastUserPrompt,
-      repoLabels,
-      isFastModel: true,
-      cacheInfo: cacheInfos.get('fast'),
-      useFlexTier: cacheInfos.has('fast'),
-    }
-  );
-
-  return {
-    used: true,
-    plan: {
-      analysis,
-      operations,
-    },
-    shouldSkipPro: operations.length === 0,
-  };
-}
-
-async function runProPass(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'gemini' | 'stats'>,
-  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'systemPromptPro' | 'cacheInfos' | 'runTimestamp'> & {
-    context: IssueContext;
-    fastPassPlan?: FastPassPlan;
-  }
-): Promise<ProPassResult> {
-  const { cfg, gemini, stats } = deps;
-  const { issue, repoLabels, systemPromptPro, cacheInfos, runTimestamp, context, fastPassPlan } = options;
-
-  const proUserPrompt = buildUserPrompt(
-    issue,
-    context.proTimelineEvents,
-    'pro',
-    context.proLimits,
-    context.runContext,
-    fastPassPlan,
-    runTimestamp
-  );
-  saveArtifact(issue.number, 'prompt-user.md', proUserPrompt);
-
-  const { data: analysis, ops: operations } = await generateAnalysis(
-    { gemini, stats },
-    {
-      issue,
-      model: cfg.modelPro,
-      systemPrompt: systemPromptPro,
-      userPrompt: proUserPrompt,
-      repoLabels,
-      cacheInfo: cacheInfos.get('pro'),
-      useFlexTier: cacheInfos.has('pro'),
-    }
-  );
-
-  return { analysis, operations };
+  const plan = await runPass(deps, { ...options, mode: 'fast', systemPrompt: options.systemPromptFast });
+  return { used: true, plan, shouldSkipPro: plan.operations.length === 0 };
 }
 
 async function executePlannedOperations(
@@ -331,8 +293,8 @@ export function buildRunContext(
   }
 
   const latestUpdateMs = getLastUpdated(issue, timelineEvents);
-  const triagedMs = Date.parse(lastTriagedAt);
-  const hasNewActivity = Number.isFinite(triagedMs) && latestUpdateMs > triagedMs;
+  const triagedMs = parseTimestamp(lastTriagedAt);
+  const hasNewActivity = triagedMs > 0 && latestUpdateMs > triagedMs;
   const selectionReason = hasNewActivity
     ? 'it has new activity since then and needs to be re-checked'
     : autoDiscover

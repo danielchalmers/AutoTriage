@@ -35,18 +35,18 @@ function baseIssuePayload(number: number) {
   };
 }
 
-describe('GitHubClient.getIssue', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.getOctokit.mockReturnValue({
-      rest: {
-        issues: { get: mocks.issuesGet },
-        pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments },
-      },
-      paginate: mocks.paginate,
-    });
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.getOctokit.mockReturnValue({
+    rest: {
+      issues: { get: mocks.issuesGet },
+      pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments },
+    },
+    paginate: mocks.paginate,
   });
+});
 
+describe('GitHubClient.getIssue', () => {
   it('includes the full changed filename list for pull requests', async () => {
     mocks.issuesGet.mockResolvedValue({
       data: {
@@ -91,17 +91,6 @@ describe('GitHubClient.getIssue', () => {
 });
 
 describe('GitHubClient.listTimelineEvents', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.getOctokit.mockReturnValue({
-      rest: {
-        issues: { get: mocks.issuesGet },
-        pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments },
-      },
-      paginate: mocks.paginate,
-    });
-  });
-
   it('includes review comments for pull requests and sorts chronologically', async () => {
     mocks.paginate
       .mockResolvedValueOnce([

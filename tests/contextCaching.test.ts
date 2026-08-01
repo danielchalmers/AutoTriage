@@ -2,7 +2,7 @@ import { ThinkingLevel } from '@google/genai'
 import { describe, it, expect } from 'vitest'
 import { buildJsonPayload } from '../src/gemini'
 import { buildSystemPrompt, buildUserPrompt, type FastPassPlan } from '../src/analysis'
-import * as fs from 'fs'
+import { makeIssue, withTempFiles } from './fixtures'
 import * as path from 'path'
 
 describe('context caching', () => {
@@ -62,67 +62,52 @@ describe('context caching', () => {
   })
 
   describe('buildSystemPrompt', () => {
-    it('builds system prompt with repo labels and README', () => {
-      const customPromptPath = path.join(__dirname, 'test-cache-prompt.txt')
-      const readmePath = path.join(__dirname, 'test-cache-readme.md')
-      fs.writeFileSync(customPromptPath, 'Test behavior policy')
-      fs.writeFileSync(readmePath, '# Test readme section')
+    const customPromptPath = path.join(__dirname, 'test-cache-prompt.txt')
+    const readmePath = path.join(__dirname, 'test-cache-readme.md')
 
-      try {
-        const repoLabels = [
-          { name: 'bug', description: 'Something is broken' },
-          { name: 'enhancement', description: 'New feature' },
-        ]
-        const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, repoLabels)
-        
-        expect(systemPrompt).toContain('Test behavior policy')
-        expect(systemPrompt).toContain('=== SECTION: REPOSITORY LABELS (JSON) ===')
-        expect(systemPrompt).toContain('"bug"')
-        expect(systemPrompt).toContain('"enhancement"')
-        expect(systemPrompt).toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
-        expect(systemPrompt).toContain('# Test readme section')
-      } finally {
-        fs.unlinkSync(customPromptPath)
-        fs.unlinkSync(readmePath)
-      }
+    it('builds system prompt with repo labels and README', () => {
+      withTempFiles(
+        { [customPromptPath]: 'Test behavior policy', [readmePath]: '# Test readme section' },
+        () => {
+          const repoLabels = [
+            { name: 'bug', description: 'Something is broken' },
+            { name: 'enhancement', description: 'New feature' },
+          ]
+          const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, repoLabels)
+
+          expect(systemPrompt).toContain('Test behavior policy')
+          expect(systemPrompt).toContain('=== SECTION: REPOSITORY LABELS (JSON) ===')
+          expect(systemPrompt).toContain('"bug"')
+          expect(systemPrompt).toContain('"enhancement"')
+          expect(systemPrompt).toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
+          expect(systemPrompt).toContain('# Test readme section')
+        }
+      )
     })
 
     it('omits README section in fast pass by default', () => {
-      const customPromptPath = path.join(__dirname, 'test-cache-prompt-fast.txt')
-      const readmePath = path.join(__dirname, 'test-cache-readme-fast.md')
-      fs.writeFileSync(customPromptPath, 'Test behavior policy')
-      fs.writeFileSync(readmePath, '# README should be omitted')
-
-      try {
-        const repoLabels = [{ name: 'bug', description: null }]
-        const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, repoLabels, undefined, 'fast', { readmeChars: 0 })
-        expect(systemPrompt).not.toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
-        expect(systemPrompt).not.toContain('README should be omitted')
-      } finally {
-        fs.unlinkSync(customPromptPath)
-        fs.unlinkSync(readmePath)
-      }
+      withTempFiles(
+        { [customPromptPath]: 'Test behavior policy', [readmePath]: '# README should be omitted' },
+        () => {
+          const repoLabels = [{ name: 'bug', description: null }]
+          const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, repoLabels, undefined, 'fast', { readmeChars: 0 })
+          expect(systemPrompt).not.toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
+          expect(systemPrompt).not.toContain('README should be omitted')
+        }
+      )
     })
 
     it('produces identical output for same inputs (cacheable)', () => {
-      const customPromptPath = path.join(__dirname, 'test-cache-prompt2.txt')
-      fs.writeFileSync(customPromptPath, 'Stable prompt')
-
-      try {
+      withTempFiles({ [customPromptPath]: 'Stable prompt' }, () => {
         const repoLabels = [{ name: 'bug', description: null }]
         const prompt1 = buildSystemPrompt(customPromptPath, '', repoLabels)
         const prompt2 = buildSystemPrompt(customPromptPath, '', repoLabels)
         expect(prompt1).toBe(prompt2)
-      } finally {
-        fs.unlinkSync(customPromptPath)
-      }
+      })
     })
 
     it('sorts repository labels for stable cache keys', () => {
-      const customPromptPath = path.join(__dirname, 'test-cache-prompt-sort.txt')
-      fs.writeFileSync(customPromptPath, 'Stable prompt')
-
-      try {
+      withTempFiles({ [customPromptPath]: 'Stable prompt' }, () => {
         const labelsA = [
           { name: 'zeta', description: null },
           { name: 'alpha', description: 'First' },
@@ -135,30 +120,13 @@ describe('context caching', () => {
         const promptB = buildSystemPrompt(customPromptPath, '', labelsB)
         expect(promptA).toBe(promptB)
         expect(promptA.indexOf('"alpha"')).toBeLessThan(promptA.indexOf('"zeta"'))
-      } finally {
-        fs.unlinkSync(customPromptPath)
-      }
+      })
     })
   })
 
   describe('buildUserPrompt', () => {
     it('includes issue-specific content', () => {
-      const issue = {
-        number: 42,
-        title: 'Test issue',
-        body: 'Body text',
-        state: 'open',
-        type: 'issue',
-        author: 'testuser',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
+      const issue = makeIssue(42, undefined, { title: 'Test issue', body: 'Body text' })
 
       const timelineEvents = [
         { event: 'commented', body: 'A comment', created_at: '2024-01-01T00:00:00Z' },
@@ -176,22 +144,7 @@ describe('context caching', () => {
     })
 
     it('does not contain static repo content', () => {
-      const issue = {
-        number: 1,
-        title: 'Issue',
-        body: '',
-        state: 'open',
-        type: 'issue',
-        author: 'user',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
+      const issue = makeIssue(1, undefined, { title: 'Issue', body: '' })
 
       const userPrompt = buildUserPrompt(issue, [])
 
@@ -201,22 +154,7 @@ describe('context caching', () => {
     })
 
     it('uses pass-specific truncation limits and thought gating', () => {
-      const issue = {
-        number: 2,
-        title: 'Issue',
-        body: 'x'.repeat(20),
-        state: 'open',
-        type: 'issue',
-        author: 'user',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
+      const issue = makeIssue(2, undefined, { title: 'Issue', body: 'x'.repeat(20) })
 
       const timelineEvents = [
         { event: 'commented', body: 'a'.repeat(20), created_at: '2024-01-01T00:00:00Z' },
@@ -246,22 +184,7 @@ describe('context caching', () => {
     })
 
     it('includes fast pass structured plan only in pro prompts', () => {
-      const issue = {
-        number: 3,
-        title: 'Issue',
-        body: 'Body text',
-        state: 'open',
-        type: 'issue',
-        author: 'user',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
+      const issue = makeIssue(3, undefined, { title: 'Issue', body: 'Body text' })
 
       const fastPassPlan: FastPassPlan = {
         analysis: {
@@ -294,22 +217,7 @@ describe('context caching', () => {
     })
 
     it('keeps pro prompts working without a fast pass plan', () => {
-      const issue = {
-        number: 4,
-        title: 'Issue',
-        body: 'Body text',
-        state: 'open',
-        type: 'issue',
-        author: 'user',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
+      const issue = makeIssue(4, undefined, { title: 'Issue', body: 'Body text' })
 
       const proPrompt = buildUserPrompt(issue, [], 'pro')
 
@@ -318,22 +226,7 @@ describe('context caching', () => {
     })
 
     it('uses a provided run timestamp instead of generating a per-prompt timestamp', () => {
-      const issue = {
-        number: 5,
-        title: 'Issue',
-        body: 'Body text',
-        state: 'open',
-        type: 'issue',
-        author: 'user',
-        user_type: 'User',
-        draft: false,
-        locked: false,
-        milestone: null,
-        comments: 0,
-        reactions: 0,
-        labels: [],
-        assignees: [],
-      } as any
+      const issue = makeIssue(5, undefined, { title: 'Issue', body: 'Body text' })
 
       const runTimestamp = '2026-04-24T12:00:00.000Z'
       const proPrompt = buildUserPrompt(issue, [], 'pro', undefined, undefined, undefined, runTimestamp)

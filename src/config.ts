@@ -1,3 +1,12 @@
+export type PromptPassMode = 'fast' | 'pro';
+
+export type PromptPassLimits = {
+  readmeChars: number;
+  issueBodyChars: number;
+  timelineEvents: number;
+  timelineTextChars: number;
+};
+
 export interface Config {
   owner: string;
   repo: string;
@@ -12,14 +21,7 @@ export interface Config {
   skipFastPass: boolean;
   modelFast: string;
   modelPro: string;
-  maxFastTimelineEvents: number;
-  maxProTimelineEvents: number;
-  maxFastReadmeChars: number;
-  maxProReadmeChars: number;
-  maxFastIssueBodyChars: number;
-  maxProIssueBodyChars: number;
-  maxFastTimelineTextChars: number;
-  maxProTimelineTextChars: number;
+  limits: Record<PromptPassMode, PromptPassLimits>;
   maxProRuns: number;
   maxFastRuns: number;
   additionalInstructions?: string;
