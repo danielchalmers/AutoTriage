@@ -137,7 +137,9 @@ describe('processIssue', () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub({
-        getIssue: vi.fn().mockResolvedValue({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
+        getIssue: vi.fn()
+          .mockResolvedValueOnce(baseIssue)
+          .mockResolvedValueOnce({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
       });
       const gemini = {
         generateJson: vi
@@ -178,16 +180,22 @@ describe('processIssue', () => {
     });
   });
 
-  it('falls back to the original updated_at when the post-action refresh fails', async () => {
+  it('defers operations and retains the analyzed watermark when the thread changes during analysis', async () => {
     await withArtifactsDir(async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
-      const gh = createGitHub({ getIssue: vi.fn().mockRejectedValue(new Error('refresh failed')) });
+      const gh = createGitHub({
+        getIssue: vi.fn().mockResolvedValue({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
+      });
       const gemini = {
         generateJson: vi
           .fn()
-          .mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+          .mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [{
+            kind: 'set_state',
+            state: 'not_planned',
+            authorization: 'pro policy',
+          }], 20)),
       } as any;
 
       try {
@@ -197,7 +205,7 @@ describe('processIssue', () => {
         );
 
         expect(result).toEqual({ triageUsed: true, fastRunUsed: false });
-        expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+        expect(gh.updateIssueState).not.toHaveBeenCalled();
         expect(gh.getIssue).toHaveBeenCalledWith(42);
         expect(warnSpy).toHaveBeenCalledOnce();
         expect(db.items['42']).toMatchObject({
