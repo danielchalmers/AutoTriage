@@ -378,5 +378,5 @@ function eventTimestamp(event: TimelineEvent): number {
   const timestamps = [event.created_at, event.updated_at, event.submitted_at]
     .map((value) => Date.parse(value ?? ''))
     .filter((value) => !Number.isNaN(value));
-  return timestamps.length > 0 ? Math.min(...timestamps) : Number.NaN;
+  return timestamps.length > 0 ? Math.max(...timestamps) : Number.NaN;
 }

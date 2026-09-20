@@ -49,7 +49,7 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 
 ## How it works
 
-For each item — the triggering issue/PR, an explicit `issues` list, or auto-discovered backlog — AutoTriage gathers the body, full timeline, repository labels, and your policy. If `model-fast` is set, a cheap model screens the item first and clear no-ops stop there. The review model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
+For each item — the triggering issue/PR, an explicit `issues` list, or auto-discovered backlog — AutoTriage gathers the body, full timeline, repository labels, and your policy. Timeline prompts include compact activity evidence and history-completeness metadata separately from the bounded discussion window, including actor account type and distinct event timestamps when GitHub supplies them. GitHub's timeline API is not a complete historical issue-body revision API, so body-edit evidence is reported as timeline-only when available and otherwise as unavailable; a missing edit record is not treated as proof that no edit occurred. If `model-fast` is set, a cheap model screens the item first and clear no-ops stop there. The review model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
 
 A real reasoning transcript from MudBlazor's runs:
 

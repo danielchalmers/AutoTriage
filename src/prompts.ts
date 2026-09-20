@@ -22,17 +22,18 @@ function applyTimelineLimits(events: TimelineEvent[], limits: PromptPassLimits):
       next.message = clampText(next.message, limits.timelineTextChars);
     }
 
-    function applyActivityEvidenceLimits(events: TimelineEvent[], limits: PromptPassLimits): TimelineEvent[] {
-      const evidenceLimit = Math.max(limits.timelineEvents * 4, limits.timelineEvents);
-      return (events || []).slice(-evidenceLimit).map((event) => {
-        const { body: _body, message: _message, ...metadata } = event;
-        return metadata;
-      });
-    }
     if (next.body !== undefined) {
       next.body = clampText(next.body, limits.timelineTextChars);
     }
     return next;
+  });
+}
+
+function applyActivityEvidenceLimits(events: TimelineEvent[], limits: PromptPassLimits): TimelineEvent[] {
+  const evidenceLimit = Math.max(limits.timelineEvents * 4, limits.timelineEvents);
+  return (events || []).slice(-evidenceLimit).map((event) => {
+    const { body: _body, message: _message, ...metadata } = event;
+    return metadata;
   });
 }
 

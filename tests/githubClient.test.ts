@@ -141,4 +141,80 @@ describe('GitHubClient.listTimelineEvents', () => {
     ]);
     expect(client.getApiCallCount()).toBe(1);
   });
+
+  it('preserves actor types, commit provenance, edits, and event types in activity evidence', async () => {
+    mocks.paginate.mockResolvedValueOnce([
+      {
+        id: 1,
+        event: 'committed',
+        actor: { login: 'automation', type: 'User' },
+        created_at: '2024-01-01T00:00:00Z',
+        sha: 'abc123',
+        author: { login: 'author', type: 'User' },
+        committer: { login: 'committer', type: 'Bot' },
+      },
+      {
+        id: 2,
+        event: 'edited',
+        actor: { login: 'maintainer', type: 'User' },
+        created_at: '2024-01-01T01:00:00Z',
+        updated_at: '2024-01-01T02:00:00Z',
+        changes: { body: { from: 'old body' } },
+      },
+      {
+        id: 3,
+        event: 'mentioned',
+        actor: { login: 'helper', type: 'Bot' },
+        created_at: '2024-01-01T03:00:00Z',
+      },
+    ]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const result = await client.listTimelineEvents(42, 1);
+
+    expect(result.filtered).toHaveLength(1);
+    expect(result.activityEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'committed',
+        actor: 'automation',
+        actor_type: 'User',
+        author: 'author',
+        author_type: 'User',
+        committer: 'committer',
+        committer_type: 'Bot',
+        sha: 'abc123',
+      }),
+      expect.objectContaining({
+        event: 'edited',
+        edited_field: 'body',
+        edit_from: 'old body',
+        updated_at: '2024-01-01T02:00:00Z',
+      }),
+      expect.objectContaining({ event: 'mentioned', actor_type: 'Bot' }),
+    ]));
+    expect(result.completeness).toMatchObject({
+      discussion_truncated: true,
+      omitted_events: 2,
+      body_edit_history: 'timeline_events_only',
+    });
+  });
+
+  it('marks missing actor and timestamps explicitly', async () => {
+    mocks.paginate.mockResolvedValueOnce([{ event: 'subscribed' }]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const result = await client.listTimelineEvents(42, 10);
+
+    expect(result.filtered[0]).toMatchObject({
+      event: 'subscribed',
+      actor: null,
+      actor_type: null,
+      created_at: null,
+      updated_at: null,
+    });
+    expect(result.completeness).toMatchObject({
+      missing_actor_count: 1,
+      missing_timestamp_count: 1,
+    });
+  });
 });

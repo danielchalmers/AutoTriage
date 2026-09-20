@@ -233,5 +233,41 @@ describe('context caching', () => {
 
       expect(proPrompt).toContain(`Current date/time (UTC ISO 8601): ${runTimestamp}`)
     })
+
+    it('keeps compact activity evidence and completeness metadata outside the discussion window', () => {
+      const issue = makeIssue(6, undefined, { title: 'Issue', body: 'Body text' })
+      const prompt = buildUserPrompt(
+        issue,
+        [{ event: 'commented', actor: 'recent', body: 'recent text', created_at: '2024-01-02T00:00:00Z' }],
+        'fast',
+        { timelineEvents: 1, timelineTextChars: 20, issueBodyChars: 100, readmeChars: 0 },
+        undefined,
+        undefined,
+        undefined,
+        [
+          { event: 'labeled', actor: 'human', actor_type: 'User', created_at: '2023-01-01T00:00:00Z', label: { name: 'bug' } },
+          { event: 'unlabeled', actor: 'human', actor_type: 'User', created_at: '2023-01-02T00:00:00Z', label: { name: 'bug' } },
+        ],
+        {
+          history_fetched: true,
+          discussion_truncated: true,
+          total_events: 3,
+          retained_events: 1,
+          omitted_events: 2,
+          coverage_start: '2023-01-01T00:00:00.000Z',
+          coverage_end: '2024-01-02T00:00:00.000Z',
+          missing_actor_count: 0,
+          missing_timestamp_count: 0,
+          body_edit_history: 'unavailable',
+          review_comments_available: true,
+        }
+      )
+
+      expect(prompt).toContain('ACTIVITY EVIDENCE')
+      expect(prompt).toContain('"event": "labeled"')
+      expect(prompt).toContain('HISTORY COMPLETENESS')
+      expect(prompt).toContain('"discussion_truncated": true')
+      expect(prompt).toContain('not proof of inactivity')
+    })
   })
 })

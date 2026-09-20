@@ -186,11 +186,34 @@ async function loadIssueContext(
   const { issue, autoDiscover } = options;
   const dbEntry = getDbEntry(db, issue.number);
   const timelineFetchLimit = Math.max(cfg.limits.fast.timelineEvents, cfg.limits.pro.timelineEvents);
-  const timeline = await gh.listTimelineEvents(
-    issue.number,
-    timelineFetchLimit,
-    issue.type === 'pull request'
-  );
+  let timeline;
+  try {
+    timeline = await gh.listTimelineEvents(
+      issue.number,
+      timelineFetchLimit,
+      issue.type === 'pull request'
+    );
+  } catch (err) {
+    console.warn(`⚠️ Failed to fetch history for #${issue.number}: ${errorMessage(err)}. Continuing with history marked unavailable.`);
+    timeline = {
+      raw: [],
+      filtered: [],
+      activityEvidence: [],
+      completeness: {
+        history_fetched: false,
+        discussion_truncated: false,
+        total_events: 0,
+        retained_events: 0,
+        omitted_events: 0,
+        coverage_start: null,
+        coverage_end: null,
+        missing_actor_count: 0,
+        missing_timestamp_count: 0,
+        body_edit_history: 'unavailable' as const,
+        review_comments_available: false,
+      },
+    };
+  }
   const rawTimelineEvents = timeline.raw;
   const timelineEvents = timeline.filtered;
   const activityEvidence = timeline.activityEvidence ?? timelineEvents;
@@ -256,27 +279,28 @@ async function runPass(
       useFlexTier: cacheInfos.has(mode),
     }
 
-    function buildFallbackCompleteness(
-      activityEvidence: TimelineEvent[],
-      retainedEvents: TimelineEvent[]
-    ): TimelineCompleteness {
-      return {
-        history_fetched: true,
-        discussion_truncated: retainedEvents.length < activityEvidence.length,
-        total_events: activityEvidence.length,
-        retained_events: retainedEvents.length,
-        omitted_events: Math.max(0, activityEvidence.length - retainedEvents.length),
-        coverage_start: null,
-        coverage_end: null,
-        missing_actor_count: activityEvidence.filter((event) => !event.actor).length,
-        missing_timestamp_count: activityEvidence.filter((event) => !event.created_at && !event.updated_at && !event.submitted_at).length,
-        body_edit_history: 'unavailable',
-        review_comments_available: true,
-      };
-    }
   );
 
   return { analysis, operations };
+}
+
+function buildFallbackCompleteness(
+  activityEvidence: TimelineEvent[],
+  retainedEvents: TimelineEvent[]
+): TimelineCompleteness {
+  return {
+    history_fetched: true,
+    discussion_truncated: retainedEvents.length < activityEvidence.length,
+    total_events: activityEvidence.length,
+    retained_events: retainedEvents.length,
+    omitted_events: Math.max(0, activityEvidence.length - retainedEvents.length),
+    coverage_start: null,
+    coverage_end: null,
+    missing_actor_count: activityEvidence.filter((event) => !event.actor).length,
+    missing_timestamp_count: activityEvidence.filter((event) => !event.created_at && !event.updated_at && !event.submitted_at).length,
+    body_edit_history: 'unavailable',
+    review_comments_available: true,
+  };
 }
 
 async function runFastPass(
