@@ -26,7 +26,7 @@ export interface ActionDetail {
 }
 
 export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
-export type SkipReason = 'noop-fast' | 'other';
+export type SkipReason = 'noop-fast' | 'deferred' | 'other';
 
 // Compact, comparable form of what a pass planned: sorted unique operation kinds plus signed label changes (`+bug`, `-stale`).
 export interface PlanSummary {

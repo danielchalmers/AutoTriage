@@ -114,18 +114,30 @@ export async function processIssue(
       }
     );
 
-    const operationsApplied = await executePlannedOperations(
+    const executionResult = await executePlannedOperations(
       { cfg, gh, stats },
       { issue, operations: proPass.operations }
     );
 
-    const consumedIssue = operationsApplied
-      ? await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations)
-      : issue;
+    const proPlan = summarizePlan(proPass.operations);
+    if (executionResult === 'deferred') {
+      stats.recordItem({
+        issueNumber: issue.number,
+        type: issue.type,
+        outcome: 'skipped',
+        skipReason: 'deferred',
+        escalatedToPro: fastPass.used,
+        fastPlan,
+        proPlan,
+        agreement: fastPlan && comparePlans(fastPlan, proPlan),
+      });
+      return { triageUsed: true, fastRunUsed: fastPass.used };
+    }
+
+    const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations);
     updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title, {
       lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
     });
-    const proPlan = summarizePlan(proPass.operations);
     stats.recordItem({
       issueNumber: issue.number,
       type: issue.type,
@@ -259,13 +271,13 @@ async function executePlannedOperations(
     issue: Issue;
     operations: PlannedOperation[];
   }
-): Promise<boolean> {
+): Promise<'executed' | 'deferred'> {
   const { cfg, gh, stats } = deps;
   const { issue, operations } = options;
 
   if (operations.length === 0) {
     console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
-    return true;
+    return 'executed';
   }
 
   saveArtifact(issue.number, 'operations.json', JSON.stringify(operations, null, 2));
@@ -276,14 +288,14 @@ async function executePlannedOperations(
         console.warn(
           `⚠️ #${issue.number} changed while it was being analyzed; deferring planned operations for re-triage.`
         );
-        return false;
+        return 'deferred';
       }
     } catch (err) {
       console.warn(
         `⚠️ Failed to recheck #${issue.number} before applying operations: ${errorMessage(err)}. ` +
         'Deferring planned operations for re-triage.'
       );
-      return false;
+      return 'deferred';
     }
   }
 
@@ -299,7 +311,7 @@ async function executePlannedOperations(
       });
     },
   });
-  return true;
+  return 'executed';
 }
 
 export function buildRunContext(
