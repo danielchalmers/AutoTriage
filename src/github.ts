@@ -25,29 +25,56 @@ export type Issue = {
 };
 
 export type TimelineEvent = {
-  id?: number;
-  url?: string;
+  id?: number | null;
+  url?: string | null;
   event: string;
-  actor?: string;
-  actor_association?: string;
-  created_at?: string;
-  updated_at?: string;
-  submitted_at?: string;
+  actor?: string | null;
+  actor_type?: string | null;
+  actor_association?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  submitted_at?: string | null;
   label?: { name?: string | null };
-  body?: string;
-  path?: string;
-  from?: string;
-  to?: string;
-  assignee?: string;
-  assigner?: string;
-  requested_reviewer?: string;
-  sha?: string;
-  author?: string;
-  message?: string;
+  body?: string | null;
+  path?: string | null;
+  from?: string | null;
+  to?: string | null;
+  assignee?: string | null;
+  assigner?: string | null;
+  requested_reviewer?: string | null;
+  sha?: string | null;
+  author?: string | null;
+  author_type?: string | null;
+  committer?: string | null;
+  committer_type?: string | null;
+  message?: string | null;
+  edit_from?: string | null;
+  edited_field?: string | null;
   state?: string;
   state_reason?: string;
   merged?: boolean;
   milestone?: string | null;
+};
+
+export type TimelineCompleteness = {
+  history_fetched: boolean;
+  discussion_truncated: boolean;
+  total_events: number;
+  retained_events: number;
+  omitted_events: number;
+  coverage_start: string | null;
+  coverage_end: string | null;
+  missing_actor_count: number;
+  missing_timestamp_count: number;
+  body_edit_history: 'timeline_events_only' | 'unavailable';
+  review_comments_available: boolean;
+};
+
+export type TimelineCollection = {
+  raw: any[];
+  filtered: TimelineEvent[];
+  activityEvidence: TimelineEvent[];
+  completeness: TimelineCompleteness;
 };
 
 export class GitHubClient {
@@ -168,12 +195,17 @@ export class GitHubClient {
 
     return (comments as any[]).map((comment: any) => ({
       event: 'review_commented',
-      actor: comment.user?.login,
+      id: comment.id ?? null,
+      url: comment.html_url ?? comment.url ?? null,
+      actor: comment.user?.login ?? null,
+      actor_type: comment.user?.type ?? null,
       actor_association: comment.author_association,
       created_at: comment.created_at,
       updated_at: comment.updated_at,
+      submitted_at: null,
       body: comment.body,
       path: comment.path,
+      sha: comment.commit_id ?? null,
     }));
   }
 
@@ -181,7 +213,7 @@ export class GitHubClient {
     issue_number: number,
     limit: number,
     isPullRequest: boolean = false
-  ): Promise<{ raw: any[]; filtered: TimelineEvent[] }> {
+  ): Promise<TimelineCollection> {
     this.incrementApiCalls();
     const events = await this.octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
       owner: this.owner,
@@ -192,19 +224,35 @@ export class GitHubClient {
 
     const mapped = (events as any[]).map<TimelineEvent | null>((event: any) => {
       const base: TimelineEvent = {
-        id: event.id,
-        url: event.url,
+        id: event.id ?? null,
+        url: event.html_url ?? event.url ?? null,
         event: event.event,
-        actor: event.actor?.login,
-        actor_association: event.actor?.author_association || event.author_association,
-        created_at: event.created_at,
-        updated_at: event.updated_at,
+        actor: event.actor?.login ?? null,
+        actor_type: event.actor?.type ?? null,
+        actor_association: event.actor?.author_association ?? event.author_association ?? null,
+        created_at: event.created_at ?? null,
+        updated_at: event.updated_at ?? null,
+        submitted_at: event.submitted_at ?? null,
       };
       switch (event.event) {
         case 'committed':
-          return { ...base, sha: event.sha, author: event.author?.login, message: event.message };
+          return {
+            ...base,
+            sha: event.sha ?? null,
+            author: event.author?.login ?? null,
+            author_type: event.author?.type ?? null,
+            committer: event.committer?.login ?? null,
+            committer_type: event.committer?.type ?? null,
+            message: event.message ?? null,
+          };
         case 'commented':
-          return { ...base, body: event.body };
+          return { ...base, body: event.body ?? null };
+        case 'edited':
+          return {
+            ...base,
+            edited_field: event.changes?.body ? 'body' : null,
+            edit_from: event.changes?.body?.from ?? null,
+          };
         case 'labeled':
         case 'unlabeled':
           return { ...base, label: { name: event.label?.name } };
@@ -227,28 +275,48 @@ export class GitHubClient {
         case 'merged':
           return { ...base, merged: true };
         case 'reviewed':
-          return { ...base, submitted_at: event.submitted_at, state: event.state, body: event.body };
-        case 'mentioned':
-        case 'subscribed':
-        case 'unsubscribed':
-          return null;
+          return { ...base, state: event.state, body: event.body ?? null };
         default:
           return base;
       }
     });
     const timelineEvents = mapped.filter((ev): ev is TimelineEvent => ev !== null);
-    const reviewComments = isPullRequest ? await this.listReviewComments(issue_number) : [];
-    const filtered = timelineEvents.concat(reviewComments)
+    let reviewComments: TimelineEvent[] = [];
+    let reviewCommentsAvailable = true;
+    if (isPullRequest) {
+      try {
+        reviewComments = await this.listReviewComments(issue_number);
+      } catch {
+        reviewCommentsAvailable = false;
+      }
+    }
+    const allEvents = timelineEvents.concat(reviewComments)
       .sort((a, b) => {
-        const aTs = Date.parse(a.created_at ?? '');
-        const bTs = Date.parse(b.created_at ?? '');
+        const aTs = eventTimestamp(a);
+        const bTs = eventTimestamp(b);
         return (Number.isNaN(aTs) ? Number.MAX_SAFE_INTEGER : aTs) - (Number.isNaN(bTs) ? Number.MAX_SAFE_INTEGER : bTs);
-      })
-      .slice(-limit);
+      });
+    const filtered = allEvents.slice(-limit);
+    const timestamped = allEvents.map(eventTimestamp).filter((ts) => !Number.isNaN(ts));
+    const editEvents = allEvents.filter((event) => event.event === 'edited' && event.edited_field === 'body');
 
     return {
       raw: events,
       filtered,
+      activityEvidence: allEvents,
+      completeness: {
+        history_fetched: true,
+        discussion_truncated: filtered.length < allEvents.length,
+        total_events: allEvents.length,
+        retained_events: filtered.length,
+        omitted_events: Math.max(0, allEvents.length - filtered.length),
+        coverage_start: timestamped.length > 0 ? new Date(Math.min(...timestamped)).toISOString() : null,
+        coverage_end: timestamped.length > 0 ? new Date(Math.max(...timestamped)).toISOString() : null,
+        missing_actor_count: allEvents.filter((event) => !event.actor).length,
+        missing_timestamp_count: allEvents.filter((event) => Number.isNaN(eventTimestamp(event))).length,
+        body_edit_history: editEvents.length > 0 ? 'timeline_events_only' : 'unavailable',
+        review_comments_available: reviewCommentsAvailable,
+      },
     };
   }
 
@@ -294,10 +362,21 @@ export class GitHubClient {
   ): number {
     const issueUpdatedMs = parseTimestamp(issue.updated_at);
     const latestEventMs = (timelineEvents || []).reduce((max, ev) => {
-      const ts = parseTimestamp(ev?.created_at);
+      const ts = Math.max(
+        parseTimestamp(ev?.created_at),
+        parseTimestamp(ev?.updated_at),
+        parseTimestamp(ev?.submitted_at)
+      );
       return ts > max ? ts : max;
     }, 0);
 
     return issueUpdatedMs > latestEventMs ? issueUpdatedMs : latestEventMs;
   }
+}
+
+function eventTimestamp(event: TimelineEvent): number {
+  const timestamps = [event.created_at, event.updated_at, event.submitted_at]
+    .map((value) => Date.parse(value ?? ''))
+    .filter((value) => !Number.isNaN(value));
+  return timestamps.length > 0 ? Math.min(...timestamps) : Number.NaN;
 }

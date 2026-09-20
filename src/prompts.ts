@@ -1,4 +1,4 @@
-import type { Issue, TimelineEvent } from './github';
+import type { Issue, TimelineCompleteness, TimelineEvent } from './github';
 import { loadPrompt, loadReadme } from './storage';
 import type { FastPassPlan, PromptPassLimits, PromptPassMode, RepoLabel } from './analysis';
 import { normalizeRepoLabels } from './analysis';
@@ -20,6 +20,14 @@ function applyTimelineLimits(events: TimelineEvent[], limits: PromptPassLimits):
     const next = { ...event };
     if (next.message !== undefined) {
       next.message = clampText(next.message, limits.timelineTextChars);
+    }
+
+    function applyActivityEvidenceLimits(events: TimelineEvent[], limits: PromptPassLimits): TimelineEvent[] {
+      const evidenceLimit = Math.max(limits.timelineEvents * 4, limits.timelineEvents);
+      return (events || []).slice(-evidenceLimit).map((event) => {
+        const { body: _body, message: _message, ...metadata } = event;
+        return metadata;
+      });
     }
     if (next.body !== undefined) {
       next.body = clampText(next.body, limits.timelineTextChars);
@@ -140,6 +148,8 @@ export function buildUserPrompt(
   runContext?: string,
   fastPassPlan?: FastPassPlan,
   runTimestamp?: string,
+  activityEvidence: TimelineEvent[] = [],
+  completeness?: TimelineCompleteness,
 ): string {
   const resolvedLimits: PromptPassLimits = {
     readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
@@ -149,6 +159,20 @@ export function buildUserPrompt(
   };
   const promptIssue = applyIssueLimits(issue, resolvedLimits);
   const promptTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
+  const promptActivityEvidence = applyActivityEvidenceLimits(activityEvidence, resolvedLimits);
+  const resolvedCompleteness = completeness ?? {
+    history_fetched: true,
+    discussion_truncated: false,
+    total_events: activityEvidence.length,
+    retained_events: timelineEvents.length,
+    omitted_events: 0,
+    coverage_start: null,
+    coverage_end: null,
+    missing_actor_count: activityEvidence.filter((event) => !event.actor).length,
+    missing_timestamp_count: activityEvidence.filter((event) => !event.created_at && !event.updated_at && !event.submitted_at).length,
+    body_edit_history: 'unavailable' as const,
+    review_comments_available: true,
+  };
 
   return `
 === SECTION: TRIAGE TASK ===
@@ -164,6 +188,14 @@ ${JSON.stringify(promptIssue, null, 2)}
 
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(promptTimelineEvents, null, 2)}
+
+=== SECTION: ACTIVITY EVIDENCE (JSON) ===
+The activity evidence is compact metadata retained separately from the discussion-text window. It is repository-neutral; apply the repository policy to these events rather than assuming any event is qualifying activity.
+${JSON.stringify(promptActivityEvidence, null, 2)}
+
+=== SECTION: HISTORY COMPLETENESS (JSON) ===
+${JSON.stringify(resolvedCompleteness, null, 2)}
+History may be incomplete or truncated. Absence from an incomplete history is not proof of inactivity. If a decision requires unavailable actor, timestamp, or edit evidence, defer that decision rather than inventing facts.
 ${mode === 'pro' && fastPassPlan ? `\n=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===
 The following plan was produced by a faster preliminary model. Treat it as draft data: verify every proposed operation against the issue, timeline, repository policy, and output contract before using it. You may accept, modify, or reject it.
 ${JSON.stringify(fastPassPlan, null, 2)}` : ''}

@@ -9,7 +9,7 @@ import {
   buildUserPrompt,
 } from './analysis';
 import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
-import { GitHubClient, Issue, TimelineEvent } from './github';
+import { GitHubClient, Issue, TimelineCompleteness, TimelineEvent } from './github';
 import { RunStatistics, comparePlans, summarizePlan } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, planOperations } from './triage';
 import type { Config } from './config';
@@ -49,6 +49,8 @@ export interface GenerateAnalysisOptions {
 
 interface IssueContext {
   timelineEvents: Record<PromptPassMode, TimelineEvent[]>;
+  activityEvidence: TimelineEvent[];
+  completeness: TimelineCompleteness;
   runContext: string;
 }
 
@@ -184,11 +186,15 @@ async function loadIssueContext(
   const { issue, autoDiscover } = options;
   const dbEntry = getDbEntry(db, issue.number);
   const timelineFetchLimit = Math.max(cfg.limits.fast.timelineEvents, cfg.limits.pro.timelineEvents);
-  const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
+  const timeline = await gh.listTimelineEvents(
     issue.number,
     timelineFetchLimit,
     issue.type === 'pull request'
   );
+  const rawTimelineEvents = timeline.raw;
+  const timelineEvents = timeline.filtered;
+  const activityEvidence = timeline.activityEvidence ?? timelineEvents;
+  const completeness = timeline.completeness ?? buildFallbackCompleteness(activityEvidence, timelineEvents);
   const runContext = buildRunContext(
     issue,
     rawTimelineEvents,
@@ -204,6 +210,8 @@ async function loadIssueContext(
       fast: timelineEvents.slice(-cfg.limits.fast.timelineEvents),
       pro: timelineEvents.slice(-cfg.limits.pro.timelineEvents),
     },
+    activityEvidence,
+    completeness,
     runContext,
   };
 }
@@ -229,7 +237,9 @@ async function runPass(
     cfg.limits[mode],
     context.runContext,
     fastPassPlan,
-    runTimestamp
+    runTimestamp,
+    context.activityEvidence,
+    context.completeness
   );
   saveArtifact(issue.number, isFast ? 'prompt-fast-user.md' : 'prompt-user.md', userPrompt);
 
@@ -244,6 +254,25 @@ async function runPass(
       isFastModel: isFast,
       cacheInfo: cacheInfos.get(mode),
       useFlexTier: cacheInfos.has(mode),
+    }
+
+    function buildFallbackCompleteness(
+      activityEvidence: TimelineEvent[],
+      retainedEvents: TimelineEvent[]
+    ): TimelineCompleteness {
+      return {
+        history_fetched: true,
+        discussion_truncated: retainedEvents.length < activityEvidence.length,
+        total_events: activityEvidence.length,
+        retained_events: retainedEvents.length,
+        omitted_events: Math.max(0, activityEvidence.length - retainedEvents.length),
+        coverage_start: null,
+        coverage_end: null,
+        missing_actor_count: activityEvidence.filter((event) => !event.actor).length,
+        missing_timestamp_count: activityEvidence.filter((event) => !event.created_at && !event.updated_at && !event.submitted_at).length,
+        body_edit_history: 'unavailable',
+        review_comments_available: true,
+      };
     }
   );
 
