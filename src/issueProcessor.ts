@@ -114,16 +114,30 @@ export async function processIssue(
       }
     );
 
-    await executePlannedOperations(
+    const executionResult = await executePlannedOperations(
       { cfg, gh, stats },
       { issue, operations: proPass.operations }
     );
+
+    const proPlan = summarizePlan(proPass.operations);
+    if (executionResult === 'deferred') {
+      stats.recordItem({
+        issueNumber: issue.number,
+        type: issue.type,
+        outcome: 'skipped',
+        skipReason: 'deferred',
+        escalatedToPro: fastPass.used,
+        fastPlan,
+        proPlan,
+        agreement: fastPlan && comparePlans(fastPlan, proPlan),
+      });
+      return { triageUsed: true, fastRunUsed: fastPass.used };
+    }
 
     const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations);
     updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title, {
       lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
     });
-    const proPlan = summarizePlan(proPass.operations);
     stats.recordItem({
       issueNumber: issue.number,
       type: issue.type,
@@ -257,16 +271,34 @@ async function executePlannedOperations(
     issue: Issue;
     operations: PlannedOperation[];
   }
-): Promise<void> {
+): Promise<'executed' | 'deferred'> {
   const { cfg, gh, stats } = deps;
   const { issue, operations } = options;
 
   if (operations.length === 0) {
     console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
-    return;
+    return 'executed';
   }
 
   saveArtifact(issue.number, 'operations.json', JSON.stringify(operations, null, 2));
+  if (!cfg.dryRun) {
+    try {
+      const currentIssue = await gh.getIssue(issue.number);
+      if (getConsumedUpdatedAt(currentIssue) !== getConsumedUpdatedAt(issue)) {
+        console.warn(
+          `⚠️ #${issue.number} changed while it was being analyzed; deferring planned operations for re-triage.`
+        );
+        return 'deferred';
+      }
+    } catch (err) {
+      console.warn(
+        `⚠️ Failed to recheck #${issue.number} before applying operations: ${errorMessage(err)}. ` +
+        'Deferring planned operations for re-triage.'
+      );
+      return 'deferred';
+    }
+  }
+
   await executeOperations(operations, {
     issue,
     dryRun: cfg.dryRun,
@@ -279,6 +311,7 @@ async function executePlannedOperations(
       });
     },
   });
+  return 'executed';
 }
 
 export function buildRunContext(

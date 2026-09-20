@@ -6,6 +6,7 @@ import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
 import type { TriageDb } from '../src/storage';
 import { TimelineEvent } from '../src/github';
+import { buildAutoDiscoverQueue } from '../src/autoDiscover';
 import { makeConfig, makeIssue, withArtifactsDir } from './fixtures';
 
 const baseIssue = makeIssue(42, '2024-04-10T00:00:00Z', { created_at: '2024-04-01T00:00:00Z' });
@@ -137,7 +138,9 @@ describe('processIssue', () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub({
-        getIssue: vi.fn().mockResolvedValue({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
+        getIssue: vi.fn()
+          .mockResolvedValueOnce(baseIssue)
+          .mockResolvedValueOnce({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
       });
       const gemini = {
         generateJson: vi
@@ -178,16 +181,22 @@ describe('processIssue', () => {
     });
   });
 
-  it('falls back to the original updated_at when the post-action refresh fails', async () => {
+  it('defers operations and retains the analyzed watermark when the thread changes during analysis', async () => {
     await withArtifactsDir(async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
-      const gh = createGitHub({ getIssue: vi.fn().mockRejectedValue(new Error('refresh failed')) });
+      const gh = createGitHub({
+        getIssue: vi.fn().mockResolvedValue({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
+      });
       const gemini = {
         generateJson: vi
           .fn()
-          .mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+          .mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [{
+            kind: 'set_state',
+            state: 'not_planned',
+            authorization: 'pro policy',
+          }], 20)),
       } as any;
 
       try {
@@ -197,9 +206,84 @@ describe('processIssue', () => {
         );
 
         expect(result).toEqual({ triageUsed: true, fastRunUsed: false });
-        expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+        expect(gh.updateIssueState).not.toHaveBeenCalled();
         expect(gh.getIssue).toHaveBeenCalledWith(42);
         expect(warnSpy).toHaveBeenCalledOnce();
+        expect(db.items['42']).toBeUndefined();
+        expect(buildAutoDiscoverQueue([{ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }], db, true)).toEqual([42]);
+        expect((stats.toJSON() as any).items).toContainEqual(expect.objectContaining({
+          outcome: 'skipped',
+          skipReason: 'deferred',
+        }));
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  it('defers operations without updating the database when the pre-write recheck fails', async () => {
+    await withArtifactsDir(async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const db: TriageDb = {
+        version: 2,
+        items: {
+          '42': {
+            lastTriaged: '2024-04-05T00:00:00Z',
+            lastSeenUpdatedAt: '2024-04-05T00:00:00Z',
+            summary: 'Previous summary',
+          },
+        },
+      };
+      const stats = new RunStatistics();
+      const gh = createGitHub({ getIssue: vi.fn().mockRejectedValue(new Error('recheck failed')) });
+      const gemini = {
+        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+      } as any;
+
+      try {
+        await processIssue(
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, gemini, stats },
+          processOptions({ systemPromptFast: '' })
+        );
+
+        expect(gh.addLabels).not.toHaveBeenCalled();
+        expect(db.items['42']).toEqual({
+          lastTriaged: '2024-04-05T00:00:00Z',
+          lastSeenUpdatedAt: '2024-04-05T00:00:00Z',
+          summary: 'Previous summary',
+        });
+        expect(buildAutoDiscoverQueue([baseIssue], db, true)).toEqual([42]);
+        expect((stats.toJSON() as any).items).toContainEqual(expect.objectContaining({
+          outcome: 'skipped',
+          skipReason: 'deferred',
+        }));
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  it('uses the analyzed watermark when the post-action refresh fails', async () => {
+    await withArtifactsDir(async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const gh = createGitHub({
+        getIssue: vi.fn()
+          .mockResolvedValueOnce(baseIssue)
+          .mockRejectedValueOnce(new Error('refresh failed')),
+      });
+      const gemini = {
+        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+      } as any;
+
+      try {
+        await processIssue(
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, gemini, stats },
+          processOptions({ systemPromptFast: '' })
+        );
+
+        expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
         expect(db.items['42']).toMatchObject({
           summary: 'Pro summary',
           lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
@@ -207,6 +291,25 @@ describe('processIssue', () => {
       } finally {
         warnSpy.mockRestore();
       }
+    });
+  });
+
+  it('does not recheck before executing a dry-run plan', async () => {
+    await withArtifactsDir(async () => {
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const gh = createGitHub({ getIssue: vi.fn() });
+      const gemini = {
+        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+      } as any;
+
+      await processIssue(
+        { cfg: createConfig({ dryRun: true, skipFastPass: true }), db, gh, gemini, stats },
+        processOptions({ systemPromptFast: '' })
+      );
+
+      expect(gh.getIssue).not.toHaveBeenCalled();
+      expect(gh.addLabels).not.toHaveBeenCalled();
     });
   });
 
