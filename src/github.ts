@@ -29,6 +29,7 @@ export type TimelineEvent = {
   url?: string;
   event: string;
   actor?: string;
+  actor_type?: string;
   actor_association?: string;
   created_at?: string;
   updated_at?: string;
@@ -169,6 +170,7 @@ export class GitHubClient {
     return (comments as any[]).map((comment: any) => ({
       event: 'review_commented',
       actor: comment.user?.login,
+      actor_type: comment.user?.type,
       actor_association: comment.author_association,
       created_at: comment.created_at,
       updated_at: comment.updated_at,
@@ -196,6 +198,7 @@ export class GitHubClient {
         url: event.url,
         event: event.event,
         actor: event.actor?.login,
+        actor_type: event.actor?.type,
         actor_association: event.actor?.author_association || event.author_association,
         created_at: event.created_at,
         updated_at: event.updated_at,

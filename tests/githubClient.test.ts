@@ -98,7 +98,7 @@ describe('GitHubClient.listTimelineEvents', () => {
       ])
       .mockResolvedValueOnce([
         {
-          user: { login: 'reviewer' },
+          user: { login: 'reviewer', type: 'User' },
           author_association: 'MEMBER',
           created_at: '2024-01-01T00:30:00Z',
           updated_at: '2024-01-01T00:30:00Z',
@@ -114,6 +114,7 @@ describe('GitHubClient.listTimelineEvents', () => {
       expect.objectContaining({
         event: 'review_commented',
         actor: 'reviewer',
+        actor_type: 'User',
         body: 'Inline review comment',
         path: 'src/file.ts',
       }),
@@ -123,6 +124,34 @@ describe('GitHubClient.listTimelineEvents', () => {
       }),
     ]);
     expect(client.getApiCallCount()).toBe(2);
+  });
+
+  it('carries the actor account type so bot activity is distinguishable from human activity', async () => {
+    mocks.paginate.mockResolvedValueOnce([
+      {
+        event: 'labeled',
+        actor: { login: 'triage-bot[bot]', type: 'Bot' },
+        label: { name: 'stale' },
+        created_at: '2024-01-01T00:00:00Z',
+      },
+      {
+        event: 'commented',
+        actor: { login: 'octocat', type: 'User' },
+        author_association: 'CONTRIBUTOR',
+        body: 'Still happening',
+        created_at: '2024-01-02T00:00:00Z',
+      },
+      { event: 'closed', created_at: '2024-01-03T00:00:00Z' },
+    ]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const { filtered } = await client.listTimelineEvents(42, 10, false);
+
+    expect(filtered).toEqual([
+      expect.objectContaining({ event: 'labeled', actor: 'triage-bot[bot]', actor_type: 'Bot' }),
+      expect.objectContaining({ event: 'commented', actor: 'octocat', actor_type: 'User' }),
+      expect.objectContaining({ event: 'closed', actor_type: undefined }),
+    ]);
   });
 
   it('does not fetch review comments for issues', async () => {
