@@ -198,7 +198,6 @@ export class GitHubClient {
         url: event.url,
         event: event.event,
         actor: event.actor?.login,
-        // Only the actor's account type distinguishes bots from humans; author_association is absent on every event except comments and reviews.
         actor_type: event.actor?.type,
         actor_association: event.actor?.author_association || event.author_association,
         created_at: event.created_at,
