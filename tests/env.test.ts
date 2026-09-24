@@ -10,8 +10,9 @@ vi.mock('@actions/core', () => ({
   getInput: mocks.getInput,
 }));
 
-// @actions/github is deliberately not mocked: its context.repo reads GITHUB_REPOSITORY on each access, so these tests exercise the real resolution and error behavior.
+// @actions/github is deliberately not mocked: its context.repo reads GITHUB_REPOSITORY on each access (falling back to the event payload), so these tests exercise the real resolution and error behavior.
 
+import * as github from '@actions/github';
 import { getConfig } from '../src/env';
 
 function setInputs(values: Record<string, string>) {
@@ -23,6 +24,8 @@ beforeEach(() => {
   vi.stubEnv('GITHUB_TOKEN', 'token');
   vi.stubEnv('GEMINI_API_KEY', 'gemini-key');
   vi.stubEnv('GITHUB_REPOSITORY', 'danielchalmers/AutoTriage');
+  // On GitHub Actions the context loads the triggering event's payload at import; clear it so it can't stand in for GITHUB_REPOSITORY.
+  github.context.payload = {};
   setInputs({});
 });
 
@@ -45,6 +48,13 @@ describe('getConfig required context', () => {
 describe('getConfig repository context', () => {
   it('uses the repository the workflow runs in', () => {
     expect(getConfig()).toMatchObject({ owner: 'danielchalmers', repo: 'AutoTriage' });
+  });
+
+  it('falls back to the event payload repository when GITHUB_REPOSITORY is unset', () => {
+    vi.stubEnv('GITHUB_REPOSITORY', '');
+    github.context.payload = { repository: { name: 'payload-repo', owner: { login: 'payload-owner' } } } as any;
+
+    expect(getConfig()).toMatchObject({ owner: 'payload-owner', repo: 'payload-repo' });
   });
 
   it.each([
