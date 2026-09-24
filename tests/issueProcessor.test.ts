@@ -181,6 +181,65 @@ describe('processIssue', () => {
     });
   });
 
+  it('records a pro veto without touching GitHub when the pro pass rejects the fast plan', async () => {
+    await withArtifactsDir(async () => {
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const gh = createGitHub({ getIssue: vi.fn() });
+      const gemini = {
+        generateJson: vi
+          .fn()
+          .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
+          .mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [], 20)),
+      } as any;
+
+      const result = await processIssue(
+        { cfg: createConfig({ dryRun: false }), db, gh, gemini, stats },
+        processOptions()
+      );
+
+      expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
+      expect(gh.getIssue).not.toHaveBeenCalled();
+      expect(gh.addLabels).not.toHaveBeenCalled();
+      expect(db.items['42']).toMatchObject({ summary: 'Pro summary', lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
+      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
+      expect(item).toMatchObject({ outcome: 'triaged', agreement: 'pro-vetoed', proPlan: { kinds: [], labels: [] } });
+    });
+  });
+
+  it('sends each pass to its model, uses the cached flex tier when cached, and hands the fast plan to the pro pass', async () => {
+    await withArtifactsDir(async () => {
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const gh = createGitHub();
+      const gemini = {
+        generateJson: vi
+          .fn()
+          .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
+          .mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+      } as any;
+
+      await processIssue(
+        { cfg: createConfig(), db, gh, gemini, stats },
+        processOptions({ cacheInfos: new Map([['pro', { name: 'cachedContents/pro', tokenCount: 100 }]]) })
+      );
+
+      const [fastPayload] = gemini.generateJson.mock.calls[0];
+      expect(fastPayload.model).toBe('fast-model');
+      expect(fastPayload.config).toMatchObject({ systemInstruction: 'fast system prompt' });
+      expect(fastPayload.config.cachedContent).toBeUndefined();
+      expect(fastPayload.config.httpOptions).toBeUndefined();
+
+      const [proPayload] = gemini.generateJson.mock.calls[1];
+      expect(proPayload.model).toBe('pro-model');
+      expect(proPayload.config).toMatchObject({ cachedContent: 'cachedContents/pro', httpOptions: { extraBody: { service_tier: 'flex' } } });
+      expect(proPayload.config.systemInstruction).toBeUndefined();
+      const proUserPrompt = proPayload.contents[0].parts[0].text;
+      expect(proUserPrompt).toContain('=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===');
+      expect(proUserPrompt).toContain('"authorization": "fast policy"');
+    });
+  });
+
   it('defers operations and retains the analyzed watermark when the thread changes during analysis', async () => {
     await withArtifactsDir(async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

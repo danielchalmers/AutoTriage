@@ -11,6 +11,12 @@ vi.mock('@actions/github', () => ({
   context: githubContextMock,
 }));
 
+// setFailed would otherwise print ::error:: and set process.exitCode for the test worker.
+vi.mock('@actions/core', async (importActual) => ({
+  ...(await importActual<typeof import('@actions/core')>()),
+  setFailed: vi.fn(),
+}));
+
 vi.mock('../src/issueProcessor', async () => {
   const actual = await vi.importActual<typeof import('../src/issueProcessor')>('../src/issueProcessor');
   return {
@@ -19,8 +25,11 @@ vi.mock('../src/issueProcessor', async () => {
   };
 });
 
+import * as core from '@actions/core';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { GeminiResponseError } from '../src/gemini';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { makeClosedIssue, makeConfig, makeDb, makeIssue, withTempDir } from './fixtures';
 
@@ -110,18 +119,24 @@ describe('listTargets', () => {
   });
 });
 
-describe('runAutoTriage automatic backlog caching', () => {
+describe('runAutoTriage', () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
+  let artifactsRoot: string;
 
   beforeEach(() => {
     vi.clearAllMocks();
     githubContextMock.payload = {};
+    processIssueMock.mockReset();
     processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: true });
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // Run artifacts (system prompts, run summary) land in a throwaway directory instead of the repository root.
+    artifactsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-runner-'));
+    vi.spyOn(process, 'cwd').mockReturnValue(artifactsRoot);
   });
 
   afterEach(() => {
-    logSpy.mockRestore();
+    vi.restoreAllMocks();
+    fs.rmSync(artifactsRoot, { recursive: true, force: true });
   });
 
   function createStats() {
@@ -260,6 +275,8 @@ describe('runAutoTriage automatic backlog caching', () => {
     });
 
     expect(logSpy).toHaveBeenCalledWith('⏳ Max fast runs (1) reached with 2 item(s) remaining');
+    expect(stats.setCapReached).toHaveBeenCalledWith('fast');
+    expect(processIssueMock).toHaveBeenCalledOnce();
   });
 
   it('continues past an unexpected per-item error and processes the rest of the backlog', async () => {
@@ -331,5 +348,142 @@ describe('runAutoTriage automatic backlog caching', () => {
     });
 
     expect(logSpy).toHaveBeenCalledWith('⏳ Max pro runs (1) reached with 2 item(s) remaining');
+    expect(stats.setCapReached).toHaveBeenCalledWith('pro');
+    expect(processIssueMock).toHaveBeenCalledOnce();
+  });
+
+  it('does not spend the pro budget on items the fast pass skipped', async () => {
+    processIssueMock
+      .mockResolvedValueOnce({ triageUsed: false, fastRunUsed: true })
+      .mockResolvedValueOnce({ triageUsed: false, fastRunUsed: true })
+      .mockResolvedValueOnce({ triageUsed: true, fastRunUsed: true });
+    const stats = createStats();
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      gemini: createGemini() as any,
+      stats: stats as any,
+    });
+
+    expect(processIssueMock).toHaveBeenCalledTimes(3);
+    expect(stats.incrementSkipped).toHaveBeenCalledTimes(2);
+    expect(stats.incrementTriaged).toHaveBeenCalledOnce();
+  });
+
+  it('ignores the fast-run cap and creates only the pro cache when the fast pass is disabled', async () => {
+    processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: false });
+    const gh = createGitHub();
+    gh.listOpenIssues.mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z'), makeIssue(6, '2024-04-06T00:00:00Z')]);
+    const gemini = createGemini();
+    gemini.createCache.mockResolvedValue({ name: 'cachedContents/pro', tokenCount: 20 });
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, skipFastPass: true, modelFast: '', maxFastRuns: 1 },
+      db: makeDb(),
+      gh: gh as any,
+      gemini: gemini as any,
+      stats: createStats() as any,
+    });
+
+    expect(gemini.createCache).toHaveBeenCalledOnce();
+    expect(gemini.createCache).toHaveBeenCalledWith('pro-model', expect.any(String), 'autotriage-pro-owner/repo');
+    expect(processIssueMock).toHaveBeenCalledTimes(2);
+    expect(processIssueMock.mock.calls[0]![1].systemPromptFast).toBe('');
+  });
+
+  it('resets the consecutive-failure breaker after a success', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const failure = new Error('socket hang up');
+    const success = { triageUsed: true, fastRunUsed: true };
+    processIssueMock
+      .mockRejectedValueOnce(failure)
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(success)
+      .mockRejectedValueOnce(failure)
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(success);
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [1, 2, 3, 4, 5, 6] },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      gemini: createGemini() as any,
+      stats: createStats() as any,
+    });
+
+    expect(processIssueMock).toHaveBeenCalledTimes(6);
+    expect(warnSpy.mock.calls.filter(([message]) => String(message).includes('unexpected error'))).toHaveLength(4);
+  });
+
+  it('logs model errors without a stack and attributes the failure to the pass in flight', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    processIssueMock.mockRejectedValueOnce(new GeminiResponseError('Unable to parse JSON from Gemini response'));
+    const stats = createStats();
+    stats.getCurrentPass.mockReturnValue('pro');
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5] },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      gemini: createGemini() as any,
+      stats: stats as any,
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith('#5: Unable to parse JSON from Gemini response');
+    expect(stats.recordItem).toHaveBeenCalledWith({ issueNumber: 5, outcome: 'failed', escalatedToPro: true, failedPass: 'pro' });
+  });
+
+  it('fails the job in strict mode when any item failed', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    processIssueMock.mockRejectedValueOnce(new Error('socket hang up'));
+    const stats = createStats();
+    stats.getFailed.mockReturnValue(1);
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5], strictMode: true },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      gemini: createGemini() as any,
+      stats: stats as any,
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith('Strict mode enabled: 1 run(s) had errors.');
+  });
+
+  it('does not fail the job outside strict mode', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    processIssueMock.mockRejectedValueOnce(new Error('socket hang up'));
+    const stats = createStats();
+    stats.getFailed.mockReturnValue(1);
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5] },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      gemini: createGemini() as any,
+      stats: stats as any,
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+  });
+
+  it('writes the system prompts and run summary artifacts', async () => {
+    const stats = createStats();
+    stats.toJSON.mockReturnValue({ schemaVersion: 2 });
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5] },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      gemini: createGemini() as any,
+      stats: stats as any,
+    });
+
+    const artifacts = path.join(artifactsRoot, 'artifacts');
+    expect(fs.readdirSync(artifacts).sort()).toEqual(['0-run-summary.json', 'prompt-system-fast.md', 'prompt-system.md']);
+    expect(JSON.parse(fs.readFileSync(path.join(artifacts, '0-run-summary.json'), 'utf8'))).toEqual({ schemaVersion: 2 });
+    expect(fs.readFileSync(path.join(artifacts, 'prompt-system.md'), 'utf8')).toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY ===');
   });
 });

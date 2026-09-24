@@ -43,6 +43,28 @@ describe('planOperations', () => {
     ]);
   });
 
+  it('allows any label when the repository label list is unavailable', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [{ kind: 'add_labels', labels: ['brand-new', 'bug'], authorization: 'policy allows labels' }],
+    };
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([
+      { kind: 'add_labels', labels: ['brand-new'], authorization: 'policy allows labels' },
+    ]);
+  });
+
+  it('drops blank and non-string labels from the model output', () => {
+    const analysis = {
+      summary: 's',
+      operations: [{ kind: 'add_labels', labels: ['', '  ', 7, null, 'feature'], authorization: 'policy allows labels' }],
+    } as unknown as AnalysisResult;
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, ['feature'])).toEqual([
+      { kind: 'add_labels', labels: ['feature'], authorization: 'policy allows labels' },
+    ]);
+  });
+
   it('adds comment data when comment present', () => {
     const analysis: AnalysisResult = {
       summary: 's',
@@ -56,6 +78,17 @@ describe('planOperations', () => {
         authorization: 'policy requires a response',
         thoughts: 'internal reasoning',
       },
+    ]);
+  });
+
+  it('omits the thoughts field when there are no thoughts to attach', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [{ kind: 'comment', body: 'Hello there', authorization: 'policy requires a response' }],
+    };
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [], '')).toEqual([
+      { kind: 'comment', body: 'Hello there', authorization: 'policy requires a response' },
     ]);
   });
 
@@ -109,6 +142,27 @@ describe('planOperations', () => {
     expect(planOperations(issue, analysis, baseMetadata, [])).toEqual([]);
   });
 
+  it('changes the close reason of an issue closed for a different reason', () => {
+    const issue = { ...baseIssue, state: 'closed', state_reason: 'completed' } as const;
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [{ kind: 'set_state', state: 'not_planned', authorization: 'policy allows closing as not planned' }],
+    };
+
+    expect(planOperations(issue, analysis, baseMetadata, [])).toEqual([
+      { kind: 'set_state', state: 'not_planned', authorization: 'policy allows closing as not planned' },
+    ]);
+  });
+
+  it('does not reopen an issue that is already open', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [{ kind: 'set_state', state: 'open', authorization: 'policy allows reopening when info arrives' }],
+    };
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
+  });
+
   it('adds reopen data when desired open and currently closed', () => {
     const issue = { ...baseIssue, state: 'closed', state_reason: 'completed' } as const;
     const analysis: AnalysisResult = {
@@ -130,7 +184,10 @@ describe('planOperations', () => {
   it('skips operations without authorization', () => {
     const analysis: AnalysisResult = {
       summary: 's',
-      operations: [{ kind: 'comment', body: 'Hello there', authorization: '' }],
+      operations: [
+        { kind: 'comment', body: 'Hello there', authorization: '' },
+        { kind: 'set_title', title: 'Better title', authorization: '   ' },
+      ],
     };
 
     expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
