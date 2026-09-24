@@ -69,17 +69,17 @@ export async function withArtifactsDir<T>(fn: (dir: string) => T | Promise<T>): 
   });
 }
 
-// Materializes files on disk for the duration of fn; prompt loading reads real paths.
-export function withTempFiles<T>(files: Record<string, string>, fn: () => T): T {
-  for (const [filePath, contents] of Object.entries(files)) {
-    fs.writeFileSync(filePath, contents);
-  }
+// Materializes files in a throwaway directory for the duration of fn, since prompt loading reads real paths.
+// fn receives a resolver from file name to its path in that directory.
+export function withTempFiles<T>(files: Record<string, string>, fn: (file: (name: string) => string) => T): T {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-'));
   try {
-    return fn();
-  } finally {
-    for (const filePath of Object.keys(files)) {
-      fs.unlinkSync(filePath);
+    for (const [name, contents] of Object.entries(files)) {
+      fs.writeFileSync(path.join(dir, name), contents);
     }
+    return fn(name => path.join(dir, name));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 

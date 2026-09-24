@@ -1,23 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getInput: vi.fn(),
-  contextRepo: { owner: 'danielchalmers', repo: 'AutoTriage' },
 }));
 
 vi.mock('@actions/core', () => ({
   getInput: mocks.getInput,
 }));
 
-vi.mock('@actions/github', () => ({
-  context: {
-    get repo() {
-      return mocks.contextRepo;
-    },
-    payload: {},
-  },
-}));
+// @actions/github is deliberately not mocked: its context.repo reads GITHUB_REPOSITORY on each access (falling back to the event payload), so these tests exercise the real resolution and error behavior.
 
+import * as github from '@actions/github';
 import { getConfig } from '../src/env';
 
 function setInputs(values: Record<string, string>) {
@@ -26,10 +21,76 @@ function setInputs(values: Record<string, string>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.GITHUB_TOKEN = 'token';
-  process.env.GEMINI_API_KEY = 'gemini-key';
-  process.env.GITHUB_REPOSITORY = 'danielchalmers/AutoTriage';
+  vi.stubEnv('GITHUB_TOKEN', 'token');
+  vi.stubEnv('GEMINI_API_KEY', 'gemini-key');
+  vi.stubEnv('GITHUB_REPOSITORY', 'danielchalmers/AutoTriage');
+  // On GitHub Actions the context loads the triggering event's payload at import; clear it so it can't stand in for GITHUB_REPOSITORY.
+  github.context.payload = {};
   setInputs({});
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe('getConfig required context', () => {
+  it.each([
+    ['GITHUB_TOKEN', /GITHUB_TOKEN missing/],
+    ['GEMINI_API_KEY', /GEMINI_API_KEY missing/],
+  ])('fails fast when %s is not set', (name, expected) => {
+    vi.stubEnv(name, '');
+
+    expect(() => getConfig()).toThrow(expected);
+  });
+
+});
+
+describe('getConfig repository context', () => {
+  it('uses the repository the workflow runs in', () => {
+    expect(getConfig()).toMatchObject({ owner: 'danielchalmers', repo: 'AutoTriage' });
+  });
+
+  it('falls back to the event payload repository when GITHUB_REPOSITORY is unset', () => {
+    vi.stubEnv('GITHUB_REPOSITORY', '');
+    github.context.payload = { repository: { name: 'payload-repo', owner: { login: 'payload-owner' } } } as any;
+
+    expect(getConfig()).toMatchObject({ owner: 'payload-owner', repo: 'payload-repo' });
+  });
+
+  it.each([
+    ['is not set', ''],
+    ['has no repository part', 'danielchalmers'],
+  ])('fails with an actionable message when GITHUB_REPOSITORY %s', (_label, value) => {
+    vi.stubEnv('GITHUB_REPOSITORY', value);
+
+    expect(() => getConfig()).toThrow('Failed to resolve repository context (owner/repo).');
+  });
+});
+
+describe('getConfig path and text inputs', () => {
+  it('omits optional values that were not provided', () => {
+    const cfg = getConfig();
+
+    expect(cfg.promptPath).toBe('.github/AutoTriage.prompt');
+    expect(cfg).not.toHaveProperty('dbPath');
+    expect(cfg).not.toHaveProperty('additionalInstructions');
+    expect(cfg).not.toHaveProperty('issueNumbers');
+    expect(cfg).not.toHaveProperty('issueNumber');
+  });
+
+  it('trims provided paths and instructions', () => {
+    setInputs({
+      'prompt-path': ' .github/triage.prompt ',
+      'db-path': ' triage-db.json ',
+      'additional-instructions': '  Only label bugs.  ',
+    });
+
+    expect(getConfig()).toMatchObject({
+      promptPath: '.github/triage.prompt',
+      dbPath: 'triage-db.json',
+      additionalInstructions: 'Only label bugs.',
+    });
+  });
 });
 
 describe('getConfig boolean inputs', () => {
@@ -121,6 +182,15 @@ describe('getConfig model inputs', () => {
     expect(cfg.modelPro).toBe('gemini-3.5-flash-lite');
   });
 
+  it('scales every limit by budget-scale and allows 0 to disable context', () => {
+    setInputs({ 'budget-scale': '0' });
+
+    expect(getConfig().limits).toEqual({
+      fast: { readmeChars: 0, issueBodyChars: 0, timelineEvents: 0, timelineTextChars: 0 },
+      pro: { readmeChars: 0, issueBodyChars: 0, timelineEvents: 0, timelineTextChars: 0 },
+    });
+  });
+
   it('uses a valid budget scale and falls back for invalid values', () => {
     setInputs({ 'budget-scale': '1.5' });
     const scaled = getConfig();
@@ -131,6 +201,9 @@ describe('getConfig model inputs', () => {
     const fallback = getConfig();
     expect(fallback.limits.fast.timelineEvents).toBe(12);
     expect(fallback.limits.pro.timelineEvents).toBe(40);
+
+    setInputs({ 'budget-scale': 'lots' });
+    expect(getConfig().limits.pro.timelineEvents).toBe(40);
   });
 
   it('always uses README.md for README context', () => {
@@ -139,5 +212,51 @@ describe('getConfig model inputs', () => {
     const cfg = getConfig();
 
     expect(cfg.readmePath).toBe('README.md');
+  });
+});
+
+// action.yml is the public contract; these keep it, getConfig, and the README input table from drifting apart.
+describe('action.yml input contract', () => {
+  const root = path.join(__dirname, '..');
+
+  function readActionInputs(): Map<string, string | undefined> {
+    const actionYml = fs.readFileSync(path.join(root, 'action.yml'), 'utf8');
+    const inputsBlock = actionYml.split(/^inputs:\s*$/m)[1]?.split(/^\S/m)[0] ?? '';
+    const inputs = new Map<string, string | undefined>();
+    for (const block of inputsBlock.split(/^(?=  [a-z-]+:\s*$)/m)) {
+      const name = block.match(/^  ([a-z-]+):\s*$/m)?.[1];
+      if (!name) continue;
+      inputs.set(name, block.match(/^    default:\s*"(.*)"\s*$/m)?.[1]);
+    }
+    return inputs;
+  }
+
+  const actionInputs = readActionInputs();
+
+  it('parses the declared inputs', () => {
+    expect(actionInputs.size).toBeGreaterThan(0);
+  });
+
+  it('reads every declared input and no undeclared ones', () => {
+    getConfig();
+
+    const readInputs = new Set(mocks.getInput.mock.calls.map(([name]) => name as string));
+    expect([...readInputs].sort()).toEqual([...actionInputs.keys()].sort());
+  });
+
+  it('declares defaults that match the defaults getConfig applies to blank inputs', () => {
+    const fromBlank = getConfig();
+
+    const defaults = Object.fromEntries([...actionInputs].filter(([, value]) => value !== undefined)) as Record<string, string>;
+    setInputs(defaults);
+
+    expect(getConfig()).toEqual(fromBlank);
+  });
+
+  it('documents exactly the declared inputs in the README input table', () => {
+    const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+    const documented = [...readme.matchAll(/^\| `([a-z-]+)` \|/gm)].map(match => match[1]);
+
+    expect(documented.sort()).toEqual([...actionInputs.keys()].sort());
   });
 });

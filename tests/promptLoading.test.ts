@@ -6,10 +6,9 @@ import * as path from 'path'
 
 describe('prompt loading', () => {
   it('loads custom prompt when file exists', async () => {
-    const customPromptPath = path.join(__dirname, 'test-prompt.txt')
 
-    withTempFiles({ [customPromptPath]: 'Custom test prompt' }, () => {
-      expect(loadPrompt(customPromptPath)).toBe('Custom test prompt')
+    withTempFiles({ 'prompt.txt': 'Custom test prompt' }, (file) => {
+      expect(loadPrompt(file('prompt.txt'))).toBe('Custom test prompt')
     })
   })
 

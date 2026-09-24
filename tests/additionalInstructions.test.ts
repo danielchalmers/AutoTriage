@@ -1,19 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { buildSystemPrompt } from '../src/analysis'
 import { withTempFiles } from './fixtures'
-import * as path from 'path'
 
 describe('additional instructions', () => {
   const mockRepoLabels = [
     { name: 'bug', description: 'Something is broken' },
     { name: 'enhancement', description: 'New feature' },
   ]
-  const customPromptPath = path.join(__dirname, 'test-custom-prompt.txt')
 
   it('includes additional instructions in the system prompt when provided', async () => {
-    withTempFiles({ [customPromptPath]: 'Base prompt content' }, () => {
+    withTempFiles({ 'prompt.txt': 'Base prompt content' }, (file) => {
       const additionalInstructions = 'Always add the "urgent" label to issues'
-      const systemPrompt = buildSystemPrompt(customPromptPath, '', mockRepoLabels, additionalInstructions)
+      const systemPrompt = buildSystemPrompt(file('prompt.txt'), '', mockRepoLabels, additionalInstructions)
 
       expect(systemPrompt).toContain('Base prompt content')
       expect(systemPrompt).toContain('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
@@ -33,8 +31,8 @@ describe('additional instructions', () => {
   })
 
   it('does not include additional instructions section when not provided', async () => {
-    withTempFiles({ [customPromptPath]: 'Base prompt content' }, () => {
-      const systemPrompt = buildSystemPrompt(customPromptPath, '', mockRepoLabels, undefined)
+    withTempFiles({ 'prompt.txt': 'Base prompt content' }, (file) => {
+      const systemPrompt = buildSystemPrompt(file('prompt.txt'), '', mockRepoLabels, undefined)
 
       expect(systemPrompt).toContain('Base prompt content')
       expect(systemPrompt).not.toContain('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
