@@ -181,7 +181,5 @@ mechanical checks, and feedback loops rather than repeated manual guidance.
 - Add representative GitHub issue, pull request, and comment fixtures for
   behavior tests.
 - Add model-response fixtures for Gemini planning edge cases.
-- Add structural tests for action input metadata and README input documentation
-  alignment.
 - Add a periodic documentation freshness check once the project has more
   repository-local design notes.

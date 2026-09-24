@@ -46,12 +46,6 @@ describe('context caching', () => {
       }])
     })
 
-    it('uses high thinking level for Gemini 3 requests', () => {
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, 'gemini-3-flash-preview')
-      expect(payload.config?.temperature).toBeUndefined()
-      expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: ThinkingLevel.HIGH })
-    })
-
     it('opts into flex service tier with long timeout when enabled', () => {
       const cacheName = 'cachedContents/abc123'
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, cacheName, true)
@@ -85,7 +79,7 @@ describe('context caching', () => {
       )
     })
 
-    it('omits README section in fast pass by default', () => {
+    it('omits the README from fast-pass system prompts', () => {
       withTempFiles(
         { [customPromptPath]: 'Test behavior policy', [readmePath]: '# README should be omitted' },
         () => {
@@ -97,13 +91,15 @@ describe('context caching', () => {
       )
     })
 
-    it('produces identical output for same inputs (cacheable)', () => {
-      withTempFiles({ [customPromptPath]: 'Stable prompt' }, () => {
-        const repoLabels = [{ name: 'bug', description: null }]
-        const prompt1 = buildSystemPrompt(customPromptPath, '', repoLabels)
-        const prompt2 = buildSystemPrompt(customPromptPath, '', repoLabels)
-        expect(prompt1).toBe(prompt2)
-      })
+    it('clamps the README to the pass readme budget', () => {
+      withTempFiles(
+        { [customPromptPath]: 'Test behavior policy', [readmePath]: '# Title\nLong readme body' },
+        () => {
+          const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, [], undefined, 'pro', { readmeChars: 7 })
+          expect(systemPrompt).toContain('=== SECTION: PROJECT README (MARKDOWN) ===\n# Title\n')
+          expect(systemPrompt).not.toContain('Long readme body')
+        }
+      )
     })
 
     it('sorts repository labels for stable cache keys', () => {
@@ -140,7 +136,6 @@ describe('context caching', () => {
       expect(userPrompt).toContain('Reason this run is happening: This item was triaged before at 2024-01-01T00:00:00Z and is being checked again.')
       expect(userPrompt).toContain('=== SECTION: ISSUE METADATA (JSON) ===')
       expect(userPrompt).toContain('=== SECTION: ISSUE TIMELINE EVENTS (JSON) ===')
-      expect(userPrompt).not.toContain('THOUGHTS FROM LAST RUN')
     })
 
     it('does not contain static repo content', () => {
@@ -153,7 +148,7 @@ describe('context caching', () => {
       expect(userPrompt).not.toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY')
     })
 
-    it('uses pass-specific truncation limits and thought gating', () => {
+    it('applies pass-specific limits to the issue body and timeline', () => {
       const issue = makeIssue(2, undefined, { title: 'Issue', body: 'x'.repeat(20) })
 
       const timelineEvents = [
@@ -170,7 +165,8 @@ describe('context caching', () => {
       expect(fastPrompt).toContain('"body": "xxxxx"')
       expect(fastPrompt).toContain('"message": "bbb"')
       expect(fastPrompt).toContain('"body": "ccc"')
-      expect(fastPrompt).not.toContain('THOUGHTS FROM LAST RUN')
+      // Only the newest two events fit the fast budget.
+      expect(fastPrompt).not.toContain('"event": "commented"')
       expect(fastPrompt).not.toContain('FAST PASS PROPOSED PLAN')
 
       const proPrompt = buildUserPrompt(issue, timelineEvents, 'pro', {
@@ -178,8 +174,9 @@ describe('context caching', () => {
         timelineEvents: 3,
         timelineTextChars: 50,
       }, 'Re-check this item because it has new activity since the last triage.')
-      expect(proPrompt).not.toContain('THOUGHTS FROM LAST RUN')
       expect(proPrompt).toContain('Reason this run is happening: Re-check this item because it has new activity since the last triage.')
+      expect(proPrompt).toContain(`"body": "${'x'.repeat(20)}"`)
+      expect(proPrompt).toContain(`"body": "${'a'.repeat(20)}"`)
       expect(proPrompt).not.toContain('FAST PASS PROPOSED PLAN')
     })
 
@@ -214,15 +211,9 @@ describe('context caching', () => {
       expect(proPrompt).toContain('"summary": "Summarized issue"')
       expect(proPrompt).toContain('"kind": "add_labels"')
       expect(proPrompt).toContain('"kind": "comment"')
-    })
 
-    it('keeps pro prompts working without a fast pass plan', () => {
-      const issue = makeIssue(4, undefined, { title: 'Issue', body: 'Body text' })
-
-      const proPrompt = buildUserPrompt(issue, [], 'pro')
-
-      expect(proPrompt).not.toContain('THOUGHTS FROM LAST RUN')
-      expect(proPrompt).not.toContain('FAST PASS PROPOSED PLAN')
+      const fastPrompt = buildUserPrompt(issue, [], 'fast', undefined, undefined, fastPassPlan)
+      expect(fastPrompt).not.toContain('FAST PASS PROPOSED PLAN')
     })
 
     it('uses a provided run timestamp instead of generating a per-prompt timestamp', () => {

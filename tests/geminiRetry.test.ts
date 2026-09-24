@@ -1,5 +1,5 @@
 import { ApiError } from '@google/genai'
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
   GeminiClient,
   GeminiResponseError,
@@ -45,6 +45,10 @@ describe('isTransientModelError', () => {
 })
 
 describe('GeminiClient.generateJson retry policy', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('keeps the short caller-supplied schedule for ordinary failures', async () => {
     const generateContent = vi.fn().mockRejectedValue(new ApiError({ status: 400, message: 'bad request' }))
     const client = new TestClient(generateContent)
@@ -64,7 +68,6 @@ describe('GeminiClient.generateJson retry policy', () => {
     expect(client.sleeps).toEqual([10000, 20000, 40000, 60000, 60000, 60000])
     expect(client.sleeps[0]).toBe(TRANSIENT_INITIAL_BACKOFF_MS)
     expect(Math.max(...client.sleeps)).toBe(TRANSIENT_MAX_BACKOFF_MS)
-    vi.restoreAllMocks()
   })
 
   it('recovers once the outage clears', async () => {
@@ -81,7 +84,6 @@ describe('GeminiClient.generateJson retry policy', () => {
     expect(result.data).toEqual({ ok: true })
     expect(generateContent).toHaveBeenCalledTimes(4)
     expect(client.sleeps).toEqual([10000, 20000, 40000])
-    vi.restoreAllMocks()
   })
 
   it('does not let transient retries extend the budget for ordinary failures', async () => {
@@ -97,6 +99,5 @@ describe('GeminiClient.generateJson retry policy', () => {
     await expect(client.generateJson({ model: 'm', contents: [] }, 2, 7500)).rejects.toThrow('bad')
     expect(generateContent).toHaveBeenCalledTimes(4)
     expect(client.sleeps).toEqual([10000, 7500, 15000])
-    vi.restoreAllMocks()
   })
 })

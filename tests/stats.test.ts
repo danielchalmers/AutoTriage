@@ -21,18 +21,39 @@ describe('RunStatistics', () => {
     stats = new RunStatistics();
   });
 
-  describe('tracking counts', () => {
-    it('tracks failed count', () => {
-      stats.incrementFailed();
-      expect(stats.getFailed()).toBe(1);
+  describe('printSummary', () => {
+    it('prints only the header for an empty run', () => {
+      const lines = captureSummaryOutput(() => stats.printSummary());
 
-      expect(() => stats.printSummary()).not.toThrow();
+      expect(lines).toEqual([expect.stringContaining('Run Statistics:')]);
     });
-  });
 
-  describe('edge cases', () => {
-    it('handles empty statistics', () => {
-      expect(() => stats.printSummary()).not.toThrow();
+    it('prints the outcome totals and the actions grouped by issue in issue order', () => {
+      stats.incrementTriaged();
+      stats.incrementTriaged();
+      stats.incrementSkipped();
+      stats.incrementFailed();
+      stats.trackAction({ issueNumber: 12, type: 'comment', details: 'comment' });
+      stats.trackAction({ issueNumber: 3, type: 'add_labels', details: 'labels: +bug' });
+      stats.trackAction({ issueNumber: 12, type: 'set_state', details: 'state: completed' });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+
+      expect(lines).toContain('  Total: ✅ 2 triaged ℹ️ 1 skipped ❌ 1 failed');
+      const actionLines = lines.filter(line => line.startsWith('  #'));
+      expect(actionLines).toEqual(['  #3: labels: +bug', '  #12: comment, state: completed']);
+      expect(stats.getFailed()).toBe(1);
+    });
+
+    it('formats run durations', () => {
+      stats.setModelNames('', 'pro-model');
+      stats.trackProRun({ startTime: 0, endTime: 400, inputTokens: 1, outputTokens: 1 });
+      stats.trackProRun({ startTime: 0, endTime: 125000, inputTokens: 1, outputTokens: 1 });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+
+      expect(lines).toContainEqual(expect.stringContaining('Pro (pro-model)'));
+      expect(lines).toContain('    Total: 2m5s • Avg: 1m2s • p95: 2m5s');
     });
   });
 
