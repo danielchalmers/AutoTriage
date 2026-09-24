@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest'
 import { buildJsonPayload } from '../src/gemini'
 import { buildSystemPrompt, buildUserPrompt, type FastPassPlan } from '../src/analysis'
 import { makeIssue, withTempFiles } from './fixtures'
-import * as path from 'path'
 
 describe('context caching', () => {
   describe('buildJsonPayload with caching', () => {
@@ -56,18 +55,15 @@ describe('context caching', () => {
   })
 
   describe('buildSystemPrompt', () => {
-    const customPromptPath = path.join(__dirname, 'test-cache-prompt.txt')
-    const readmePath = path.join(__dirname, 'test-cache-readme.md')
-
     it('builds system prompt with repo labels and README', () => {
       withTempFiles(
-        { [customPromptPath]: 'Test behavior policy', [readmePath]: '# Test readme section' },
-        () => {
+        { 'prompt.txt': 'Test behavior policy', 'readme.md': '# Test readme section' },
+        (file) => {
           const repoLabels = [
             { name: 'bug', description: 'Something is broken' },
             { name: 'enhancement', description: 'New feature' },
           ]
-          const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, repoLabels)
+          const systemPrompt = buildSystemPrompt(file('prompt.txt'), file('readme.md'), repoLabels)
 
           expect(systemPrompt).toContain('Test behavior policy')
           expect(systemPrompt).toContain('=== SECTION: REPOSITORY LABELS (JSON) ===')
@@ -81,10 +77,10 @@ describe('context caching', () => {
 
     it('omits the README from fast-pass system prompts', () => {
       withTempFiles(
-        { [customPromptPath]: 'Test behavior policy', [readmePath]: '# README should be omitted' },
-        () => {
+        { 'prompt.txt': 'Test behavior policy', 'readme.md': '# README should be omitted' },
+        (file) => {
           const repoLabels = [{ name: 'bug', description: null }]
-          const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, repoLabels, undefined, 'fast', { readmeChars: 0 })
+          const systemPrompt = buildSystemPrompt(file('prompt.txt'), file('readme.md'), repoLabels, undefined, 'fast', { readmeChars: 0 })
           expect(systemPrompt).not.toContain('=== SECTION: PROJECT README (MARKDOWN) ===')
           expect(systemPrompt).not.toContain('README should be omitted')
         }
@@ -93,9 +89,9 @@ describe('context caching', () => {
 
     it('clamps the README to the pass readme budget', () => {
       withTempFiles(
-        { [customPromptPath]: 'Test behavior policy', [readmePath]: '# Title\nLong readme body' },
-        () => {
-          const systemPrompt = buildSystemPrompt(customPromptPath, readmePath, [], undefined, 'pro', { readmeChars: 7 })
+        { 'prompt.txt': 'Test behavior policy', 'readme.md': '# Title\nLong readme body' },
+        (file) => {
+          const systemPrompt = buildSystemPrompt(file('prompt.txt'), file('readme.md'), [], undefined, 'pro', { readmeChars: 7 })
           expect(systemPrompt).toContain('=== SECTION: PROJECT README (MARKDOWN) ===\n# Title\n')
           expect(systemPrompt).not.toContain('Long readme body')
         }
@@ -103,7 +99,7 @@ describe('context caching', () => {
     })
 
     it('sorts repository labels for stable cache keys', () => {
-      withTempFiles({ [customPromptPath]: 'Stable prompt' }, () => {
+      withTempFiles({ 'prompt.txt': 'Stable prompt' }, (file) => {
         const labelsA = [
           { name: 'zeta', description: null },
           { name: 'alpha', description: 'First' },
@@ -112,8 +108,8 @@ describe('context caching', () => {
           { name: 'alpha', description: 'First' },
           { name: 'zeta', description: null },
         ]
-        const promptA = buildSystemPrompt(customPromptPath, '', labelsA)
-        const promptB = buildSystemPrompt(customPromptPath, '', labelsB)
+        const promptA = buildSystemPrompt(file('prompt.txt'), '', labelsA)
+        const promptB = buildSystemPrompt(file('prompt.txt'), '', labelsB)
         expect(promptA).toBe(promptB)
         expect(promptA.indexOf('"alpha"')).toBeLessThan(promptA.indexOf('"zeta"'))
       })
