@@ -4,21 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getInput: vi.fn(),
-  contextRepo: { owner: 'danielchalmers', repo: 'AutoTriage' },
 }));
 
 vi.mock('@actions/core', () => ({
   getInput: mocks.getInput,
 }));
 
-vi.mock('@actions/github', () => ({
-  context: {
-    get repo() {
-      return mocks.contextRepo;
-    },
-    payload: {},
-  },
-}));
+// @actions/github is deliberately not mocked: its context.repo reads GITHUB_REPOSITORY on each access, so these tests exercise the real resolution and error behavior.
 
 import { getConfig } from '../src/env';
 
@@ -48,6 +40,21 @@ describe('getConfig required context', () => {
     expect(() => getConfig()).toThrow(expected);
   });
 
+});
+
+describe('getConfig repository context', () => {
+  it('uses the repository the workflow runs in', () => {
+    expect(getConfig()).toMatchObject({ owner: 'danielchalmers', repo: 'AutoTriage' });
+  });
+
+  it.each([
+    ['is not set', ''],
+    ['has no repository part', 'danielchalmers'],
+  ])('fails with an actionable message when GITHUB_REPOSITORY %s', (_label, value) => {
+    vi.stubEnv('GITHUB_REPOSITORY', value);
+
+    expect(() => getConfig()).toThrow('Failed to resolve repository context (owner/repo).');
+  });
 });
 
 describe('getConfig path and text inputs', () => {
