@@ -11,9 +11,17 @@ permissions:
   issues: read
   pull-requests: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Fork and Dependabot PRs don't receive repository secrets, so the live triage step is skipped for them.
+      HAS_GEMINI_KEY: ${{ secrets.GEMINI_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -26,15 +34,25 @@ jobs:
         run: npm run typecheck
       - name: Typecheck tests
         run: npm run typecheck:test
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
       - name: Ensure dist is up to date
+        id: check-dist
         run: npm run check:dist
+      - name: Upload rebuilt dist
+        if: failure() && steps.check-dist.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
       - name: Mock triage
-        if: github.event_name == 'pull_request'
+        id: mock-triage
+        if: github.event_name == 'pull_request' && env.HAS_GEMINI_KEY == 'true'
         uses: ./
         with:
-          issues: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '3 6' }}
+          issues: ${{ github.event.pull_request.number }}
           prompt-path: examples/AutoTriage.prompt
           dry-run: true
           model-fast: gemini-3.5-flash-lite
@@ -45,7 +63,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload artifacts
-        if: always()
+        if: always() && steps.mock-triage.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:
           name: triage-artifacts-${{ github.run_number }}
