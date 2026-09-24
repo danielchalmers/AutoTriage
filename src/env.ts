@@ -81,25 +81,28 @@ function scaleLimits(base: PromptPassLimits, multiplier: number): PromptPassLimi
 }
 
 /**
+ * The repository the workflow runs in.
+ * context.repo already falls back from GITHUB_REPOSITORY to the event payload, and throws when neither is available.
+ */
+function resolveWorkflowRepository(): { owner: string; repo: string } {
+  let repository: { owner?: string; repo?: string } = {};
+  try {
+    repository = github.context.repo;
+  } catch {
+    // Reported below with an actionable message.
+  }
+  if (!repository.owner || !repository.repo) {
+    throw new Error('Failed to resolve repository context (owner/repo). Ensure this runs in GitHub Actions with a valid repository context.');
+  }
+  return { owner: repository.owner, repo: repository.repo };
+}
+
+/**
  * Resolve runtime config.
  * Throws early with actionable messages if mandatory secrets (GITHUB_TOKEN, GEMINI_API_KEY) are missing or repo context is absent.
  */
 export function getConfig(): Config {
-  let { owner, repo } = github.context.repo as { owner?: string; repo?: string };
-  owner = owner || '';
-  repo = repo || '';
-  const ghRepoEnv = process.env.GITHUB_REPOSITORY || '';
-  if ((!owner || !repo) && ghRepoEnv.includes('/')) {
-    const [o, r] = ghRepoEnv.split('/', 2);
-    if (!owner) owner = o;
-    if (!repo) repo = r;
-  }
-  const payloadRepo: any = (github as any).context?.payload?.repository;
-  if (!owner && payloadRepo?.owner?.login) owner = String(payloadRepo.owner.login);
-  if (!repo && payloadRepo?.name) repo = String(payloadRepo.name);
-  if (!owner || !repo) {
-    throw new Error('Failed to resolve repository context (owner/repo). Ensure this runs in GitHub Actions with a valid repository context.');
-  }
+  const { owner, repo } = resolveWorkflowRepository();
   const token = process.env.GITHUB_TOKEN || '';
   const geminiApiKey = process.env.GEMINI_API_KEY || '';
 
