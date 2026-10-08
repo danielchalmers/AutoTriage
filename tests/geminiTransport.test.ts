@@ -52,6 +52,34 @@ describe('createModelFetch', () => {
 
     await expect(genai.models.generateContent(buildJsonPayload('system', 'user', {}, 'm'))).rejects.toMatchObject({ name: 'AbortError' })
   })
+
+  // Node's built-in fetch only honors proxy variables with NODE_USE_ENV_PROXY=1, and model traffic must keep doing the same.
+  it('uses the proxy from the environment only when NODE_USE_ENV_PROXY=1', async () => {
+    const tunnels: string[] = []
+    const proxy = createServer()
+    proxy.on('connect', (req, socket) => {
+      tunnels.push(req.url ?? '')
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n')
+    })
+    await new Promise<void>(resolve => proxy.listen(0, '127.0.0.1', resolve))
+
+    try {
+      vi.stubEnv('http_proxy', `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`)
+      vi.stubEnv('no_proxy', '')
+      vi.stubEnv('NODE_USE_ENV_PROXY', '1')
+      const proxied = createModelFetch()(baseUrl)
+      vi.stubEnv('NODE_USE_ENV_PROXY', '')
+      const direct = createModelFetch()(baseUrl)
+
+      await expect(proxied).rejects.toThrow('fetch failed')
+      expect(tunnels).toEqual([new URL(baseUrl).host])
+      expect(await (await direct).json()).toEqual(REPLY)
+      expect(tunnels).toHaveLength(1)
+    } finally {
+      vi.unstubAllEnvs()
+      proxy.close()
+    }
+  })
 })
 
 describe('GeminiClient transport', () => {

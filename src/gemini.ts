@@ -1,5 +1,5 @@
 import { ApiError, GenerateContentResponse, GoogleGenAI, ThinkingLevel, type Fetch, type GenerateContentParameters } from '@google/genai';
-import { Agent, fetch as undiciFetch } from 'undici';
+import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from 'undici';
 import { errorMessage } from './util';
 
 // Deadline for every model request, so a stuck call fails instead of hanging the run.
@@ -11,9 +11,11 @@ export const MODEL_TIMEOUT_MS = 600_000;
  * Node's built-in fetch gives up on any response whose headers take longer than 300s, a longer AbortSignal cannot lift that, and genai's own workaround has no effect on Node 24.
  * The dispatcher's own timers are off by default so MODEL_TIMEOUT_MS is the only deadline; tests pass a short timeout to prove requests go through it.
  * It is passed with each request rather than installed as Node's global dispatcher, so GitHub API traffic is unchanged.
+ * Node's built-in fetch only honors HTTP(S)_PROXY and NO_PROXY when NODE_USE_ENV_PROXY=1, so model traffic keeps that behavior.
  */
 export function createModelFetch(dispatcherTimeoutMs = 0): Fetch {
-  const dispatcher = new Agent({ headersTimeout: dispatcherTimeoutMs, bodyTimeout: dispatcherTimeoutMs });
+  const options = { headersTimeout: dispatcherTimeoutMs, bodyTimeout: dispatcherTimeoutMs };
+  const dispatcher = process.env.NODE_USE_ENV_PROXY === '1' ? new EnvHttpProxyAgent(options) : new Agent(options);
   const modelFetch: typeof undiciFetch = (input, init) => undiciFetch(input, { ...init, dispatcher });
   // undici's types come from a different release than Node's built-in fetch types, so TypeScript cannot match them even though the API is the same.
   return modelFetch as Fetch;
