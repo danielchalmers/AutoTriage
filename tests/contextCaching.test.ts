@@ -1,58 +1,53 @@
-import { ThinkingLevel } from '@google/genai'
 import { describe, it, expect } from 'vitest'
-import { buildJsonPayload } from '../src/gemini'
+import { generateContentBody } from '../src/llm/gemini'
+import type { JsonRequest } from '../src/llm/types'
 import { buildSystemPrompt, buildUserPrompt, type FastPassPlan } from '../src/analysis'
 import { makeIssue, withTempFiles } from './fixtures'
 
 describe('context caching', () => {
-  describe('buildJsonPayload with caching', () => {
-    const systemPrompt = 'You are a triage assistant.'
-    const userPrompt = 'Analyze this issue.'
-    const schema = { type: 'OBJECT', properties: { summary: { type: 'STRING' } }, required: ['summary'] }
-    const model = 'gemini-3.5-flash-lite'
+  describe('Gemini request body with caching', () => {
+    const request: JsonRequest = {
+      model: 'gemini-3.5-flash-lite',
+      systemPrompt: 'You are a triage assistant.',
+      userPrompt: 'Analyze this issue.',
+      schema: { type: 'OBJECT', properties: { summary: { type: 'STRING' } }, required: ['summary'] },
+    }
+    const cacheName = 'cachedContents/abc123'
 
     it('uses systemInstruction when no cache name is provided', () => {
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model)
-      expect(payload.config?.systemInstruction).toBe(systemPrompt)
-      expect(payload.config?.cachedContent).toBeUndefined()
-      expect(payload.config?.httpOptions).toBeUndefined()
+      const body = generateContentBody(request)
+      expect(body).toMatchObject({ systemInstruction: { parts: [{ text: request.systemPrompt }], role: 'user' } })
+      expect(body).not.toHaveProperty('cachedContent')
+      expect(body).not.toHaveProperty('service_tier')
     })
 
     it('uses cachedContent and omits systemInstruction when cache name is provided', () => {
-      const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, cacheName)
-      expect(payload.config?.cachedContent).toBe(cacheName)
-      expect(payload.config?.systemInstruction).toBeUndefined()
+      const body = generateContentBody({ ...request, cacheName })
+      expect(body).toMatchObject({ cachedContent: cacheName })
+      expect(body).not.toHaveProperty('systemInstruction')
     })
 
     it('preserves other config settings when using cache', () => {
-      const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, cacheName)
-      expect(payload.config?.cachedContent).toBe(cacheName)
-      expect(payload.config?.temperature).toBeUndefined()
-      expect(payload.config?.responseMimeType).toBe('application/json')
-      expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: ThinkingLevel.HIGH })
+      expect(generateContentBody({ ...request, cacheName }).generationConfig).toEqual({
+        responseMimeType: 'application/json',
+        responseSchema: request.schema,
+        thinkingConfig: { includeThoughts: true, thinkingLevel: 'HIGH' },
+      })
     })
 
     it('still includes user content in both cached and uncached modes', () => {
-      const uncachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model)
-      const cachedPayload = buildJsonPayload(systemPrompt, userPrompt, schema, model, 'cachedContents/abc123')
+      const uncachedBody = generateContentBody(request)
+      const cachedBody = generateContentBody({ ...request, cacheName })
 
-      expect(uncachedPayload.contents).toEqual(cachedPayload.contents)
-      expect(uncachedPayload.contents).toEqual([{
+      expect(uncachedBody.contents).toEqual(cachedBody.contents)
+      expect(uncachedBody.contents).toEqual([{
+        parts: [{ text: request.userPrompt }],
         role: 'user',
-        parts: [{ text: userPrompt }],
       }])
     })
 
     it('opts into flex service tier when enabled', () => {
-      const cacheName = 'cachedContents/abc123'
-      const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, cacheName, true)
-      expect(payload.config?.httpOptions?.headers).toEqual({})
-      expect(payload.config?.httpOptions?.extraBody).toEqual({ service_tier: 'flex' })
-      // The deadline and fetch are set once on the client, so the payload must not override them.
-      expect(payload.config?.httpOptions?.timeout).toBeUndefined()
-      expect(payload.config?.httpOptions?.fetch).toBeUndefined()
+      expect(generateContentBody({ ...request, cacheName, useFlexTier: true })).toMatchObject({ service_tier: 'flex' })
     })
   })
 

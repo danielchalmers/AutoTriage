@@ -1,8 +1,9 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { GoogleGenAI, type Fetch } from '@google/genai'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
-import { buildJsonPayload, createModelFetch, GeminiClient, MODEL_TIMEOUT_MS } from '../src/gemini'
+import { GeminiClient } from '../src/llm/gemini'
+import { createModelFetch, MODEL_TIMEOUT_MS, requestJson, type Fetch } from '../src/llm/transport'
+import { ModelApiError, type JsonRequest } from '../src/llm/types'
 import { errorMessage } from '../src/util'
 
 // Node's real 300s cap is too slow to test, so a local server holds back its headers briefly and the dispatcher gets a shorter timeout instead.
@@ -13,6 +14,8 @@ const SHORT_DISPATCHER_TIMEOUT_MS = 100
 const SHORT_DEADLINE_MS = 100
 
 const REPLY = { candidates: [{ content: { parts: [{ text: '{"ok":true}' }] } }] }
+const REQUEST: JsonRequest = { model: 'm', systemPrompt: 'system', userPrompt: 'user', schema: {} }
+const POST = { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' } as const
 
 let server: Server
 let baseUrl: string
@@ -44,13 +47,11 @@ describe('createModelFetch', () => {
     expect(await (await completed).json()).toEqual(REPLY)
   })
 
-  // With the dispatcher's timers off, genai's per-attempt deadline is the only limit on a stuck request.
-  // genai builds that AbortSignal from Node's built-in undici, so this proves undici's own fetch still honors it.
+  // With the dispatcher's timers off, the request deadline is the only limit on a stuck request.
+  // The deadline's AbortSignal comes from Node's built-in undici, so this proves undici's own fetch still honors it.
   // If the signal were ignored, the request would succeed once the slow server answers instead.
-  it("aborts at genai's deadline before the server sends headers", async () => {
-    const genai = new GoogleGenAI({ apiKey: 'test-key', httpOptions: { baseUrl, fetch: createModelFetch(), timeout: SHORT_DEADLINE_MS } })
-
-    await expect(genai.models.generateContent(buildJsonPayload('system', 'user', {}, 'm'))).rejects.toMatchObject({ name: 'AbortError' })
+  it('aborts at the request deadline before the server sends headers', async () => {
+    await expect(requestJson(createModelFetch(), baseUrl, POST, SHORT_DEADLINE_MS)).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   // Node's built-in fetch only honors proxy variables with NODE_USE_ENV_PROXY=1, and model traffic must keep doing the same.
@@ -83,7 +84,7 @@ describe('createModelFetch', () => {
 })
 
 describe('GeminiClient transport', () => {
-  // genai reads its base URL from the environment, so no request can reach the real API even if the client stops using the given fetch.
+  // The client reads its base URL from the environment, so no request can reach the real API even if the client stops using the given fetch.
   beforeEach(() => {
     vi.stubEnv('GOOGLE_GEMINI_BASE_URL', baseUrl)
   })
@@ -93,7 +94,7 @@ describe('GeminiClient transport', () => {
   })
 
   it('sends flex calls through the model dispatcher', async () => {
-    const flexPayload = buildJsonPayload('system', 'user', {}, 'm', undefined, true)
+    const flexPayload: JsonRequest = { ...REQUEST, useFlexTier: true }
 
     const timedOut = new GeminiClient('test-key', createModelFetch(SHORT_DISPATCHER_TIMEOUT_MS)).generateJson(flexPayload, 0, 1)
     const completed = new GeminiClient('test-key').generateJson(flexPayload, 0, 1)
@@ -108,8 +109,8 @@ describe('GeminiClient transport', () => {
     )
     const client = new GeminiClient('test-key', fetch)
 
-    await client.generateJson(buildJsonPayload('system', 'user', {}, 'm'), 0, 1)
-    await client.generateJson(buildJsonPayload('system', 'user', {}, 'm', 'cachedContents/abc', true), 0, 1)
+    await client.generateJson(REQUEST, 0, 1)
+    await client.generateJson({ ...REQUEST, cacheName: 'cachedContents/abc', useFlexTier: true }, 0, 1)
     await client.createCache('m', 'system')
     await client.deleteCache('cachedContents/abc')
 
@@ -118,6 +119,32 @@ describe('GeminiClient transport', () => {
       expect(init?.signal).toBeInstanceOf(AbortSignal)
       expect(new Headers(init?.headers).get('x-server-timeout')).toBe(String(MODEL_TIMEOUT_MS / 1000))
     }
+    expect(String(fetch.mock.calls[0]![0])).toBe(`${baseUrl}/v1beta/models/m:generateContent`)
     expect(JSON.parse(String(fetch.mock.calls[1]![1]?.body))).toMatchObject({ service_tier: 'flex' })
+  })
+})
+
+describe('model API errors', () => {
+  function respond(body: string, init: ResponseInit): Fetch {
+    return async () => new Response(body, init)
+  }
+
+  it('carries the status and the JSON error body as the message', async () => {
+    const body = { error: { code: 429, message: 'Resource exhausted', status: 'RESOURCE_EXHAUSTED' } }
+    const fetch = respond(JSON.stringify(body, null, 2), { status: 429, headers: { 'content-type': 'application/json; charset=UTF-8' } })
+
+    const error = await requestJson(fetch, baseUrl, POST).catch((err: unknown) => err)
+
+    expect(error).toBeInstanceOf(ModelApiError)
+    expect(error).toMatchObject({ status: 429, message: JSON.stringify(body) })
+  })
+
+  it('wraps a non-JSON error body in the same shape', async () => {
+    const fetch = respond('upstream timed out', { status: 504, statusText: 'Gateway Timeout', headers: { 'content-type': 'text/plain' } })
+
+    await expect(requestJson(fetch, baseUrl, POST)).rejects.toMatchObject({
+      status: 504,
+      message: '{"error":{"message":"upstream timed out","code":504,"status":"Gateway Timeout"}}',
+    })
   })
 })

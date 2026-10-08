@@ -1,7 +1,8 @@
 import * as core from '@actions/core';
 import { getConfig } from './env';
 import { loadDatabase } from './storage';
-import { GeminiClient } from './gemini';
+import { GeminiClient } from './llm/gemini';
+import type { ModelClient } from './model';
 import { GitHubClient } from './github';
 import { RunStatistics } from './stats';
 import { runAutoTriage } from './runner';
@@ -22,11 +23,11 @@ process.on('uncaughtException', (err) => {
 const cfg = getConfig();
 const db = loadDatabase(cfg.dbPath);
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
-const gemini = new GeminiClient(cfg.geminiApiKey);
+const model: ModelClient = new GeminiClient(cfg.geminiApiKey);
 const stats = new RunStatistics();
 stats.setRepository(cfg.owner, cfg.repo);
 stats.setModelNames(cfg.modelFast, cfg.modelPro);
 
-runAutoTriage({ cfg, db, gh, gemini, stats }).catch((err) => {
+runAutoTriage({ cfg, db, gh, model, stats }).catch((err) => {
   core.setFailed(errorDetail(err));
 });

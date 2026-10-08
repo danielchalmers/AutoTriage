@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { GeminiClient } from '../src/gemini';
+import { GeminiClient } from '../src/llm/gemini';
 import { buildRunContext, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
@@ -103,17 +103,17 @@ describe('processIssue', () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub();
-      const gemini = {
+      const model = {
         generateJson: vi.fn().mockResolvedValue(modelReply('Fast summary', 'Fast thoughts', [], 10)),
       } as any;
 
       const result = await processIssue(
-        { cfg: createConfig(), db, gh, gemini, stats },
+        { cfg: createConfig(), db, gh, model, stats },
         processOptions()
       );
 
       expect(result).toEqual({ triageUsed: false, fastRunUsed: true });
-      expect(gemini.generateJson).toHaveBeenCalledTimes(1);
+      expect(model.generateJson).toHaveBeenCalledTimes(1);
       expect(db.items['42']).toMatchObject({
         summary: 'Fast summary',
         lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
@@ -143,7 +143,7 @@ describe('processIssue', () => {
           .mockResolvedValueOnce(baseIssue)
           .mockResolvedValueOnce({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
       });
-      const gemini = {
+      const model = {
         generateJson: vi
           .fn()
           .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
@@ -151,12 +151,12 @@ describe('processIssue', () => {
       } as any;
 
       const result = await processIssue(
-        { cfg: createConfig({ dryRun: false }), db, gh, gemini, stats },
+        { cfg: createConfig({ dryRun: false }), db, gh, model, stats },
         processOptions()
       );
 
       expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
-      expect(gemini.generateJson).toHaveBeenCalledTimes(2);
+      expect(model.generateJson).toHaveBeenCalledTimes(2);
       expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
 
       const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
@@ -187,7 +187,7 @@ describe('processIssue', () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub({ getIssue: vi.fn() });
-      const gemini = {
+      const model = {
         generateJson: vi
           .fn()
           .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
@@ -195,7 +195,7 @@ describe('processIssue', () => {
       } as any;
 
       const result = await processIssue(
-        { cfg: createConfig({ dryRun: false }), db, gh, gemini, stats },
+        { cfg: createConfig({ dryRun: false }), db, gh, model, stats },
         processOptions()
       );
 
@@ -213,7 +213,7 @@ describe('processIssue', () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub();
-      const gemini = {
+      const model = {
         generateJson: vi
           .fn()
           .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
@@ -221,21 +221,16 @@ describe('processIssue', () => {
       } as any;
 
       await processIssue(
-        { cfg: createConfig(), db, gh, gemini, stats },
+        { cfg: createConfig(), db, gh, model, stats },
         processOptions({ cacheInfos: new Map([['pro', { name: 'cachedContents/pro', tokenCount: 100 }]]) })
       );
 
-      const [fastPayload] = gemini.generateJson.mock.calls[0];
-      expect(fastPayload.model).toBe('fast-model');
-      expect(fastPayload.config).toMatchObject({ systemInstruction: 'fast system prompt' });
-      expect(fastPayload.config.cachedContent).toBeUndefined();
-      expect(fastPayload.config.httpOptions).toBeUndefined();
+      const [fastRequest] = model.generateJson.mock.calls[0];
+      expect(fastRequest).toMatchObject({ model: 'fast-model', systemPrompt: 'fast system prompt', cacheName: undefined, useFlexTier: false });
 
-      const [proPayload] = gemini.generateJson.mock.calls[1];
-      expect(proPayload.model).toBe('pro-model');
-      expect(proPayload.config).toMatchObject({ cachedContent: 'cachedContents/pro', httpOptions: { extraBody: { service_tier: 'flex' } } });
-      expect(proPayload.config.systemInstruction).toBeUndefined();
-      const proUserPrompt = proPayload.contents[0].parts[0].text;
+      const [proRequest] = model.generateJson.mock.calls[1];
+      expect(proRequest).toMatchObject({ model: 'pro-model', systemPrompt: 'pro system prompt', cacheName: 'cachedContents/pro', useFlexTier: true });
+      const proUserPrompt = proRequest.userPrompt;
       expect(proUserPrompt).toContain('=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===');
       expect(proUserPrompt).toContain('"authorization": "fast policy"');
     });
@@ -249,7 +244,7 @@ describe('processIssue', () => {
       const gh = createGitHub({
         getIssue: vi.fn().mockResolvedValue({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
       });
-      const gemini = {
+      const model = {
         generateJson: vi
           .fn()
           .mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [{
@@ -261,7 +256,7 @@ describe('processIssue', () => {
 
       try {
         const result = await processIssue(
-          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, gemini, stats },
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, model, stats },
           processOptions({ systemPromptFast: '' })
         );
 
@@ -296,13 +291,13 @@ describe('processIssue', () => {
       };
       const stats = new RunStatistics();
       const gh = createGitHub({ getIssue: vi.fn().mockRejectedValue(new Error('recheck failed')) });
-      const gemini = {
+      const model = {
         generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
       } as any;
 
       try {
         await processIssue(
-          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, gemini, stats },
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, model, stats },
           processOptions({ systemPromptFast: '' })
         );
 
@@ -333,13 +328,13 @@ describe('processIssue', () => {
           .mockResolvedValueOnce(baseIssue)
           .mockRejectedValueOnce(new Error('refresh failed')),
       });
-      const gemini = {
+      const model = {
         generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
       } as any;
 
       try {
         await processIssue(
-          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, gemini, stats },
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, model, stats },
           processOptions({ systemPromptFast: '' })
         );
 
@@ -359,12 +354,12 @@ describe('processIssue', () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub({ getIssue: vi.fn() });
-      const gemini = {
+      const model = {
         generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
       } as any;
 
       await processIssue(
-        { cfg: createConfig({ dryRun: true, skipFastPass: true }), db, gh, gemini, stats },
+        { cfg: createConfig({ dryRun: true, skipFastPass: true }), db, gh, model, stats },
         processOptions({ systemPromptFast: '' })
       );
 
@@ -377,17 +372,14 @@ describe('processIssue', () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
-      const generateContent = vi
-        .fn()
-        .mockResolvedValueOnce({ candidates: [{ content: { parts: [{ text: '{"summary":"s","operations":{}}' }] } }] })
-        .mockResolvedValueOnce({ candidates: [{ content: { parts: [{ text: '{"summary":7,"operations":[]}' }] } }] });
-      const gemini = new GeminiClient('test-key');
-      (gemini as any).client = { models: { generateContent } };
-      vi.spyOn(gemini as any, 'sleep').mockResolvedValue(undefined);
+      const replies = ['{"summary":"s","operations":{}}', '{"summary":7,"operations":[]}'];
+      const fetch = vi.fn(async () => Response.json({ candidates: [{ content: { parts: [{ text: replies.shift() }] } }] }));
+      const model = new GeminiClient('test-key', fetch);
+      vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
 
-      await processIssue({ cfg: createConfig(), db, gh: createGitHub(), gemini, stats }, processOptions());
+      await processIssue({ cfg: createConfig(), db, gh: createGitHub(), model, stats }, processOptions());
 
-      expect(generateContent).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenCalledTimes(2);
       expect(db.items['42']).toMatchObject({ summary: baseIssue.title });
     });
   });
@@ -397,7 +389,7 @@ describe('processIssue', () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub();
-      const gemini = {
+      const model = {
         generateJson: vi
           .fn()
           // Fast pass escalates, then the pro pass dies.
@@ -406,7 +398,7 @@ describe('processIssue', () => {
       } as any;
 
       await expect(
-        processIssue({ cfg: createConfig(), db, gh, gemini, stats }, processOptions())
+        processIssue({ cfg: createConfig(), db, gh, model, stats }, processOptions())
       ).rejects.toThrow('503');
       expect(stats.getCurrentPass()).toBe('pro');
     });

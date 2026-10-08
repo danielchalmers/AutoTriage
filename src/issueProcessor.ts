@@ -9,7 +9,8 @@ import {
   buildUserPrompt,
   parseAnalysisResult,
 } from './analysis';
-import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
+import type { CacheInfo, JsonRequest } from './llm/types';
+import type { ModelClient } from './model';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics, comparePlans, summarizePlan } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, planOperations } from './triage';
@@ -23,7 +24,7 @@ export interface IssueProcessorDeps {
   cfg: Config;
   db: TriageDb;
   gh: GitHubClient;
-  gemini: GeminiClient;
+  model: ModelClient;
   stats: RunStatistics;
 }
 
@@ -33,7 +34,7 @@ export interface ProcessIssueOptions {
   autoDiscover: boolean;
   systemPromptFast: string;
   systemPromptPro: string;
-  cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo>;
+  cacheInfos: Map<'fast' | 'pro', CacheInfo>;
   runTimestamp: string;
 }
 
@@ -44,7 +45,7 @@ export interface GenerateAnalysisOptions {
   userPrompt: string;
   repoLabels: RepoLabel[];
   isFastModel?: boolean;
-  cacheInfo?: GeminiCacheInfo | undefined;
+  cacheInfo?: CacheInfo | undefined;
   useFlexTier?: boolean;
 }
 
@@ -68,7 +69,7 @@ export async function processIssue(
   deps: IssueProcessorDeps,
   options: ProcessIssueOptions
 ): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
-  const { cfg, db, gh, gemini, stats } = deps;
+  const { cfg, db, gh, model, stats } = deps;
   const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp } = options;
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
@@ -77,7 +78,7 @@ export async function processIssue(
       { issue, autoDiscover }
     );
     const fastPass = await runFastPass(
-      { cfg, gemini, stats },
+      { cfg, model, stats },
       { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context }
     );
     const fastPlan = fastPass.used && fastPass.plan
@@ -102,7 +103,7 @@ export async function processIssue(
     }
 
     const proPass = await runPass(
-      { cfg, gemini, stats },
+      { cfg, model, stats },
       {
         mode: 'pro',
         issue,
@@ -211,7 +212,7 @@ async function loadIssueContext(
 
 // The two passes differ only in which model, prompt, limits, and artifact name they use, so they share one body.
 async function runPass(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'gemini' | 'stats'>,
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'model' | 'stats'>,
   options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'cacheInfos' | 'runTimestamp'> & {
     mode: PromptPassMode;
     systemPrompt: string;
@@ -219,7 +220,7 @@ async function runPass(
     fastPassPlan?: FastPassPlan;
   }
 ): Promise<PassResult> {
-  const { cfg, gemini, stats } = deps;
+  const { cfg, model, stats } = deps;
   const { mode, issue, repoLabels, systemPrompt, cacheInfos, runTimestamp, context, fastPassPlan } = options;
   const isFast = mode === 'fast';
 
@@ -235,7 +236,7 @@ async function runPass(
   saveArtifact(issue.number, isFast ? 'prompt-fast-user.md' : 'prompt-user.md', userPrompt);
 
   const { data: analysis, ops: operations } = await generateAnalysis(
-    { gemini, stats },
+    { model, stats },
     {
       issue,
       model: isFast ? cfg.modelFast : cfg.modelPro,
@@ -252,7 +253,7 @@ async function runPass(
 }
 
 async function runFastPass(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'gemini' | 'stats'>,
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'model' | 'stats'>,
   options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'systemPromptFast' | 'cacheInfos' | 'runTimestamp'> & {
     context: IssueContext;
   }
@@ -339,10 +340,10 @@ export function buildRunContext(
 }
 
 export async function generateAnalysis(
-  deps: Pick<IssueProcessorDeps, 'gemini' | 'stats'>,
+  deps: Pick<IssueProcessorDeps, 'model' | 'stats'>,
   options: GenerateAnalysisOptions
 ): Promise<{ data: AnalysisResult; thoughts: string; ops: PlannedOperation[] }> {
-  const { gemini, stats } = deps;
+  const { stats } = deps;
   const {
     issue,
     model,
@@ -353,21 +354,20 @@ export async function generateAnalysis(
     cacheInfo,
     useFlexTier = false,
   } = options;
-  const schema = buildAnalysisResultSchema(repoLabels);
   const artifactPrefix = isFastModel ? 'fast' : 'pro';
-  const payload = buildJsonPayload(
+  const request: JsonRequest = {
+    model,
     systemPrompt,
     userPrompt,
-    schema,
-    model,
-    cacheInfo?.name,
-    useFlexTier
-  );
+    schema: buildAnalysisResultSchema(repoLabels),
+    cacheName: cacheInfo?.name,
+    useFlexTier,
+  };
 
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
   stats.beginPass(isFastModel ? 'fast' : 'pro');
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500, parseAnalysisResult);
+  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens } = await deps.model.generateJson<AnalysisResult>(request, 2, 7500, parseAnalysisResult);
   const endTime = Date.now();
 
   const modelRunStats = {
