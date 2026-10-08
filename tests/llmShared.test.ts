@@ -5,14 +5,10 @@ import { describe, expect, it } from 'vitest'
 
 // Nuntia copies src/llm/ verbatim, so the folder must stand alone and every change to it must be deliberate.
 const LLM_DIR = path.join(__dirname, '..', 'src', 'llm')
-const HEADER = '// Source: AutoTriage (danielchalmers/AutoTriage, src/llm/). Nuntia copies this folder verbatim, so change it in AutoTriage and copy it over in a paired PR.'
-
-// Update this after changing src/llm/, and copy the folder to Nuntia in a paired PR.
-const PINNED_HASH = 'sha256:8e50182406a83281830d72971adc29db1617e1818a69db50e510d2e9b6ae78a0'
+const PINNED_HASH = 'sha256:b3fa340608609285099fdb328d15596296974c601596e7d8bf0846cfa1572ddf'
 
 // Nuntia copies the shared tests too, so they must not reach outside src/llm/ either.
 const LLM_TESTS_DIR = path.join(__dirname, 'llm')
-const TESTS_HEADER = '// Source: AutoTriage (danielchalmers/AutoTriage, tests/llm/). Nuntia copies this folder verbatim, so change it in AutoTriage and copy it over in a paired PR.'
 
 function llmFiles(dir = LLM_DIR): Array<{ name: string; text: string }> {
   return fs.readdirSync(dir)
@@ -27,12 +23,6 @@ function importSpecifiers(text: string): string[] {
 }
 
 describe('src/llm', () => {
-  it('names AutoTriage as the source at the top of every file', () => {
-    for (const { name, text } of llmFiles()) {
-      expect(text.split('\n')[0], name).toBe(HEADER)
-    }
-  })
-
   it('imports only its own files and undici', () => {
     for (const { name, text } of llmFiles()) {
       for (const specifier of importSpecifiers(text)) {
@@ -41,11 +31,10 @@ describe('src/llm', () => {
     }
   })
 
-  it('has shared tests that name AutoTriage as the source and import only vitest, src/llm/ and each other', () => {
+  it('has shared tests that import only vitest, src/llm/ and each other', () => {
     const tests = llmFiles(LLM_TESTS_DIR)
     expect(tests.length).toBeGreaterThan(0)
     for (const { name, text } of tests) {
-      expect(text.split('\n')[0], name).toBe(TESTS_HEADER)
       for (const specifier of importSpecifiers(text)) {
         expect(specifier, name).toMatch(/^(\.\/[\w-]+|\.\.\/\.\.\/src\/llm\/[\w-]+|vitest)$/)
       }

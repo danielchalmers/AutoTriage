@@ -132,10 +132,7 @@ function hasAuthorization(op: unknown): op is ModelOperation {
     && typeof authorization === 'string' && authorization.trim().length > 0;
 }
 
-/**
- * The plan's own account of its decisions, for a reply that came without thoughts, as OpenAI's always do.
- * It gives the summary and the policy clause each operation cites, so the log and the hidden comment block still say why.
- */
+// Explains a plan that came without thoughts, as OpenAI's always do, from its summary and the policy clause each operation cites.
 export function explainPlan(analysis: AnalysisResult): string {
   const operations: unknown[] = Array.isArray(analysis.operations) ? analysis.operations : [];
   const reasons = operations.filter(hasAuthorization).map(op => `- ${op.kind}: ${op.authorization.trim()}`);

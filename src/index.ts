@@ -35,7 +35,6 @@ function clientFor(resolved: ResolvedModel): ModelClient {
     } else if (resolved.provider === 'anthropic') {
       client = new AnthropicClient(resolved.apiKey ?? '', createModelFetch(), resolved.baseUrl);
     } else {
-      // The key is absent only for an OPENAI_BASE_URL endpoint that takes none, such as a local server.
       client = new OpenAIClient(resolved.apiKey, createModelFetch(), resolved.baseUrl);
     }
     clients.set(resolved.provider, client);
@@ -43,7 +42,7 @@ function clientFor(resolved: ResolvedModel): ModelClient {
   return client;
 }
 
-// A configuration error already says what to fix, so it fails the action with that message alone instead of a crash with a stack.
+// A configuration error already says what to fix, so it fails without a stack.
 let cfg: Config;
 try {
   cfg = getConfig();

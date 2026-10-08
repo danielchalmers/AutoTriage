@@ -50,8 +50,7 @@ Start with the smallest useful context:
   `schema.ts` converts the response schema for APIs that take JSON Schema.
   `gemini.ts`, `anthropic.ts`, and `openai.ts` are the Gemini, Claude Messages, and Chat Completions adapters; `openai.ts` also serves any `OPENAI_BASE_URL` endpoint.
   AutoTriage is the source of this folder and danielchalmers/Nuntia copies it verbatim, so it imports only itself and `undici`.
-  Every file starts with a header comment naming AutoTriage as the source, and `tests/llmShared.test.ts` pins the folder's content hash.
-  Change it in paired AutoTriage and Nuntia PRs, and update the pinned hash in the same commit.
+  `tests/llmShared.test.ts` pins the folder's content hash, so change it in paired AutoTriage and Nuntia PRs and update the pinned hash in the same commit.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` and `src/prompt.ts` - prompt loading and prompt assembly.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.

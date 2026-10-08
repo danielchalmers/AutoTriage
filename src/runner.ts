@@ -53,7 +53,6 @@ function fatalReason(cause: FatalCause, provider: ProviderId): string {
   }
 }
 
-// How a failed item is recorded in the run summary.
 function failureReasonOf(err: unknown): FailureReason {
   if (!(err instanceof ModelError)) return 'other';
   return err.failure.kind === 'fatal' ? err.failure.cause : err.failure.kind;

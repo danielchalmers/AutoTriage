@@ -1,10 +1,7 @@
 import type { PromptPassMode } from './config';
 import type { CacheInfo, JsonRequest, JsonResult } from './llm/types';
 
-/**
- * What triage needs from a model provider: JSON replies, plus the context cache that backlog runs share across items.
- * GeminiClient (src/llm/gemini.ts), AnthropicClient (src/llm/anthropic.ts) and OpenAIClient (src/llm/openai.ts) implement it.
- */
+// What triage needs from a model provider: JSON replies, plus the context cache that backlog runs share across items.
 export interface ModelClient {
   /**
    * Call the model and parse its JSON reply.

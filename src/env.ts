@@ -5,7 +5,7 @@ import { describeModel, resolveModel, type ModelEnv, type ProviderId, type Resol
 
 const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
-// The review model each key gets when model-pro is blank. GEMINI_API_KEY keeps the model it had before other providers were supported.
+// The review model each key gets when model-pro is blank.
 const DEFAULT_MODELS: Record<ProviderId, string> = {
   gemini: 'gemini-3.5-flash-lite',
   anthropic: 'claude-haiku-5-5',
@@ -64,10 +64,6 @@ function parseOptionalInput(name: string): string | undefined {
   return normalizeInput(core.getInput(name));
 }
 
-/**
- * The model API settings, read only from the variables resolution documents.
- * Keys are masked so a later log line can't print them.
- */
 function readModelEnv(): ModelEnv {
   const env: ModelEnv = {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
@@ -82,10 +78,7 @@ function readModelEnv(): ModelEnv {
   return env;
 }
 
-/**
- * Resolve both passes' models.
- * A blank model-fast is how a workflow opts out of the screening pass, and a blank model-pro uses the default for the first key set.
- */
+// A blank model-fast skips the screening pass, and a blank model-pro uses the default for the first key set.
 function resolveModels(env: ModelEnv): Config['models'] {
   const pro = resolveModel({ input: 'model-pro', value: core.getInput('model-pro'), env, defaults: DEFAULT_MODELS });
   const fastInput = parseOptionalInput('model-fast');
@@ -95,10 +88,6 @@ function resolveModels(env: ModelEnv): Config['models'] {
   return { fast, pro };
 }
 
-/**
- * The startup log lines that say which provider serves each pass and why.
- * e.g. `Model (pro): claude-haiku-5-5 via anthropic [official] — default for ANTHROPIC_API_KEY; set model-pro to change.`
- */
 export function describeModels(models: Config['models']): string[] {
   const passes = [['fast', models.fast], ['pro', models.pro]] as const;
   return passes.flatMap(([pass, resolved]) => resolved
