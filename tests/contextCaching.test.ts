@@ -45,12 +45,14 @@ describe('context caching', () => {
       }])
     })
 
-    it('opts into flex service tier with long timeout when enabled', () => {
+    it('opts into flex service tier when enabled', () => {
       const cacheName = 'cachedContents/abc123'
       const payload = buildJsonPayload(systemPrompt, userPrompt, schema, model, cacheName, true)
       expect(payload.config?.httpOptions?.headers).toEqual({})
-      expect(payload.config?.httpOptions?.timeout).toBe(600000)
       expect(payload.config?.httpOptions?.extraBody).toEqual({ service_tier: 'flex' })
+      // The deadline and fetch are set once on the client, so the payload must not override them.
+      expect(payload.config?.httpOptions?.timeout).toBeUndefined()
+      expect(payload.config?.httpOptions?.fetch).toBeUndefined()
     })
   })
 

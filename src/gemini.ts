@@ -1,5 +1,23 @@
-import { ApiError, GenerateContentResponse, GoogleGenAI, ThinkingLevel, type GenerateContentParameters } from '@google/genai';
+import { ApiError, GenerateContentResponse, GoogleGenAI, ThinkingLevel, type Fetch, type GenerateContentParameters } from '@google/genai';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { errorMessage } from './util';
+
+// Deadline for every model request, so a stuck call fails instead of hanging the run.
+// Flex calls can take minutes to start answering, so it is generous.
+export const MODEL_TIMEOUT_MS = 600_000;
+
+/**
+ * Fetch for model requests, using undici's own fetch with a dedicated dispatcher.
+ * Node's built-in fetch gives up on any response whose headers take longer than 300s, a longer AbortSignal cannot lift that, and genai's own workaround has no effect on Node 24.
+ * The dispatcher's own timers are off by default so MODEL_TIMEOUT_MS is the only deadline; tests pass a short timeout to prove requests go through it.
+ * It is passed with each request rather than installed as Node's global dispatcher, so GitHub API traffic is unchanged.
+ */
+export function createModelFetch(dispatcherTimeoutMs = 0): Fetch {
+  const dispatcher = new Agent({ headersTimeout: dispatcherTimeoutMs, bodyTimeout: dispatcherTimeoutMs });
+  const modelFetch: typeof undiciFetch = (input, init) => undiciFetch(input, { ...init, dispatcher });
+  // undici's types come from a different release than Node's built-in fetch types, so TypeScript cannot match them even though the API is the same.
+  return modelFetch as Fetch;
+}
 
 // Capacity errors (503 UNAVAILABLE "high demand", 429 RESOURCE_EXHAUSTED) are outages, not bad requests.
 // They get a longer, capped exponential schedule than the caller's default so a temporary spike doesn't fail every item in the backlog.
@@ -63,7 +81,6 @@ export function buildJsonPayload(
   if (useFlexTier) {
     config.httpOptions = {
       headers: {},
-      timeout: 600000,
       extraBody: {
         service_tier: 'flex',
       },
@@ -92,8 +109,9 @@ export class GeminiResponseError extends Error {
 export class GeminiClient {
   private client: GoogleGenAI;
 
-  constructor(apiKey: string) {
-    this.client = new GoogleGenAI({ apiKey });
+  constructor(apiKey: string, fetch: Fetch = createModelFetch()) {
+    // Client-level options apply to every request, and genai keeps this fetch when a payload adds its own httpOptions (the flex tier).
+    this.client = new GoogleGenAI({ apiKey, httpOptions: { fetch, timeout: MODEL_TIMEOUT_MS } });
   }
 
   protected sleep(ms: number) {
