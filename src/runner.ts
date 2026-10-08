@@ -10,6 +10,7 @@ import {
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
 } from './autoDiscover';
 import { THINKING_LEVEL } from './llm/gemini';
+import type { ProviderId } from './llm/resolve';
 import { ModelError, type CacheInfo, type FatalCause } from './llm/types';
 import { GitHubClient } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
@@ -33,12 +34,24 @@ function reportCapReached(stats: RunStatistics, mode: 'fast' | 'pro', maxRuns: n
   stats.setCapReached(mode);
 }
 
-// What a fatal model error means for the run, finishing "Stopped the run because ...".
-const FATAL_REASONS: Record<FatalCause, string> = {
-  auth: 'the model API rejected the API key. Check the key secret',
-  model: 'the model API does not know the model, or the model does not support the request. Check model-fast and model-pro',
-  quota: 'the model API account is out of credit or over its spend limit. Check its billing',
+// The secret that holds each provider's key, so a rejected key names the one to check.
+const KEY_SECRETS: Record<ProviderId, string> = {
+  gemini: 'GEMINI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
 };
+
+// What a fatal model error means for the run, finishing "Stopped the run because ...".
+function fatalReason(cause: FatalCause, provider: ProviderId): string {
+  switch (cause) {
+    case 'auth':
+      return `the model API rejected the API key. Check the ${KEY_SECRETS[provider]} secret`;
+    case 'model':
+      return 'the model API does not know the model, or the model does not support the request. Check model-fast and model-pro';
+    case 'quota':
+      return 'the model API account is out of credit or over its spend limit. Check its billing';
+  }
+}
 
 // How a failed item is recorded in the run summary.
 function failureReasonOf(err: unknown): FailureReason {
@@ -163,7 +176,8 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
           failureReason: failureReasonOf(err),
         });
         if (failure?.kind === 'fatal') {
-          core.setFailed(`Stopped the run because ${FATAL_REASONS[failure.cause]}.`);
+          const provider = (failedPass && cfg.models[failedPass] || cfg.models.pro).provider;
+          core.setFailed(`Stopped the run because ${fatalReason(failure.cause, provider)}.`);
           stoppedByFatalError = true;
           break;
         }

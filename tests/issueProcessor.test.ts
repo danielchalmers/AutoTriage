@@ -500,7 +500,7 @@ describe('processIssue', () => {
   });
 
   it('triages through OpenAI with a cache breakpoint, and explains the plan in the log and the comment since OpenAI returns no thoughts', async () => {
-    await withArtifactsDir(async () => {
+    await withArtifactsDir(async (tempDir) => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
@@ -541,6 +541,9 @@ describe('processIssue', () => {
         expect(gh.createComment).toHaveBeenCalledWith(42, `Thanks for the report.\n\n<!--\n${explanation}\n-->`);
         expect((stats.toJSON() as any).pro).toMatchObject({ runs: 1, inputTokens: 3050, outputTokens: 20, thoughtsTokens: 60, cacheCreatedTokens: 3000 });
         expect(db.items['42']).toMatchObject({ summary: 'Crash on save' });
+        // The raw artifact keeps what the model actually returned.
+        const artifact = JSON.parse(fs.readFileSync(path.join(tempDir, 'artifacts', '42-pro-analysis.json'), 'utf8'));
+        expect(artifact).toMatchObject({ summary: 'Crash on save', thoughts: '' });
       } finally {
         log.mockRestore();
       }

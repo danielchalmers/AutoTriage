@@ -33,7 +33,7 @@ import * as path from 'path';
 import { GeminiResponseError } from '../src/llm/gemini';
 import { ModelApiError, ModelError } from '../src/llm/types';
 import { listTargets, runAutoTriage } from '../src/runner';
-import { bothPasses, makeClosedIssue, makeConfig, makeDb, makeIssue, withTempDir } from './fixtures';
+import { bothPasses, makeClosedIssue, makeConfig, makeDb, makeIssue, makeResolvedModel, withTempDir } from './fixtures';
 
 const baseConfig = makeConfig();
 
@@ -503,12 +503,30 @@ describe('runAutoTriage', () => {
     expect(processIssueMock).toHaveBeenCalledOnce();
     expect(core.error).toHaveBeenCalledWith('#5: {"error":{"code":400,"message":"API key not valid."}}', { title: 'Fatal model error' });
     expect(core.setFailed).toHaveBeenCalledOnce();
-    expect(core.setFailed).toHaveBeenCalledWith('Stopped the run because the model API rejected the API key. Check the key secret.');
+    expect(core.setFailed).toHaveBeenCalledWith('Stopped the run because the model API rejected the API key. Check the GEMINI_API_KEY secret.');
     expect(stats.recordItem).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed', failedPass: 'fast', failureReason: 'auth' }));
     // The run still cleans up and reports.
     expect(model.deleteCache).toHaveBeenCalledWith('cachedContents/pro');
     expect(stats.printSummary).toHaveBeenCalledOnce();
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('API key not valid'));
+  });
+
+  it('names the key secret of the provider whose pass rejected the key', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const models = {
+      fast: makeResolvedModel('claude-haiku-5-5', { provider: 'anthropic' }),
+      pro: makeResolvedModel('gpt-6-luna', { provider: 'openai' }),
+    };
+    for (const [pass, secret] of [['fast', 'ANTHROPIC_API_KEY'], ['pro', 'OPENAI_API_KEY']] as const) {
+      vi.mocked(core.setFailed).mockClear();
+      processIssueMock.mockRejectedValueOnce(new ModelError('invalid x-api-key', { kind: 'fatal', cause: 'auth' }));
+      const stats = createStats();
+      stats.getCurrentPass.mockReturnValue(pass);
+
+      await runAutoTriage({ cfg: { ...baseConfig, models, issueNumbers: [5] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: stats as any });
+
+      expect(core.setFailed).toHaveBeenCalledExactlyOnceWith(`Stopped the run because the model API rejected the API key. Check the ${secret} secret.`);
+    }
   });
 
   it('names the cause of each fatal model error and fails the job only once in strict mode', async () => {

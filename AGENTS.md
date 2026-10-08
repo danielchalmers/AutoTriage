@@ -27,7 +27,8 @@ Preserve these invariants:
 - Default runtime prompt: with no `.github/AutoTriage.prompt` configured, the
   built-in label-only prompt (`src/prompt.ts`) is used. The
   `examples/AutoTriage.prompt` file is a copy-paste starting point, not bundled.
-- Unit tests must not require real GitHub or Gemini credentials.
+- Unit tests must not require real GitHub or model API credentials, or any network
+  beyond localhost.
 - Public action behavior must stay aligned across `action.yml`, `README.md`,
   tests, and generated `dist/`.
 
@@ -48,8 +49,9 @@ Start with the smallest useful context:
   `resolve.ts` picks the provider, key, and support tier for a model input.
   `schema.ts` converts the response schema for APIs that take JSON Schema.
   `gemini.ts`, `anthropic.ts`, and `openai.ts` are the Gemini, Claude Messages, and Chat Completions adapters; `openai.ts` also serves any `OPENAI_BASE_URL` endpoint.
-  AutoTriage is the source of this folder and Nuntia copies it verbatim, so it imports only itself and `undici`.
-  Change it in paired AutoTriage and Nuntia PRs, and update the hash pinned in `tests/llmShared.test.ts`.
+  AutoTriage is the source of this folder and danielchalmers/Nuntia copies it verbatim, so it imports only itself and `undici`.
+  Every file starts with a header comment naming AutoTriage as the source, and `tests/llmShared.test.ts` pins the folder's content hash.
+  Change it in paired AutoTriage and Nuntia PRs, and update the pinned hash in the same commit.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` and `src/prompt.ts` - prompt loading and prompt assembly.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.
@@ -162,8 +164,10 @@ For triage behavior, cover:
 
 For GitHub integration boundaries, prefer mocked clients and representative
 payload fixtures over live network calls. Local development against real GitHub
-or Gemini requires `GITHUB_TOKEN` and `GEMINI_API_KEY`, but unit tests should not
-depend on either.
+and a model API requires `GITHUB_TOKEN` and one of `GEMINI_API_KEY`,
+`ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` (optionally with `OPENAI_BASE_URL`), but
+unit tests must not depend on any of them. Model adapter tests use an injected
+fetch or a localhost server.
 
 ## Failure Recovery
 
