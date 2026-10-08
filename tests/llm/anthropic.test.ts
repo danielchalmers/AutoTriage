@@ -307,12 +307,19 @@ describe('Claude errors', () => {
     expect(client.sleeps).toEqual([100, 200])
   })
 
-  it('fails a model without adaptive thinking as an unusable model, naming the supported family', async () => {
-    const body = errorBody('invalid_request_error', 'adaptive thinking is not supported on this model')
+  // The API may reject either setting first, and the wording for effort is not documented.
+  const legacyRejections = [
+    'adaptive thinking is not supported on this model',
+    'output_config.effort: This model does not support the effort parameter.',
+    'output_config.effort: Extra inputs are not permitted',
+  ]
+
+  it.each(legacyRejections)('fails a model that rejects the official request as an unusable model, naming the supported family: %s', async rejection => {
+    const body = errorBody('invalid_request_error', rejection)
     const { sent, fetch } = respondWith(() => jsonResponse(body, 400))
 
     expect(await failureOf(new TestClient('test-key', fetch).generateJson({ ...JSON_REQUEST, model: 'claude-haiku-4-5' }, 2, 1))).toEqual({
-      message: `claude-haiku-4-5 does not support adaptive thinking, which this request needs. The supported family is Claude 5.5, such as claude-haiku-5-5. ${JSON.stringify(body)}`,
+      message: `claude-haiku-4-5 does not support adaptive thinking or the effort setting, which this request needs. The supported family is Claude 5.5, such as claude-haiku-5-5. ${JSON.stringify(body)}`,
       failure: { kind: 'fatal', cause: 'model' },
     })
     expect(sent).toHaveLength(1)

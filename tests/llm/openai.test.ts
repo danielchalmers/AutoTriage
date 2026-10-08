@@ -45,6 +45,12 @@ function completion(message: Record<string, unknown>, overrides: Record<string, 
 
 const REPLY = completion({ content: '{"summary":"ok","labels":["bug"]}' })
 
+// OpenAI's wording for each enum limit, which best-effort hosts that copy OpenAI's errors send too.
+const schemaLimits = [
+  'Invalid schema for response_format \'triage_plan\': Expected at most 1000 enum values in total within a single schema when using structured outputs, but received 1208. Consider reducing the number of enums, or opt out of structured outputs by setting \'strict: false\'.',
+  'Invalid schema for response_format \'triage_plan\': Expected at most 15000 total characters across enum values when there are more than 250 enum values, but received 15342. Consider reducing the number of enums, or opt out of structured outputs by setting \'strict: false\'.',
+]
+
 interface Sent {
   url: string
   method: string | undefined
@@ -425,19 +431,32 @@ describe('Chat Completions errors', () => {
     expect(client.sleeps).toEqual([100, 200, 400])
   })
 
-  it('never drops a parameter OpenAI rejects', async () => {
+  it('fails a model that rejects the official request as an unusable model, without dropping the parameter', async () => {
     const body = errorBody('Unsupported parameter: \'reasoning_effort\' is not supported with this model.', 'invalid_request_error', 'unsupported_parameter', 'reasoning_effort')
     const { sent, fetch } = respondWith(() => jsonResponse(body, 400))
 
     expect(await failureOf(new TestClient('test-key', fetch).generateJson({ ...JSON_REQUEST, model: 'gpt-4.1' }, 2, 1))).toEqual({
-      message: JSON.stringify(body),
-      failure: { kind: 'permanent' },
+      message: `gpt-4.1 does not support the official request. The supported family is GPT-6.x, such as gpt-6-luna. ${JSON.stringify(body)}`,
+      failure: { kind: 'fatal', cause: 'model' },
     })
     expect(sent).toHaveLength(1)
+    expect(warn).not.toHaveBeenCalled()
   })
 
-  it('drops the enums on list items once the schema is too large, for the rest of the run', async () => {
-    const body = errorBody('Invalid schema for response_format \'triage_plan\': the enum at properties.labels.items has 1200 values, which exceeds the limit of 1000.', 'invalid_request_error', null, 'response_format')
+  it('throws a prompt stopped by a content filter as a refusal, without retrying', async () => {
+    const body = { error: { message: 'The response was filtered due to the prompt triggering Azure OpenAI\'s content management policy.', type: null, param: 'prompt', code: 'content_filter', status: 400 } }
+    const { sent, fetch } = respondWith(() => jsonResponse(body, 400))
+
+    expect(await failureOf(new TestClient('test-key', fetch, 'https://res.openai.azure.com/openai/v1').generateJson(JSON_REQUEST, 2, 1))).toEqual({
+      message: `res.openai.azure.com stopped the prompt with its content filter: ${JSON.stringify(body)}`,
+      failure: { kind: 'refusal' },
+    })
+    expect(sent).toHaveLength(1)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it.each(schemaLimits)('drops the enums on list items once the schema is too large, for the rest of the run: %s', async limit => {
+    const body = errorBody(limit, 'invalid_request_error', null, 'response_format')
     const { sent, fetch } = respondWith(() => jsonResponse(body, 400), () => jsonResponse(REPLY))
     const client = new TestClient('test-key', fetch)
 
@@ -511,6 +530,19 @@ describe('OpenAI-compatible errors', () => {
     expect(bodies[2]).toEqual(bodies[1])
     expect(warn).toHaveBeenCalledOnce()
     expect(warn.mock.calls[0]![0]).toContain('api.deepseek.com rejected the strict response schema, so JSON mode is used for the rest of the run')
+  })
+
+  it('drops the enums rather than the strict schema when a host rejects the schema as too large', async () => {
+    const { sent, fetch } = respondWith(
+      () => jsonResponse(errorBody(schemaLimits[0]!, 'invalid_request_error', null, 'response_format'), 400),
+      () => jsonResponse(REPLY)
+    )
+
+    await new TestClient('test-key', fetch, 'https://res.openai.azure.com/openai/v1').generateJson(JSON_REQUEST, 0, 1)
+
+    const bodies = sent.map(request => JSON.parse(request.body))
+    expect(bodies[1].response_format.type).toBe('json_schema')
+    expect(bodies[1].response_format.json_schema.schema.properties.labels.items).toEqual({ type: 'string' })
   })
 
   it('leaves the response format off when JSON mode is rejected too', async () => {

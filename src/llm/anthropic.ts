@@ -27,8 +27,9 @@ const CACHE_CONTROL = { type: 'ephemeral', ttl: '1h' };
 
 // Too many optional or union parameters, or too large a grammar, such as a long label enum.
 const SCHEMA_TOO_COMPLEX = /schema is too complex|too complex for compilation/i;
-// Models before Claude 5.5 support only the older thinking settings.
-const NO_ADAPTIVE_THINKING = /adaptive thinking is not supported|does not support adaptive thinking/i;
+// Models before Claude 5.5 support only the older thinking settings, and some of them have no effort setting either.
+// Which of the two the API rejects first is not documented, so either one means the model can't take the official request.
+const NO_OFFICIAL_REQUEST = /adaptive thinking is not supported|does not support adaptive thinking|\beffort\b[^"]*\bnot (supported|permitted)\b|\bnot support[^"]*\beffort\b/i;
 
 export class AnthropicResponseError extends ModelError {
   constructor(message: string, failure?: Failure) {
@@ -189,7 +190,7 @@ export class AnthropicClient {
    * Call the model and parse its JSON reply, retrying as withRetries describes.
    * `validate`, when given, narrows the parsed reply; a reply it rejects by throwing counts as an ordinary failure, like a parse error.
    * A schema rejected as too complex is sent again at once without the long enums on array items, and stays that way for the rest of the run, with one warning.
-   * A model without adaptive thinking fails as an unusable model, since every call to it would be rejected the same way.
+   * A model without adaptive thinking or the effort setting fails as an unusable model, since every call to it would be rejected the same way.
    */
   generateJson<T = unknown>(
     request: JsonRequest,
@@ -209,9 +210,9 @@ export class AnthropicClient {
       return await this.request(jsonMessagesBody(request, this.relaxedSchema));
     } catch (err) {
       if (!(err instanceof ModelApiError) || err.status !== 400) throw err;
-      if (NO_ADAPTIVE_THINKING.test(err.message)) {
+      if (NO_OFFICIAL_REQUEST.test(err.message)) {
         throw new ModelApiError(
-          `${request.model} does not support adaptive thinking, which this request needs. The supported family is Claude 5.5, such as claude-haiku-5-5. ${err.message}`,
+          `${request.model} does not support adaptive thinking or the effort setting, which this request needs. The supported family is Claude 5.5, such as claude-haiku-5-5. ${err.message}`,
           err.status,
           { failure: { kind: 'fatal', cause: 'model' } }
         );

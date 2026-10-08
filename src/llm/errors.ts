@@ -28,7 +28,7 @@ export const CAPACITY_ERROR = /\b(UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded_erro
 /**
  * The failure an error response stands for, read from its status and body the same way for every provider.
  * 401 and 403 mean the key, 404 the model, and 402 or a billing body the account, and all of them are fatal.
- * 429, 503, 529, and capacity bodies are capacity errors, other 5xx are retryable, and anything else is permanent.
+ * 429, 503, 529, and capacity bodies are capacity errors, 408, 409 and other 5xx are retryable, and anything else is permanent.
  */
 export function classifyApiError(status: number, body: string): Failure {
   if (status === 401 || status === 403) return { kind: 'fatal', cause: 'auth' };
@@ -36,6 +36,7 @@ export function classifyApiError(status: number, body: string): Failure {
   if (status === 402 || ((status === 400 || status === 429) && BILLING_ERROR.test(body))) return { kind: 'fatal', cause: 'quota' };
   if (status === 400 && API_KEY_ERROR.test(body) && INVALID_KEY_ERROR.test(body)) return { kind: 'fatal', cause: 'auth' };
   if (status === 429 || status === 503 || status === 529 || CAPACITY_ERROR.test(body)) return { kind: 'capacity' };
-  return status >= 500 ? { kind: 'retryable' } : { kind: 'permanent' };
+  // A request timeout or a conflict (Gemini's ABORTED) can succeed when sent again unchanged.
+  return status >= 500 || status === 408 || status === 409 ? { kind: 'retryable' } : { kind: 'permanent' };
 }
 

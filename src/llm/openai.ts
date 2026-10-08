@@ -30,7 +30,11 @@ export const PROMPT_CACHE_BREAKPOINT = 'prompt_cache_breakpoint';
 const MAX_THOUGHTS_CHARS = 20_000;
 
 // A schema with too many or too long enum values, such as a repository's labels.
-const SCHEMA_TOO_LARGE = /\b(schema|enum)\b[\s\S]*?\b(too (large|long|complex|many)|exceeds?|limit)\b/i;
+// OpenAI says "Expected at most 1000 enum values in total within a single schema", and other hosts word it their own way.
+const SCHEMA_TOO_LARGE = /\b(schema|enums?)\b[\s\S]*?\b(too (large|long|complex|many)|exceed\w*|limit|at most)\b/i;
+
+// OpenAI's codes for a parameter or value the model doesn't support, such as reasoning_effort on a model without reasoning.
+const UNSUPPORTED_BY_MODEL = /^unsupported_(parameter|value)$/;
 
 // Parameters a best-effort host may reject, in the order they are given up when an error names more than one.
 // response_format steps down to JSON mode before it is left off.
@@ -82,18 +86,27 @@ function thinkingText(value: unknown): string {
   return Array.isArray(value) ? value.map(chunk => asRecord(chunk).text).filter(text => typeof text === 'string').join('') : '';
 }
 
+// The `code` and `param` of an OpenAI-style error body, as strings, or empty when absent.
+function errorFields(message: string): { code: string; param: string } {
+  let error: Record<string, unknown>;
+  try {
+    error = asRecord(asRecord(JSON.parse(message)).error);
+  } catch {
+    error = {};
+  }
+  return {
+    code: typeof error.code === 'string' ? error.code : '',
+    param: typeof error.param === 'string' ? error.param : '',
+  };
+}
+
 /**
  * The parameter a rejected request names, if it is one this adapter can leave off.
  * OpenAI-style errors name it in `param`, and other hosts only in the message text.
  */
 function rejectedParameter(message: string, sent: readonly OptionalParameter[]): OptionalParameter | undefined {
-  let param: unknown;
-  try {
-    param = asRecord(asRecord(JSON.parse(message)).error).param;
-  } catch {
-    param = undefined;
-  }
-  const text = typeof param === 'string' && param ? param : message;
+  const { param } = errorFields(message);
+  const text = param || message;
   return sent.find(name => new RegExp(`\\b${name}\\b`).test(text) || (name === 'response_format' && /\bjson_schema\b/.test(text)));
 }
 
@@ -274,14 +287,29 @@ export class OpenAIClient {
   /**
    * Send a request, and send it again at once if it was rejected in a way a changed request can fix.
    * Each change is made once and kept for the rest of the run, so this always ends.
+   * A prompt stopped by a content filter, as Azure OpenAI does with a 400, throws as a refusal.
+   * A model on OpenAI's own API that rejects a parameter or value of the official request fails as an unusable model, since every call to it would be rejected the same way.
    */
-  private async send(build: () => Record<string, unknown>): Promise<unknown> {
+  private async send(model: string, build: () => Record<string, unknown>): Promise<unknown> {
     for (;;) {
       const body = build();
       try {
         return await this.post(body);
       } catch (err) {
-        if (!(err instanceof ModelApiError) || !this.adapt(err, body)) throw err;
+        if (!(err instanceof ModelApiError)) throw err;
+        const { code } = errorFields(err.message);
+        if (err.status === 400 && code === 'content_filter') {
+          throw new ModelApiError(`${this.label} stopped the prompt with its content filter: ${err.message}`, err.status, { failure: { kind: 'refusal' } });
+        }
+        if (this.adapt(err, body)) continue;
+        if (this.official && err.status === 400 && err.failure.kind === 'permanent' && UNSUPPORTED_BY_MODEL.test(code)) {
+          throw new ModelApiError(
+            `${model} does not support the official request. The supported family is GPT-6.x, such as gpt-6-luna. ${err.message}`,
+            err.status,
+            { failure: { kind: 'fatal', cause: 'model' } }
+          );
+        }
+        throw err;
       }
     }
   }
@@ -344,7 +372,7 @@ export class OpenAIClient {
     validate?: (data: unknown) => T
   ): Promise<JsonResult<T>> {
     return withRetries(async () => {
-      const { text, thoughts, usage } = readReply(await this.send(() => this.jsonBody(request)), this.label);
+      const { text, thoughts, usage } = readReply(await this.send(request.model, () => this.jsonBody(request)), this.label);
       let data: T;
       try {
         data = JSON.parse(this.official ? text : withoutCodeFence(text)) as T;
@@ -361,7 +389,7 @@ export class OpenAIClient {
    */
   generateText(request: TextRequest, maxRetries: number, initialBackoffMs: number): Promise<TextResult> {
     return withRetries(async () => {
-      const reply = readReply(await this.send(() => this.textBody(request)), this.label);
+      const reply = readReply(await this.send(request.model, () => this.textBody(request)), this.label);
       return { text: reply.text.trim(), ...reply.usage };
     }, maxRetries, initialBackoffMs, ms => this.sleep(ms));
   }

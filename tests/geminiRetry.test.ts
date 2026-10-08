@@ -62,10 +62,12 @@ describe('classifyApiError', () => {
     expect(classifyApiError(500, '{"error":{"code":500,"status":"UNAVAILABLE"}}')).toEqual({ kind: 'capacity' })
   })
 
-  it('retries other server errors and treats any other client error as permanent', () => {
+  it('retries other server errors, timeouts and conflicts, and treats any other client error as permanent', () => {
     for (const status of [500, 502, 504]) {
       expect(classifyApiError(status, '{}'), String(status)).toEqual({ kind: 'retryable' })
     }
+    expect(classifyApiError(408, '{}')).toEqual({ kind: 'retryable' })
+    expect(classifyApiError(409, '{"error":{"code":409,"status":"ABORTED"}}')).toEqual({ kind: 'retryable' })
     expect(classifyApiError(400, GEMINI_BAD_REQUEST)).toEqual({ kind: 'permanent' })
     expect(classifyApiError(413, '{}')).toEqual({ kind: 'permanent' })
   })
