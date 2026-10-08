@@ -9,11 +9,11 @@ import {
   buildUserPrompt,
   parseAnalysisResult,
 } from './analysis';
-import type { CacheInfo, JsonRequest } from './llm/types';
-import type { ModelClient } from './model';
+import { ModelError, type CacheInfo, type JsonRequest } from './llm/types';
+import type { ModelClient, ModelClients } from './model';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics, comparePlans, summarizePlan } from './stats';
-import { PlannedOperation, describeOperation, executeOperations, planOperations } from './triage';
+import { PlannedOperation, describeOperation, executeOperations, explainPlan, planOperations } from './triage';
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
 import { errorMessage, parseTimestamp } from './util';
@@ -24,7 +24,7 @@ export interface IssueProcessorDeps {
   cfg: Config;
   db: TriageDb;
   gh: GitHubClient;
-  model: ModelClient;
+  models: ModelClients;
   stats: RunStatistics;
 }
 
@@ -68,8 +68,8 @@ interface FastPassResult {
 export async function processIssue(
   deps: IssueProcessorDeps,
   options: ProcessIssueOptions
-): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
-  const { cfg, db, gh, model, stats } = deps;
+): Promise<{ triageUsed: boolean; fastRunUsed: boolean; skipped?: boolean }> {
+  const { cfg, db, gh, models, stats } = deps;
   const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp } = options;
 
   return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
@@ -78,7 +78,7 @@ export async function processIssue(
       { issue, autoDiscover }
     );
     const fastPass = await runFastPass(
-      { cfg, model, stats },
+      { cfg, models, stats },
       { issue, repoLabels, systemPromptFast, cacheInfos, runTimestamp, context }
     );
     const fastPlan = fastPass.used && fastPass.plan
@@ -102,19 +102,39 @@ export async function processIssue(
       return { triageUsed: false, fastRunUsed: fastPass.used };
     }
 
-    const proPass = await runPass(
-      { cfg, model, stats },
-      {
-        mode: 'pro',
-        issue,
-        repoLabels,
-        systemPrompt: systemPromptPro,
-        cacheInfos,
-        runTimestamp,
-        context,
-        ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
-      }
-    );
+    let proPass: PassResult;
+    try {
+      proPass = await runPass(
+        { cfg, models, stats },
+        {
+          mode: 'pro',
+          issue,
+          repoLabels,
+          systemPrompt: systemPromptPro,
+          cacheInfos,
+          runTimestamp,
+          context,
+          ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
+        }
+      );
+    } catch (err) {
+      if (!isRefusal(err)) throw err;
+      // The item is recorded as seen so later sweeps don't pay for the same refusal until it changes.
+      console.warn(chalk.yellow(`⚠️ The review model refused #${issue.number} (${err.message}); skipping it until it changes.`));
+      updateDbEntry(db, issue.number, issue.title, {
+        lastSeenUpdatedAt: getConsumedUpdatedAt(issue),
+      });
+      stats.recordItem({
+        issueNumber: issue.number,
+        type: issue.type,
+        outcome: 'skipped',
+        skipReason: 'refused',
+        escalatedToPro: fastPass.used,
+        fastPlan,
+      });
+      // The refused call still counts against max-pro-runs, but the item is reported as skipped.
+      return { triageUsed: true, fastRunUsed: fastPass.used, skipped: true };
+    }
 
     const executionResult = await executePlannedOperations(
       { cfg, gh, stats },
@@ -151,6 +171,10 @@ export async function processIssue(
     });
     return { triageUsed: true, fastRunUsed: fastPass.used };
   });
+}
+
+function isRefusal(err: unknown): err is ModelError {
+  return err instanceof ModelError && err.failure.kind === 'refusal';
 }
 
 async function resolveConsumedIssue(
@@ -212,7 +236,7 @@ async function loadIssueContext(
 
 // The two passes differ only in which model, prompt, limits, and artifact name they use, so they share one body.
 async function runPass(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'model' | 'stats'>,
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'models' | 'stats'>,
   options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'cacheInfos' | 'runTimestamp'> & {
     mode: PromptPassMode;
     systemPrompt: string;
@@ -220,7 +244,7 @@ async function runPass(
     fastPassPlan?: FastPassPlan;
   }
 ): Promise<PassResult> {
-  const { cfg, model, stats } = deps;
+  const { cfg, models, stats } = deps;
   const { mode, issue, repoLabels, systemPrompt, cacheInfos, runTimestamp, context, fastPassPlan } = options;
   const isFast = mode === 'fast';
 
@@ -236,7 +260,7 @@ async function runPass(
   saveArtifact(issue.number, isFast ? 'prompt-fast-user.md' : 'prompt-user.md', userPrompt);
 
   const { data: analysis, ops: operations } = await generateAnalysis(
-    { model, stats },
+    { model: models[mode], stats },
     {
       issue,
       model: isFast ? cfg.modelFast : cfg.modelPro,
@@ -253,7 +277,7 @@ async function runPass(
 }
 
 async function runFastPass(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'model' | 'stats'>,
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'models' | 'stats'>,
   options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'systemPromptFast' | 'cacheInfos' | 'runTimestamp'> & {
     context: IssueContext;
   }
@@ -263,8 +287,15 @@ async function runFastPass(
     return { used: false, shouldSkipPro: false };
   }
 
-  const plan = await runPass(deps, { ...options, mode: 'fast', systemPrompt: options.systemPromptFast });
-  return { used: true, plan, shouldSkipPro: plan.operations.length === 0 };
+  try {
+    const plan = await runPass(deps, { ...options, mode: 'fast', systemPrompt: options.systemPromptFast });
+    return { used: true, plan, shouldSkipPro: plan.operations.length === 0 };
+  } catch (err) {
+    if (!isRefusal(err)) throw err;
+    // A refusal is not a no-op verdict, so the review model decides without a fast plan.
+    console.warn(chalk.yellow(`⚠️ The fast model refused #${options.issue.number} (${err.message}); escalating to the review model.`));
+    return { used: true, shouldSkipPro: false };
+  }
 }
 
 async function executePlannedOperations(
@@ -340,7 +371,7 @@ export function buildRunContext(
 }
 
 export async function generateAnalysis(
-  deps: Pick<IssueProcessorDeps, 'model' | 'stats'>,
+  deps: { model: ModelClient; stats: RunStatistics },
   options: GenerateAnalysisOptions
 ): Promise<{ data: AnalysisResult; thoughts: string; ops: PlannedOperation[] }> {
   const { stats } = deps;
@@ -367,7 +398,7 @@ export async function generateAnalysis(
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
   stats.beginPass(isFastModel ? 'fast' : 'pro');
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens } = await deps.model.generateJson<AnalysisResult>(request, 2, 7500, parseAnalysisResult);
+  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens, cacheWriteTokens } = await deps.model.generateJson<AnalysisResult>(request, 2, 7500, parseAnalysisResult);
   const endTime = Date.now();
 
   const modelRunStats = {
@@ -377,6 +408,7 @@ export async function generateAnalysis(
     cachedInputTokens,
     outputTokens,
     thoughtsTokens,
+    ...(cacheWriteTokens ? { cacheWriteTokens } : {}),
     issueNumber: issue.number,
     ...(cacheInfo ? { cacheName: cacheInfo.name } : {}),
   };
@@ -386,14 +418,16 @@ export async function generateAnalysis(
     stats.trackProRun(modelRunStats);
   }
 
-  console.log(chalk.magenta(thoughts));
+  // A reply without thoughts still says why, through the plan's summary and the policy clause each operation cites.
+  const explanation = thoughts.trim() ? thoughts : explainPlan(data);
+  console.log(chalk.magenta(explanation));
   saveArtifact(
     issue.number,
     `${artifactPrefix}-analysis.json`,
     JSON.stringify({ ...data, thoughts }, null, 2)
   );
 
-  const ops = planOperations(issue, data, issue, repoLabels.map((label) => label.name), thoughts);
+  const ops = planOperations(issue, data, issue, repoLabels.map((label) => label.name), explanation);
 
   return { data, thoughts, ops };
 }

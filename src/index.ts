@@ -1,12 +1,17 @@
 import * as core from '@actions/core';
-import { getConfig } from './env';
+import { describeModels, getConfig } from './env';
 import { loadDatabase } from './storage';
+import { AnthropicClient } from './llm/anthropic';
 import { GeminiClient } from './llm/gemini';
-import type { ModelClient } from './model';
+import { OpenAIClient } from './llm/openai';
+import { createModelFetch } from './llm/transport';
+import type { ProviderId, ResolvedModel } from './llm/resolve';
+import type { ModelClient, ModelClients } from './model';
 import { GitHubClient } from './github';
 import { RunStatistics } from './stats';
 import { runAutoTriage } from './runner';
-import { errorDetail } from './util';
+import type { Config } from './config';
+import { errorDetail, errorMessage } from './util';
 import chalk from 'chalk';
 
 chalk.level = 3;
@@ -20,14 +25,45 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-const cfg = getConfig();
+// One client per provider, shared by both passes when they use the same one.
+const clients = new Map<ProviderId, ModelClient>();
+function clientFor(resolved: ResolvedModel): ModelClient {
+  let client = clients.get(resolved.provider);
+  if (!client) {
+    if (resolved.provider === 'gemini') {
+      client = new GeminiClient(resolved.apiKey ?? '');
+    } else if (resolved.provider === 'anthropic') {
+      client = new AnthropicClient(resolved.apiKey ?? '', createModelFetch(), resolved.baseUrl);
+    } else {
+      // The key is absent only for an OPENAI_BASE_URL endpoint that takes none, such as a local server.
+      client = new OpenAIClient(resolved.apiKey, createModelFetch(), resolved.baseUrl);
+    }
+    clients.set(resolved.provider, client);
+  }
+  return client;
+}
+
+// A configuration error already says what to fix, so it fails the action with that message alone instead of a crash with a stack.
+let cfg: Config;
+try {
+  cfg = getConfig();
+} catch (err) {
+  core.setFailed(errorMessage(err));
+  process.exit(1);
+}
+for (const line of describeModels(cfg.models)) console.log(line);
 const db = loadDatabase(cfg.dbPath);
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
-const model: ModelClient = new GeminiClient(cfg.geminiApiKey);
+const pro = clientFor(cfg.models.pro);
+const models: ModelClients = { fast: cfg.models.fast ? clientFor(cfg.models.fast) : pro, pro };
 const stats = new RunStatistics();
 stats.setRepository(cfg.owner, cfg.repo);
 stats.setModelNames(cfg.modelFast, cfg.modelPro);
+stats.setProviders({
+  fast: cfg.models.fast && { provider: cfg.models.fast.provider, tier: cfg.models.fast.tier },
+  pro: { provider: cfg.models.pro.provider, tier: cfg.models.pro.tier },
+});
 
-runAutoTriage({ cfg, db, gh, model, stats }).catch((err) => {
+runAutoTriage({ cfg, db, gh, models, stats }).catch((err) => {
   core.setFailed(errorDetail(err));
 });

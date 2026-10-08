@@ -1,6 +1,7 @@
+// Source: AutoTriage (danielchalmers/AutoTriage, src/llm/). Nuntia copies this folder verbatim, so change it in AutoTriage and copy it over in a paired PR.
 import { withRetries } from './retry';
 import { createModelFetch, MODEL_TIMEOUT_MS, requestJson, type Fetch } from './transport';
-import { ModelError, type CacheInfo, type JsonRequest, type JsonResult } from './types';
+import { ModelApiError, ModelError, type CacheInfo, type Failure, type JsonRequest, type JsonResult, type ModelUsage, type TextRequest, type TextResult } from './types';
 
 // Gemini API adapter, sending the same requests @google/genai sent before it was replaced.
 // A recorded fixture of those requests is checked against every call in the tests.
@@ -12,11 +13,14 @@ const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/';
 const API_VERSION = 'v1beta';
 
 export class GeminiResponseError extends ModelError {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, failure?: Failure) {
+    super(message, failure);
     this.name = 'GeminiResponseError';
   }
 }
+
+// Finish reasons that mean Gemini declined to answer, so asking again would most likely be declined too.
+const REFUSAL_FINISH_REASONS = new Set(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY']);
 
 /**
  * The model's path in request URLs, following @google/genai's rules for the Gemini API.
@@ -74,12 +78,41 @@ function tokenCount(value: unknown): number {
 }
 
 /**
- * Split a generateContent response into the JSON answer and the model's thoughts, and read its token usage.
- * Thought parts are kept out of the answer text, so they never reach JSON.parse.
+ * The text-only generateContent request body, with no schema or thinking settings, as Nuntia sends it.
+ * @google/genai sent an empty generationConfig for Nuntia's text call, so it is kept to send the same bytes.
  */
-function parseJsonResult<T>(response: unknown): JsonResult<T> {
+export function generateTextBody(request: TextRequest) {
+  return {
+    contents: [userContent(request.userPrompt)],
+    systemInstruction: userContent(request.systemPrompt),
+    generationConfig: {},
+  };
+}
+
+/**
+ * Split a generateContent response into the answer text and the model's thoughts, and read its token usage.
+ * Thought parts are kept out of the answer text, so they never reach JSON.parse.
+ * A blocked prompt or a refusal finish throws a refusal, and a MAX_TOKENS finish throws as truncated, before any text is read.
+ */
+function readReply(response: unknown): { text: string; thoughts: string; usage: ModelUsage } {
+  const { blockReason, blockReasonMessage } = asRecord(asRecord(response).promptFeedback);
+  // BLOCKED_REASON_UNSPECIFIED is the enum's default value, not a block.
+  if (typeof blockReason === 'string' && blockReason && blockReason !== 'BLOCKED_REASON_UNSPECIFIED') {
+    const detail = typeof blockReasonMessage === 'string' && blockReasonMessage ? `: ${blockReasonMessage}` : '';
+    throw new GeminiResponseError(`Gemini blocked the prompt (blockReason ${blockReason})${detail}`, { kind: 'refusal' });
+  }
+
   const candidates = asRecord(response).candidates;
-  const content = asRecord(asRecord(Array.isArray(candidates) ? candidates[0] : undefined).content);
+  const candidate = asRecord(Array.isArray(candidates) ? candidates[0] : undefined);
+  const { finishReason } = candidate;
+  if (typeof finishReason === 'string' && REFUSAL_FINISH_REASONS.has(finishReason)) {
+    throw new GeminiResponseError(`Gemini declined to answer (finishReason ${finishReason})`, { kind: 'refusal' });
+  }
+  if (finishReason === 'MAX_TOKENS') {
+    throw new GeminiResponseError('Gemini stopped at the output token limit (finishReason MAX_TOKENS)', { kind: 'truncated' });
+  }
+
+  const content = asRecord(candidate.content);
   const thoughts: string[] = [];
   const textParts: string[] = [];
 
@@ -94,16 +127,9 @@ function parseJsonResult<T>(response: unknown): JsonResult<T> {
     }
   }
 
-  const jsonText = textParts.join('');
-  if (!jsonText) {
+  const text = textParts.join('');
+  if (!text) {
     throw new GeminiResponseError('Gemini responded with empty text');
-  }
-
-  let data: T;
-  try {
-    data = JSON.parse(jsonText) as T;
-  } catch {
-    throw new GeminiResponseError('Unable to parse JSON from Gemini response');
   }
 
   const collapsedThoughts = thoughts
@@ -114,13 +140,26 @@ function parseJsonResult<T>(response: unknown): JsonResult<T> {
   // thoughtsTokenCount is the hidden thinking budget Gemini 3 spends before emitting candidates; it is billed but excluded from candidatesTokenCount, so capture it explicitly to make per-pass thinking cost measurable.
   const usage = asRecord(asRecord(response).usageMetadata);
   return {
-    data,
+    text,
     thoughts: collapsedThoughts,
-    inputTokens: tokenCount(usage.promptTokenCount),
-    cachedInputTokens: tokenCount(usage.cachedContentTokenCount),
-    outputTokens: tokenCount(usage.candidatesTokenCount),
-    thoughtsTokens: tokenCount(usage.thoughtsTokenCount),
+    usage: {
+      inputTokens: tokenCount(usage.promptTokenCount),
+      cachedInputTokens: tokenCount(usage.cachedContentTokenCount),
+      outputTokens: tokenCount(usage.candidatesTokenCount),
+      thoughtsTokens: tokenCount(usage.thoughtsTokenCount),
+    },
   };
+}
+
+function parseJsonResult<T>(response: unknown): JsonResult<T> {
+  const { text, thoughts, usage } = readReply(response);
+  let data: T;
+  try {
+    data = JSON.parse(text) as T;
+  } catch {
+    throw new GeminiResponseError('Unable to parse JSON from Gemini response');
+  }
+  return { data, thoughts, ...usage };
 }
 
 export class GeminiClient {
@@ -187,6 +226,7 @@ export class GeminiClient {
   /**
    * Call the model and parse its JSON reply, retrying as withRetries describes.
    * `validate`, when given, narrows the parsed reply; a reply it rejects by throwing counts as an ordinary failure, like a parse error.
+   * A 403 or 404 on a cached call fails only this call, because the cache may have expired during a long run, and that says nothing about the key or the model.
    */
   generateJson<T = unknown>(
     request: JsonRequest,
@@ -195,10 +235,29 @@ export class GeminiClient {
     validate?: (data: unknown) => T
   ): Promise<JsonResult<T>> {
     return withRetries(async () => {
-      const response = await this.request('POST', `${geminiModelPath(request.model)}:generateContent`, generateContentBody(request));
+      const response = await this.request('POST', `${geminiModelPath(request.model)}:generateContent`, generateContentBody(request))
+        .catch((err: unknown) => {
+          if (request.cacheName && err instanceof ModelApiError && (err.status === 403 || err.status === 404)) {
+            throw new ModelApiError(err.message, err.status, { failure: { kind: 'permanent' } });
+          }
+          throw err;
+        });
       const result = parseJsonResult<T>(response);
       if (validate) result.data = validate(result.data);
       return result;
+    }, maxRetries, initialBackoffMs, ms => this.sleep(ms));
+  }
+
+  /**
+   * Call the model for a plain text reply, retrying as withRetries describes.
+   * The answer is trimmed, and a reply with no text left is retried like an empty one.
+   */
+  generateText(request: TextRequest, maxRetries: number, initialBackoffMs: number): Promise<TextResult> {
+    return withRetries(async () => {
+      const reply = readReply(await this.request('POST', `${geminiModelPath(request.model)}:generateContent`, generateTextBody(request)));
+      const text = reply.text.trim();
+      if (!text) throw new GeminiResponseError('Gemini responded with empty text');
+      return { text, ...reply.usage };
     }, maxRetries, initialBackoffMs, ms => this.sleep(ms));
   }
 }

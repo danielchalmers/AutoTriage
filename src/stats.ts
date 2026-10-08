@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import type { FailureKind, FatalCause } from './llm/types';
 
 export interface ModelRunStats {
   startTime: number;
@@ -7,6 +8,8 @@ export interface ModelRunStats {
   cachedInputTokens?: number;
   outputTokens: number;
   thoughtsTokens?: number;
+  // Prompt-cache writes billed during the call itself, as Claude reports them.
+  cacheWriteTokens?: number;
   cacheName?: string;
   issueNumber?: number;
 }
@@ -26,7 +29,20 @@ export interface ActionDetail {
 }
 
 export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
-export type SkipReason = 'noop-fast' | 'deferred' | 'other';
+export type SkipReason = 'noop-fast' | 'deferred' | 'refused' | 'other';
+// Why a failed item failed: the model failure kind, the fatal cause (`auth`, `model`, `quota`) for a fatal one, or `other` for an error outside the model call.
+export type FailureReason = Exclude<FailureKind, 'fatal'> | FatalCause | 'other';
+
+// Which provider served a pass and at which support tier.
+export interface PassProvider {
+  provider: string;
+  tier: string;
+}
+
+export interface PassProviders {
+  fast: PassProvider | null;
+  pro: PassProvider | null;
+}
 
 // Compact, comparable form of what a pass planned: sorted unique operation kinds plus signed label changes (`+bug`, `-stale`).
 export interface PlanSummary {
@@ -47,6 +63,7 @@ export interface ItemRecord {
   proPlan?: PlanSummary | undefined;
   agreement?: PlanAgreement | undefined;
   failedPass?: 'fast' | 'pro' | undefined;
+  failureReason?: FailureReason | undefined;
 }
 
 export interface RunConfigSnapshot {
@@ -122,6 +139,7 @@ export class RunStatistics {
   private repo = '';
   private modelFast = '';
   private modelPro = '';
+  private providers: PassProviders = { fast: null, pro: null };
   private discovered = 0;
   private capReached: CapReached = 'none';
   private items = new Map<number, ItemRecord>();
@@ -137,6 +155,10 @@ export class RunStatistics {
   setModelNames(modelFast: string, modelPro: string): void {
     this.modelFast = modelFast;
     this.modelPro = modelPro;
+  }
+
+  setProviders(providers: PassProviders): void {
+    this.providers = providers;
   }
 
   trackFastRun(stats: ModelRunStats): void {
@@ -244,10 +266,11 @@ export class RunStatistics {
     };
   }
 
-  private getCacheCreateStats(mode: 'fast' | 'pro'): { tokenCount: number; count: number } {
+  // Tokens written to the prompt cache: Gemini's at cache creation, plus Claude's during calls.
+  private getCacheCreateStats(mode: 'fast' | 'pro', runs: ModelRunStats[]): { tokenCount: number; count: number } {
     const creates = this.cacheCreates.filter(cache => cache.mode === mode);
     return {
-      tokenCount: creates.reduce((sum, cache) => sum + cache.tokenCount, 0),
+      tokenCount: creates.reduce((sum, cache) => sum + cache.tokenCount, 0) + runs.reduce((sum, r) => sum + (r.cacheWriteTokens ?? 0), 0),
       count: creates.length,
     };
   }
@@ -269,10 +292,10 @@ export class RunStatistics {
       (stats.thoughtsTokens > 0 ? ` • ${this.formatTokens(stats.thoughtsTokens)} thinking` : '')
     );
 
-    const cacheCreate = this.getCacheCreateStats(mode);
-    if (cacheCreate.count > 0 || stats.cachedInputTokens > 0) {
+    const cacheCreate = this.getCacheCreateStats(mode, runs);
+    if (cacheCreate.count > 0 || cacheCreate.tokenCount > 0 || stats.cachedInputTokens > 0) {
       const cacheParts: string[] = [];
-      if (cacheCreate.count > 0) {
+      if (cacheCreate.count > 0 || cacheCreate.tokenCount > 0) {
         cacheParts.push(`${this.formatTokens(cacheCreate.tokenCount)} created`);
       }
       if (stats.cachedInputTokens > 0) {
@@ -318,7 +341,7 @@ export class RunStatistics {
 
   private summarizeRuns(mode: 'fast' | 'pro', runs: ModelRunStats[]) {
     const stats = this.calculateStats(runs);
-    const cacheCreate = this.getCacheCreateStats(mode);
+    const cacheCreate = this.getCacheCreateStats(mode, runs);
     return {
       runs: runs.length,
       totalMs: Math.round(stats.total),
@@ -380,6 +403,7 @@ export class RunStatistics {
           proPlan: record?.proPlan,
           agreement: record?.agreement,
           failedPass: record?.failedPass,
+          failureReason: record?.failureReason,
           fast: this.perItemModel(this.fastRuns, number),
           pro: this.perItemModel(this.proRuns, number),
           operations: actionsByIssue.get(number) ?? [],
@@ -387,12 +411,13 @@ export class RunStatistics {
       });
 
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       repo: this.owner && this.repo ? `${this.owner}/${this.repo}` : '',
       models: {
         fast: this.modelFast || null,
         pro: this.modelPro || null,
       },
+      providers: this.providers,
       config: this.runConfig,
       promptHash: this.promptHashes,
       github: {

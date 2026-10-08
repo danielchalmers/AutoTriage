@@ -83,6 +83,19 @@ describe('RunStatistics', () => {
       expect(cacheLine).toContain('Cache: 8.2k created • 8.2k (75.9%) reused');
     });
 
+    // Claude writes its cache during calls, and its createCache marker reports no tokens of its own.
+    it('counts cache writes made during calls as created', () => {
+      stats.setModelNames('', 'claude-haiku-5-5');
+      stats.trackCacheCreate({ mode: 'pro', model: 'claude-haiku-5-5', name: 'cache_control', tokenCount: 0 });
+      stats.trackProRun({ startTime: 0, endTime: 1000, inputTokens: 8300, cachedInputTokens: 0, outputTokens: 50, cacheWriteTokens: 8200 });
+      stats.trackProRun({ startTime: 0, endTime: 1000, inputTokens: 8300, cachedInputTokens: 8200, outputTokens: 50 });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+
+      expect(lines.find(line => line.includes('Cache:'))).toContain('Cache: 8.2k created • 8.2k (49.4%) reused');
+      expect((stats.toJSON() as any).pro).toMatchObject({ inputTokens: 16600, cachedInputTokens: 8200, cacheCreatedTokens: 8200 });
+    });
+
     it('shows GitHub API calls with retries', () => {
       stats.incrementGithubApiCalls(15);
 
@@ -114,6 +127,7 @@ describe('RunStatistics', () => {
     it('captures the funnel, per-pass thinking tokens, and per-item rows', () => {
       stats.setRepository('octo', 'demo');
       stats.setModelNames('fast-model', 'pro-model');
+      stats.setProviders({ fast: { provider: 'gemini', tier: 'official' }, pro: { provider: 'anthropic', tier: 'best-effort' } });
       stats.setDiscovered(100);
       stats.setCapReached('fast');
       stats.incrementGithubApiCalls(12);
@@ -182,14 +196,15 @@ describe('RunStatistics', () => {
       stats.incrementTriaged();
 
       // Item 3: escalated but the pro call failed.
-      stats.recordItem({ issueNumber: 3, outcome: 'failed', escalatedToPro: true, failedPass: 'pro' });
+      stats.recordItem({ issueNumber: 3, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'capacity' });
       stats.incrementFailed();
 
       const json = stats.toJSON() as any;
 
-      expect(json.schemaVersion).toBe(2);
+      expect(json.schemaVersion).toBe(3);
       expect(json.repo).toBe('octo/demo');
       expect(json.models).toEqual({ fast: 'fast-model', pro: 'pro-model' });
+      expect(json.providers).toEqual({ fast: { provider: 'gemini', tier: 'official' }, pro: { provider: 'anthropic', tier: 'best-effort' } });
       expect(json.config).toMatchObject({ maxFastRuns: 30, thinkingLevel: 'high' });
       expect(json.promptHash).toEqual({ fast: 'sha256:aaaa', pro: 'sha256:bbbb' });
       expect(json.github).toEqual({ calls: 12, retries: 0 });
@@ -220,7 +235,8 @@ describe('RunStatistics', () => {
       expect(item2.operations).toEqual(['add_labels']);
 
       const item3 = json.items.find((i: any) => i.number === 3);
-      expect(item3).toMatchObject({ outcome: 'failed', escalatedToPro: true, failedPass: 'pro' });
+      expect(item3).toMatchObject({ outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'capacity' });
+      expect(JSON.stringify(item2)).not.toContain('failureReason');
     });
 
     it('serializes an empty run without throwing', () => {
@@ -230,6 +246,7 @@ describe('RunStatistics', () => {
       expect(json.items).toEqual([]);
       expect(json.config).toBeNull();
       expect(json.promptHash).toBeNull();
+      expect(json.providers).toEqual({ fast: null, pro: null });
     });
 
   });

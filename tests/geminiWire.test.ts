@@ -4,11 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildAnalysisResultSchema } from '../src/analysis'
 import { GeminiClient } from '../src/llm/gemini'
 import type { Fetch } from '../src/llm/transport'
-import type { JsonRequest } from '../src/llm/types'
+import { ModelError, type Failure, type JsonRequest } from '../src/llm/types'
 
 // Both fixtures were recorded from the @google/genai client before it was replaced (#178).
 // A workflow that only sets GEMINI_API_KEY must keep sending these exact requests, so the request fixture is never edited to make a change pass.
-// The response fixture pins today's result and error handling; it changes only when that handling deliberately changes.
+// The response fixture pins today's result and error handling, including each error's failure kind; it changes only when that handling deliberately changes.
+// Cases added after the recording (bad key, unknown model, refusals, truncation) follow the Gemini API's documented error and finish shapes.
 const REQUESTS_FIXTURE = path.join(__dirname, 'fixtures', 'gemini-requests.json')
 const RESPONSES_FIXTURE = path.join(__dirname, 'fixtures', 'gemini-responses.json')
 
@@ -81,7 +82,7 @@ interface CannedResponse {
 interface ResponseCase {
   call: 'generateJson' | 'createCache'
   response: CannedResponse
-  outcome: { result: unknown } | { error: { message: string; status: number | null } }
+  outcome: { result: unknown } | { error: { message: string; status: number | null; failure: Failure | null } }
 }
 
 function readFixture<T>(file: string): T {
@@ -132,7 +133,8 @@ describe('Gemini responses', () => {
         outcomes[name] = { result }
       } catch (err) {
         const status = (err as { status?: unknown }).status
-        outcomes[name] = { error: { message: (err as Error).message, status: typeof status === 'number' ? status : null } }
+        const failure = err instanceof ModelError ? err.failure : null
+        outcomes[name] = { error: { message: (err as Error).message, status: typeof status === 'number' ? status : null, failure } }
       }
     }
 

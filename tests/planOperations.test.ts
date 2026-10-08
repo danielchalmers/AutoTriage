@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { planOperations } from '../src/triage';
+import { explainPlan, planOperations } from '../src/triage';
 import type { AnalysisResult } from '../src/analysis';
 
 describe('planOperations', () => {
@@ -238,5 +238,38 @@ describe('planOperations', () => {
     } as unknown as AnalysisResult;
 
     expect(planOperations(baseIssue, analysis, baseMetadata, ['feature'])).toEqual([]);
+  });
+});
+
+describe('explainPlan', () => {
+  it('gives the summary and the policy clause each operation cites', () => {
+    const analysis: AnalysisResult = {
+      summary: ' Crash on save ',
+      operations: [
+        { kind: 'add_labels', labels: ['bug'], authorization: 'Policy 2 labels crashes as bugs' },
+        { kind: 'set_state', state: 'not_planned', authorization: ' Policy 5 closes duplicates ' },
+      ],
+    };
+
+    expect(explainPlan(analysis)).toBe([
+      "The model returned no thoughts, so this is the plan's own explanation.",
+      'Summary: Crash on save',
+      'Operations:',
+      '- add_labels: Policy 2 labels crashes as bugs',
+      '- set_state: Policy 5 closes duplicates',
+    ].join('\n'));
+  });
+
+  it('says when there is no summary or operation, and skips operations without an authorization', () => {
+    const analysis = {
+      summary: '',
+      operations: [{ kind: 'comment', body: 'Hi' }, { kind: 'unknown', authorization: 'x' }, null],
+    } as unknown as AnalysisResult;
+
+    expect(explainPlan(analysis)).toBe([
+      "The model returned no thoughts, so this is the plan's own explanation.",
+      'Summary: (none)',
+      'Operations: none',
+    ].join('\n'));
   });
 });

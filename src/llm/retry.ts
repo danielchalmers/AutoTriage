@@ -1,5 +1,6 @@
-import { errorMessage } from './errors';
-import { ModelApiError, ModelError } from './types';
+// Source: AutoTriage (danielchalmers/AutoTriage, src/llm/). Nuntia copies this folder verbatim, so change it in AutoTriage and copy it over in a paired PR.
+import { CAPACITY_ERROR, errorMessage } from './errors';
+import { ModelApiError, ModelError, type Failure } from './types';
 
 // Capacity errors (503 UNAVAILABLE "high demand", 429 RESOURCE_EXHAUSTED) are outages, not bad requests.
 // They get a longer, capped exponential schedule than the caller's default so a temporary spike doesn't fail every item in the backlog.
@@ -8,23 +9,27 @@ export const TRANSIENT_MAX_RETRIES = 6;
 export const TRANSIENT_INITIAL_BACKOFF_MS = 10_000;
 export const TRANSIENT_MAX_BACKOFF_MS = 60_000;
 
-const TRANSIENT_STATUSES = new Set([429, 503]);
+// The capacity check for errors that kept only the JSON body in their message.
+const CAPACITY_CODE = /"code"\s*:\s*(503|429)\b/;
 
 /**
- * True when the error is a capacity/rate-limit response that is worth waiting out.
- * A non-2xx response raises ModelApiError with the HTTP status; the message check covers wrapped errors and any other path that only preserves the JSON body.
+ * The failure any thrown error stands for.
+ * A ModelError carries its own.
+ * Anything else (a network failure, the deadline, a reply the caller's validator rejected) is retryable, unless its message is a capacity error body.
  */
-export function isTransientModelError(err: unknown): boolean {
-  if (err instanceof ModelApiError && TRANSIENT_STATUSES.has(err.status)) return true;
+export function failureOf(err: unknown): Failure {
+  if (err instanceof ModelError) return err.failure;
   const message = errorMessage(err);
-  return /"code"\s*:\s*(503|429)\b/.test(message) || /\b(UNAVAILABLE|RESOURCE_EXHAUSTED)\b/.test(message);
+  return CAPACITY_CODE.test(message) || CAPACITY_ERROR.test(message) ? { kind: 'capacity' } : { kind: 'retryable' };
 }
 
 /**
- * Run one model call until it succeeds or its retry budget runs out.
- * `maxRetries`/`initialBackoffMs` govern ordinary failures (parse errors, rejected replies, 4xx, 5xx other than capacity).
- * Transient capacity errors (see isTransientModelError) switch to the longer TRANSIENT_* schedule instead, and each transient retry is logged so the run output shows the outage being waited out.
- * Giving up throws a ModelError with the last failure's message.
+ * Run one model call until it succeeds, its retry budget runs out, or it fails in a way no retry can fix.
+ * `maxRetries`/`initialBackoffMs` govern retryable failures (parse errors, rejected replies, network errors, 5xx other than capacity).
+ * Capacity errors switch to the longer TRANSIENT_* schedule instead, waiting at least as long as a whole-second Retry-After asks, up to TRANSIENT_MAX_BACKOFF_MS.
+ * Each retry is logged, so the run output shows an outage being waited out or a flaky reply being retried.
+ * Permanent, truncated, refused, and fatal failures are thrown at once.
+ * Either way the call throws a ModelError with the last failure's message and kind.
  */
 export async function withRetries<T>(
   attempt: () => Promise<T>,
@@ -45,19 +50,26 @@ export async function withRetries<T>(
       lastError = err;
     }
 
+    const { kind } = failureOf(lastError);
     let backoff: number;
-    if (isTransientModelError(lastError)) {
+    if (kind === 'capacity') {
       transientFailures++;
       if (transientFailures >= maxTransientFailures) break;
-      backoff = Math.min(TRANSIENT_MAX_BACKOFF_MS, TRANSIENT_INITIAL_BACKOFF_MS * Math.pow(2, transientFailures - 1));
+      const scheduled = TRANSIENT_INITIAL_BACKOFF_MS * Math.pow(2, transientFailures - 1);
+      const requested = lastError instanceof ModelApiError ? (lastError.retryAfterSeconds ?? 0) * 1000 : 0;
+      backoff = Math.min(TRANSIENT_MAX_BACKOFF_MS, Math.max(scheduled, requested));
       console.warn(`Model unavailable (attempt ${transientFailures}/${maxTransientFailures}); retrying in ${Math.round(backoff / 1000)}s: ${errorMessage(lastError)}`);
-    } else {
+    } else if (kind === 'retryable') {
       ordinaryFailures++;
       if (ordinaryFailures >= maxOrdinaryFailures) break;
       backoff = Math.max(1, initialBackoffMs * Math.pow(2, ordinaryFailures - 1));
+      // One decimal place, so the 7.5s first wait isn't logged as 8s.
+      console.warn(`Model call failed (attempt ${ordinaryFailures}/${maxOrdinaryFailures}); retrying in ${Number((backoff / 1000).toFixed(1))}s: ${errorMessage(lastError)}`);
+    } else {
+      break;
     }
     await sleep(backoff);
   }
 
-  throw new ModelError(errorMessage(lastError));
+  throw new ModelError(errorMessage(lastError), failureOf(lastError));
 }

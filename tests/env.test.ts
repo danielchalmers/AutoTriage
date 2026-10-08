@@ -4,16 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getInput: vi.fn(),
+  setSecret: vi.fn(),
 }));
 
 vi.mock('@actions/core', () => ({
   getInput: mocks.getInput,
+  setSecret: mocks.setSecret,
 }));
 
 // @actions/github is deliberately not mocked: its context.repo reads GITHUB_REPOSITORY on each access (falling back to the event payload), so these tests exercise the real resolution and error behavior.
 
 import * as github from '@actions/github';
-import { getConfig } from '../src/env';
+import { describeModels, getConfig } from '../src/env';
 
 function setInputs(values: Record<string, string>) {
   mocks.getInput.mockImplementation((name: string) => values[name] ?? '');
@@ -23,6 +25,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('GITHUB_TOKEN', 'token');
   vi.stubEnv('GEMINI_API_KEY', 'gemini-key');
+  // The other model variables are cleared so the developer's own environment can't change which provider is picked.
+  vi.stubEnv('ANTHROPIC_API_KEY', '');
+  vi.stubEnv('OPENAI_API_KEY', '');
+  vi.stubEnv('OPENAI_BASE_URL', '');
+  vi.stubEnv('GOOGLE_GEMINI_BASE_URL', '');
   vi.stubEnv('GITHUB_REPOSITORY', 'danielchalmers/AutoTriage');
   // On GitHub Actions the context loads the triggering event's payload at import; clear it so it can't stand in for GITHUB_REPOSITORY.
   github.context.payload = {};
@@ -34,13 +41,23 @@ afterEach(() => {
 });
 
 describe('getConfig required context', () => {
-  it.each([
-    ['GITHUB_TOKEN', /GITHUB_TOKEN missing/],
-    ['GEMINI_API_KEY', /GEMINI_API_KEY missing/],
-  ])('fails fast when %s is not set', (name, expected) => {
-    vi.stubEnv(name, '');
+  it('fails fast when GITHUB_TOKEN is not set', () => {
+    vi.stubEnv('GITHUB_TOKEN', '');
 
-    expect(() => getConfig()).toThrow(expected);
+    expect(() => getConfig()).toThrow(/GITHUB_TOKEN missing/);
+  });
+
+  it('fails fast when no model API key is set, naming every key it accepts', () => {
+    vi.stubEnv('GEMINI_API_KEY', '');
+
+    expect(() => getConfig()).toThrow('model-pro is blank and no model API key is set. Add GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY');
+  });
+
+  it('checks GITHUB_TOKEN before the model keys', () => {
+    vi.stubEnv('GITHUB_TOKEN', '');
+    vi.stubEnv('GEMINI_API_KEY', '');
+
+    expect(() => getConfig()).toThrow(/GITHUB_TOKEN missing/);
   });
 
 });
@@ -180,6 +197,58 @@ describe('getConfig model inputs', () => {
     const cfg = getConfig();
 
     expect(cfg.modelPro).toBe('gemini-3.5-flash-lite');
+    expect(cfg.models).toEqual({
+      fast: null,
+      pro: expect.objectContaining({ provider: 'gemini', model: 'gemini-3.5-flash-lite', tier: 'official', apiKey: 'gemini-key', isDefault: true }),
+    });
+  });
+
+  it.each([
+    ['ANTHROPIC_API_KEY', 'anthropic', 'claude-haiku-5-5'],
+    ['OPENAI_API_KEY', 'openai', 'gpt-6-luna'],
+  ])('defaults the pro model to the default for %s when it is the only key', (key, provider, model) => {
+    vi.stubEnv('GEMINI_API_KEY', '');
+    vi.stubEnv(key, 'other-key');
+
+    const cfg = getConfig();
+
+    expect(cfg.modelPro).toBe(model);
+    expect(cfg.models.pro).toMatchObject({ provider, model, tier: 'official', apiKey: 'other-key' });
+  });
+
+  it('resolves each pass on its own, sending the bare model ID', () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key');
+    setInputs({ 'model-fast': ' anthropic/claude-haiku-5-5 ', 'model-pro': 'gemini/gemini-3.8-flash' });
+
+    const cfg = getConfig();
+
+    expect(cfg).toMatchObject({ skipFastPass: false, modelFast: 'claude-haiku-5-5', modelPro: 'gemini-3.8-flash' });
+    expect(cfg.models.fast).toMatchObject({ provider: 'anthropic', apiKey: 'anthropic-key' });
+    expect(cfg.models.pro).toMatchObject({ provider: 'gemini', apiKey: 'gemini-key' });
+  });
+
+  it('fails at startup when a model needs a key that is not set', () => {
+    setInputs({ 'model-fast': 'claude-haiku-5-5' });
+
+    expect(() => getConfig()).toThrow('model-fast "claude-haiku-5-5" is served by anthropic, which needs ANTHROPIC_API_KEY');
+  });
+
+  it('masks every model API key that is set', () => {
+    vi.stubEnv('OPENAI_API_KEY', ' openai-key ');
+
+    getConfig();
+
+    expect(mocks.setSecret.mock.calls).toEqual([['gemini-key'], ['openai-key']]);
+  });
+
+  it('describes which provider serves each pass and why', () => {
+    vi.stubEnv('OPENAI_BASE_URL', 'http://localhost:11434/v1');
+    setInputs({ 'model-fast': 'llama3:8b' });
+
+    expect(describeModels(getConfig().models)).toEqual([
+      'Model (fast): llama3:8b via openai at localhost:11434 [best effort] — set by model-fast; sent to OPENAI_BASE_URL.',
+      'Model (pro): gemini-3.5-flash-lite via gemini [official] — default for GEMINI_API_KEY; set model-pro to change.',
+    ]);
   });
 
   it('scales every limit by budget-scale and allows 0 to disable context', () => {

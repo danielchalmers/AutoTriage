@@ -1,4 +1,5 @@
 import { buildAnalysisResultSchema } from '../src/analysis';
+import { relaxSchema, toJsonSchema } from '../src/llm/schema';
 
 function findOperationSchema(schema: ReturnType<typeof buildAnalysisResultSchema>, propertyName: string) {
   const operationSchema = schema.properties.operations.items.anyOf.find(
@@ -83,5 +84,41 @@ describe('buildAnalysisResultSchema', () => {
       throw new Error('Expected title property');
     }
     expect(titleOperationSchema.properties.title).toEqual({ type: 'STRING' });
+  });
+});
+
+// Claude and OpenAI take the schema as standard JSON Schema in strict mode.
+describe('analysis schema as standard JSON Schema', () => {
+  // Every object node, so the strict-mode rules can be checked on each.
+  function objectNodes(node: unknown): Array<Record<string, unknown>> {
+    if (Array.isArray(node)) return node.flatMap(objectNodes);
+    if (node === null || typeof node !== 'object') return [];
+    const record = node as Record<string, unknown>;
+    return [...(record.type === 'object' ? [record] : []), ...Object.values(record).flatMap(objectNodes)];
+  }
+
+  it('closes every object and requires all of its properties', () => {
+    const objects = objectNodes(toJsonSchema(buildAnalysisResultSchema([{ name: 'bug' }])));
+
+    // The result and its four operation variants.
+    expect(objects).toHaveLength(5);
+    for (const object of objects) {
+      expect(object.additionalProperties).toBe(false);
+      expect(object.required).toEqual(Object.keys(object.properties as object));
+    }
+  });
+
+  it('keeps the label enum, and the relaxed schema drops only that enum', () => {
+    const schema = buildAnalysisResultSchema([{ name: 'bug' }, { name: 'enhancement' }]);
+    const strict = toJsonSchema(schema) as any;
+    const relaxed = toJsonSchema(relaxSchema(schema)) as any;
+    const [labelsStrict, , stateStrict] = strict.properties.operations.items.anyOf;
+    const [labelsRelaxed, , stateRelaxed] = relaxed.properties.operations.items.anyOf;
+
+    expect(labelsStrict.properties.labels.items).toEqual({ type: 'string', enum: ['bug', 'enhancement'] });
+    expect(labelsRelaxed.properties.labels.items).toEqual({ type: 'string' });
+    expect(labelsRelaxed.properties.kind).toEqual(labelsStrict.properties.kind);
+    expect(stateRelaxed).toEqual(stateStrict);
+    expect(toJsonSchema(relaxSchema(buildAnalysisResultSchema([])))).toEqual(toJsonSchema(buildAnalysisResultSchema([])));
   });
 });

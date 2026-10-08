@@ -36,13 +36,13 @@ inputs:
     required: false
     default: "20"
   model-fast:
-    description: "Fast-pass model. Leave blank to skip."
+    description: "Fast-pass model, optionally with a gemini/, anthropic/ or openai/ prefix. Leave blank to skip."
     required: false
     default: ""
   model-pro:
-    description: "Review model for final planning."
+    description: "Review model. Blank uses the default for the API key you set (gemini-3.5-flash-lite for GEMINI_API_KEY)."
     required: false
-    default: "gemini-3.5-flash-lite"
+    default: ""
   prompt-path:
     description: "Repo-relative path to the triage prompt."
     required: false
