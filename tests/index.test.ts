@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   githubArgs: [] as unknown[][],
   geminiArgs: [] as unknown[][],
   anthropicArgs: [] as unknown[][],
+  openaiArgs: [] as unknown[][],
 }));
 
 vi.mock('@actions/core', () => ({ setFailed: mocks.setFailed }));
@@ -34,6 +35,13 @@ vi.mock('../src/llm/anthropic', () => ({
   AnthropicClient: class {
     constructor(...args: unknown[]) {
       mocks.anthropicArgs.push(args);
+    }
+  },
+}));
+vi.mock('../src/llm/openai', () => ({
+  OpenAIClient: class {
+    constructor(...args: unknown[]) {
+      mocks.openaiArgs.push(args);
     }
   },
 }));
@@ -63,6 +71,7 @@ beforeEach(() => {
   mocks.githubArgs.length = 0;
   mocks.geminiArgs.length = 0;
   mocks.anthropicArgs.length = 0;
+  mocks.openaiArgs.length = 0;
   handlers = {};
   vi.spyOn(process, 'on').mockImplementation(((event: string, listener: (...args: any[]) => void) => {
     handlers[event] = listener;
@@ -132,11 +141,15 @@ describe('AutoTriage action entry point', () => {
     expect(deps.stats.toJSON().providers).toEqual({ fast: { provider: 'gemini', tier: 'best-effort' }, pro: { provider: 'anthropic', tier: 'best-effort' } });
   });
 
-  it('does not start a run for a provider without a client yet', async () => {
-    mocks.getConfig.mockReturnValue({ ...cfg, models: { ...cfg.models, pro: makeResolvedModel('gpt-6-luna', { provider: 'openai' }) } });
+  it('gives an OpenAI-compatible endpoint the Chat Completions client with its base URL, and no key when none is set', async () => {
+    const pro = makeResolvedModel('llama4', { provider: 'openai', apiKey: undefined, baseUrl: 'http://localhost:11434/v1', host: 'localhost:11434' });
+    mocks.getConfig.mockReturnValue({ ...cfg, skipFastPass: true, modelFast: '', modelPro: 'llama4', models: { fast: null, pro } });
 
-    await expect(importEntryPoint()).rejects.toThrow('The openai provider is not implemented yet.');
-    expect(mocks.runAutoTriage).not.toHaveBeenCalled();
+    await importEntryPoint();
+
+    expect(mocks.geminiArgs).toEqual([]);
+    expect(mocks.openaiArgs).toEqual([[undefined, expect.any(Function), 'http://localhost:11434/v1']]);
+    expect(mocks.runAutoTriage).toHaveBeenCalledOnce();
   });
 
   it('fails the action with the stack when the run rejects', async () => {

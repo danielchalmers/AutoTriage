@@ -3,6 +3,7 @@ import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import { AnthropicClient } from '../src/llm/anthropic';
 import { GeminiClient } from '../src/llm/gemini';
+import { OpenAIClient } from '../src/llm/openai';
 import { ModelError } from '../src/llm/types';
 import { buildRunContext, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
@@ -495,6 +496,54 @@ describe('processIssue', () => {
       expect(json.fast).toMatchObject({ runs: 1, inputTokens: 1050, thoughtsTokens: 60, outputTokens: 20, cacheCreatedTokens: 1000 });
       expect(json.pro).toMatchObject({ runs: 1, inputTokens: 3050, cacheCreatedTokens: 3000 });
       expect(db.items['42']).toMatchObject({ summary: 'Crash' });
+    });
+  });
+
+  it('triages through OpenAI with a cache breakpoint, and explains the plan in the log and the comment since OpenAI returns no thoughts', async () => {
+    await withArtifactsDir(async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const gh = createGitHub({ getIssue: vi.fn().mockResolvedValue(baseIssue) });
+      const bodies: any[] = [];
+      const operations = [
+        addBugLabel('Policy 2 labels crashes as bugs'),
+        { kind: 'comment', body: 'Thanks for the report.', authorization: 'Policy 4 thanks first-time reporters' },
+      ];
+      const fetch = vi.fn(async (_input: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return Response.json({
+          choices: [{ message: { role: 'assistant', content: JSON.stringify({ summary: 'Crash on save', operations }), refusal: null }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 3050, completion_tokens: 80, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 3000 }, completion_tokens_details: { reasoning_tokens: 60 } },
+        });
+      });
+      const model = new OpenAIClient('test-key', fetch);
+      const cacheInfos = new Map([['pro', await model.createCache('gpt-6-luna', 'pro system prompt')]]);
+
+      try {
+        await processIssue(
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
+          processOptions({ cacheInfos, systemPromptFast: '' })
+        );
+
+        const explanation = [
+          "The model returned no thoughts, so this is the plan's own explanation.",
+          'Summary: Crash on save',
+          'Operations:',
+          '- add_labels: Policy 2 labels crashes as bugs',
+          '- comment: Policy 4 thanks first-time reporters',
+        ].join('\n');
+        expect(fetch).toHaveBeenCalledOnce();
+        expect(bodies[0].messages[0].content).toEqual([{ type: 'text', text: 'pro system prompt', prompt_cache_breakpoint: { mode: 'explicit' } }]);
+        expect(bodies[0].response_format.json_schema.schema.properties.operations.items.anyOf[0].properties.labels.items).toEqual({ type: 'string', enum: ['bug'] });
+        expect(log.mock.calls.map(call => String(call[0]))).toContainEqual(expect.stringContaining(explanation));
+        expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+        expect(gh.createComment).toHaveBeenCalledWith(42, `Thanks for the report.\n\n<!--\n${explanation}\n-->`);
+        expect((stats.toJSON() as any).pro).toMatchObject({ runs: 1, inputTokens: 3050, outputTokens: 20, thoughtsTokens: 60, cacheCreatedTokens: 3000 });
+        expect(db.items['42']).toMatchObject({ summary: 'Crash on save' });
+      } finally {
+        log.mockRestore();
+      }
     });
   });
 

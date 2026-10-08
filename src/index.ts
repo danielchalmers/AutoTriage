@@ -3,6 +3,7 @@ import { describeModels, getConfig } from './env';
 import { loadDatabase } from './storage';
 import { AnthropicClient } from './llm/anthropic';
 import { GeminiClient } from './llm/gemini';
+import { OpenAIClient } from './llm/openai';
 import { createModelFetch } from './llm/transport';
 import type { ProviderId, ResolvedModel } from './llm/resolve';
 import type { ModelClient, ModelClients } from './model';
@@ -33,7 +34,8 @@ function clientFor(resolved: ResolvedModel): ModelClient {
     } else if (resolved.provider === 'anthropic') {
       client = new AnthropicClient(resolved.apiKey ?? '', createModelFetch(), resolved.baseUrl);
     } else {
-      throw new Error(`The ${resolved.provider} provider is not implemented yet.`);
+      // The key is absent only for an OPENAI_BASE_URL endpoint that takes none, such as a local server.
+      client = new OpenAIClient(resolved.apiKey, createModelFetch(), resolved.baseUrl);
     }
     clients.set(resolved.provider, client);
   }

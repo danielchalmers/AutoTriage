@@ -45,7 +45,9 @@ Start with the smallest useful context:
   `errors.ts` holds error text and the status classifier every provider shares.
   `transport.ts` holds the undici fetch and the 600s request deadline.
   `retry.ts` holds the retry schedules for each failure kind.
-  `gemini.ts` is the Gemini API adapter.
+  `resolve.ts` picks the provider, key, and support tier for a model input.
+  `schema.ts` converts the response schema for APIs that take JSON Schema.
+  `gemini.ts`, `anthropic.ts`, and `openai.ts` are the Gemini, Claude Messages, and Chat Completions adapters; `openai.ts` also serves any `OPENAI_BASE_URL` endpoint.
   AutoTriage is the source of this folder and Nuntia copies it verbatim, so it imports only itself and `undici`.
   Change it in paired AutoTriage and Nuntia PRs, and update the hash pinned in `tests/llmShared.test.ts`.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.

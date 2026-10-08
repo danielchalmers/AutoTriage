@@ -13,7 +13,7 @@ import { ModelError, type CacheInfo, type JsonRequest } from './llm/types';
 import type { ModelClient, ModelClients } from './model';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics, comparePlans, summarizePlan } from './stats';
-import { PlannedOperation, describeOperation, executeOperations, planOperations } from './triage';
+import { PlannedOperation, describeOperation, executeOperations, explainPlan, planOperations } from './triage';
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
 import { errorMessage, parseTimestamp } from './util';
@@ -417,14 +417,16 @@ export async function generateAnalysis(
     stats.trackProRun(modelRunStats);
   }
 
-  console.log(chalk.magenta(thoughts));
+  // A reply without thoughts still says why, through the plan's summary and the policy clause each operation cites.
+  const explanation = thoughts.trim() ? thoughts : explainPlan(data);
+  console.log(chalk.magenta(explanation));
   saveArtifact(
     issue.number,
     `${artifactPrefix}-analysis.json`,
     JSON.stringify({ ...data, thoughts }, null, 2)
   );
 
-  const ops = planOperations(issue, data, issue, repoLabels.map((label) => label.name), thoughts);
+  const ops = planOperations(issue, data, issue, repoLabels.map((label) => label.name), explanation);
 
   return { data, thoughts, ops };
 }
