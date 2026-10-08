@@ -397,7 +397,7 @@ export async function generateAnalysis(
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
   stats.beginPass(isFastModel ? 'fast' : 'pro');
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens } = await deps.model.generateJson<AnalysisResult>(request, 2, 7500, parseAnalysisResult);
+  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens, cacheWriteTokens } = await deps.model.generateJson<AnalysisResult>(request, 2, 7500, parseAnalysisResult);
   const endTime = Date.now();
 
   const modelRunStats = {
@@ -407,6 +407,7 @@ export async function generateAnalysis(
     cachedInputTokens,
     outputTokens,
     thoughtsTokens,
+    ...(cacheWriteTokens ? { cacheWriteTokens } : {}),
     issueNumber: issue.number,
     ...(cacheInfo ? { cacheName: cacheInfo.name } : {}),
   };

@@ -8,21 +8,42 @@ export interface JsonRequest {
   model: string;
   systemPrompt: string;
   userPrompt: string;
-  // Written in the Gemini API's schema dialect by the caller.
+  // Written in the Gemini API's schema dialect by the caller; other adapters convert it with toJsonSchema.
   schema: unknown;
-  // A context cache that already holds the system prompt, so the prompt is not sent again.
+  // The context the system prompt is cached under, from createCache: a Gemini cache that already holds the prompt, or a marker that tells the Claude adapter to mark the prompt for caching.
   cacheName?: string | undefined;
   // Gemini's cheaper, slower flex tier, used alongside the cache on backlog runs.
   useFlexTier?: boolean | undefined;
 }
 
-export interface JsonResult<T> {
-  data: T;
-  thoughts: string;
+/** One call for a plain text reply, with no schema and the provider's default reasoning settings. */
+export interface TextRequest {
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+}
+
+/**
+ * What a call cost, in the same terms for every provider.
+ * `inputTokens` is the whole prompt, cached tokens included, and `outputTokens` leaves out the thinking counted in `thoughtsTokens`.
+ * `cacheWriteTokens` is set only by providers that bill for writing the prompt cache during the call, such as Claude.
+ */
+export interface ModelUsage {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
   thoughtsTokens: number;
+  cacheWriteTokens?: number;
+}
+
+export interface JsonResult<T> extends ModelUsage {
+  data: T;
+  thoughts: string;
+}
+
+// The answer text alone, with any thoughts or reasoning left out.
+export interface TextResult extends ModelUsage {
+  text: string;
 }
 
 export interface CacheInfo {

@@ -513,7 +513,7 @@ describe('runAutoTriage', () => {
 
   it('names the cause of each fatal model error and fails the job only once in strict mode', async () => {
     const reasons = {
-      model: 'Stopped the run because the model API does not know the model. Check model-fast and model-pro.',
+      model: 'Stopped the run because the model API does not know the model, or the model does not support the request. Check model-fast and model-pro.',
       quota: 'Stopped the run because the model API account is out of credit or over its spend limit. Check its billing.',
     } as const;
     for (const [cause, reason] of Object.entries(reasons) as Array<[keyof typeof reasons, string]>) {

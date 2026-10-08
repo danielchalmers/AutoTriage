@@ -83,6 +83,19 @@ describe('RunStatistics', () => {
       expect(cacheLine).toContain('Cache: 8.2k created • 8.2k (75.9%) reused');
     });
 
+    // Claude writes its cache during calls, and its createCache marker reports no tokens of its own.
+    it('counts cache writes made during calls as created', () => {
+      stats.setModelNames('', 'claude-haiku-5-5');
+      stats.trackCacheCreate({ mode: 'pro', model: 'claude-haiku-5-5', name: 'cache_control', tokenCount: 0 });
+      stats.trackProRun({ startTime: 0, endTime: 1000, inputTokens: 8300, cachedInputTokens: 0, outputTokens: 50, cacheWriteTokens: 8200 });
+      stats.trackProRun({ startTime: 0, endTime: 1000, inputTokens: 8300, cachedInputTokens: 8200, outputTokens: 50 });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+
+      expect(lines.find(line => line.includes('Cache:'))).toContain('Cache: 8.2k created • 8.2k (49.4%) reused');
+      expect((stats.toJSON() as any).pro).toMatchObject({ inputTokens: 16600, cachedInputTokens: 8200, cacheCreatedTokens: 8200 });
+    });
+
     it('shows GitHub API calls with retries', () => {
       stats.incrementGithubApiCalls(15);
 

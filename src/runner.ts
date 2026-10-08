@@ -36,7 +36,7 @@ function reportCapReached(stats: RunStatistics, mode: 'fast' | 'pro', maxRuns: n
 // What a fatal model error means for the run, finishing "Stopped the run because ...".
 const FATAL_REASONS: Record<FatalCause, string> = {
   auth: 'the model API rejected the API key. Check the key secret',
-  model: 'the model API does not know the model. Check model-fast and model-pro',
+  model: 'the model API does not know the model, or the model does not support the request. Check model-fast and model-pro',
   quota: 'the model API account is out of credit or over its spend limit. Check its billing',
 };
 

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
+import { AnthropicClient } from '../src/llm/anthropic';
 import { GeminiClient } from '../src/llm/gemini';
 import { ModelError } from '../src/llm/types';
 import { buildRunContext, processIssue } from '../src/issueProcessor';
@@ -453,6 +454,47 @@ describe('processIssue', () => {
       expect((error as ModelError).failure).toEqual({ kind: 'truncated' });
       expect(fetch).toHaveBeenCalledOnce();
       expect(db.items['42']).toBeUndefined();
+    });
+  });
+
+  it('triages through Claude with the system prompt marked for caching, and counts its cache writes as created', async () => {
+    await withArtifactsDir(async () => {
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const bodies: any[] = [];
+      const reply = (operations: unknown[], usage: Record<string, number>) => Response.json({
+        content: [{ type: 'thinking', thinking: 'Looks like a bug.', signature: 'sig' }, { type: 'text', text: JSON.stringify({ summary: 'Crash', operations }) }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 50, output_tokens: 80, output_tokens_details: { thinking_tokens: 60 }, ...usage },
+      });
+      const replies = [
+        reply([addBugLabel('fast policy')], { cache_creation_input_tokens: 1000 }),
+        reply([addBugLabel('pro policy')], { cache_creation_input_tokens: 3000 }),
+      ];
+      const fetch = vi.fn(async (_input: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return replies.shift()!;
+      });
+      const model = new AnthropicClient('test-key', fetch);
+      const cacheInfos = new Map([
+        ['fast', await model.createCache('fast-model', 'fast system prompt')],
+        ['pro', await model.createCache('pro-model', 'pro system prompt')],
+      ]);
+
+      await processIssue(
+        { cfg: createConfig(), db, gh: createGitHub(), models: bothPasses(model), stats },
+        processOptions({ cacheInfos })
+      );
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      for (const body of bodies) {
+        expect(body.system[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
+        expect(body.output_config.format.schema.properties.operations.items.anyOf[0].properties.labels.items).toEqual({ type: 'string', enum: ['bug'] });
+      }
+      const json = stats.toJSON() as any;
+      expect(json.fast).toMatchObject({ runs: 1, inputTokens: 1050, thoughtsTokens: 60, outputTokens: 20, cacheCreatedTokens: 1000 });
+      expect(json.pro).toMatchObject({ runs: 1, inputTokens: 3050, cacheCreatedTokens: 3000 });
+      expect(db.items['42']).toMatchObject({ summary: 'Crash' });
     });
   });
 

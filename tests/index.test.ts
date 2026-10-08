@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   runAutoTriage: vi.fn(),
   githubArgs: [] as unknown[][],
   geminiArgs: [] as unknown[][],
+  anthropicArgs: [] as unknown[][],
 }));
 
 vi.mock('@actions/core', () => ({ setFailed: mocks.setFailed }));
@@ -26,6 +27,13 @@ vi.mock('../src/llm/gemini', () => ({
   GeminiClient: class {
     constructor(...args: unknown[]) {
       mocks.geminiArgs.push(args);
+    }
+  },
+}));
+vi.mock('../src/llm/anthropic', () => ({
+  AnthropicClient: class {
+    constructor(...args: unknown[]) {
+      mocks.anthropicArgs.push(args);
     }
   },
 }));
@@ -54,6 +62,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.githubArgs.length = 0;
   mocks.geminiArgs.length = 0;
+  mocks.anthropicArgs.length = 0;
   handlers = {};
   vi.spyOn(process, 'on').mockImplementation(((event: string, listener: (...args: any[]) => void) => {
     handlers[event] = listener;
@@ -110,10 +119,23 @@ describe('AutoTriage action entry point', () => {
     expect(deps.stats.toJSON().providers).toEqual({ fast: null, pro: { provider: 'gemini', tier: 'official' } });
   });
 
-  it('does not start a run for a provider without a client yet', async () => {
-    mocks.getConfig.mockReturnValue({ ...cfg, models: { ...cfg.models, pro: makeResolvedModel('claude-haiku-5-5', { provider: 'anthropic' }) } });
+  it('gives each pass the client for its provider, with that provider key and base URL', async () => {
+    const pro = makeResolvedModel('claude-haiku-5-5', { provider: 'anthropic', apiKey: 'anthropic-key', baseUrl: 'https://api.anthropic.com', host: 'api.anthropic.com' });
+    mocks.getConfig.mockReturnValue({ ...cfg, modelPro: 'claude-haiku-5-5', models: { fast: cfg.models.fast, pro } });
 
-    await expect(importEntryPoint()).rejects.toThrow('The anthropic provider is not implemented yet.');
+    await importEntryPoint();
+
+    expect(mocks.geminiArgs).toEqual([['gemini-key']]);
+    expect(mocks.anthropicArgs).toEqual([['anthropic-key', expect.any(Function), 'https://api.anthropic.com']]);
+    const deps = mocks.runAutoTriage.mock.calls[0]![0];
+    expect(deps.models.fast).not.toBe(deps.models.pro);
+    expect(deps.stats.toJSON().providers).toEqual({ fast: { provider: 'gemini', tier: 'best-effort' }, pro: { provider: 'anthropic', tier: 'best-effort' } });
+  });
+
+  it('does not start a run for a provider without a client yet', async () => {
+    mocks.getConfig.mockReturnValue({ ...cfg, models: { ...cfg.models, pro: makeResolvedModel('gpt-6-luna', { provider: 'openai' }) } });
+
+    await expect(importEntryPoint()).rejects.toThrow('The openai provider is not implemented yet.');
     expect(mocks.runAutoTriage).not.toHaveBeenCalled();
   });
 

@@ -1,7 +1,9 @@
 import * as core from '@actions/core';
 import { describeModels, getConfig } from './env';
 import { loadDatabase } from './storage';
+import { AnthropicClient } from './llm/anthropic';
 import { GeminiClient } from './llm/gemini';
+import { createModelFetch } from './llm/transport';
 import type { ProviderId, ResolvedModel } from './llm/resolve';
 import type { ModelClient, ModelClients } from './model';
 import { GitHubClient } from './github';
@@ -26,10 +28,13 @@ const clients = new Map<ProviderId, ModelClient>();
 function clientFor(resolved: ResolvedModel): ModelClient {
   let client = clients.get(resolved.provider);
   if (!client) {
-    if (resolved.provider !== 'gemini') {
+    if (resolved.provider === 'gemini') {
+      client = new GeminiClient(resolved.apiKey ?? '');
+    } else if (resolved.provider === 'anthropic') {
+      client = new AnthropicClient(resolved.apiKey ?? '', createModelFetch(), resolved.baseUrl);
+    } else {
       throw new Error(`The ${resolved.provider} provider is not implemented yet.`);
     }
-    client = new GeminiClient(resolved.apiKey ?? '');
     clients.set(resolved.provider, client);
   }
   return client;

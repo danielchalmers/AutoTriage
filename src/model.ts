@@ -3,7 +3,7 @@ import type { CacheInfo, JsonRequest, JsonResult } from './llm/types';
 
 /**
  * What triage needs from a model provider: JSON replies, plus the context cache that backlog runs share across items.
- * GeminiClient (src/llm/gemini.ts) implements it.
+ * GeminiClient (src/llm/gemini.ts) and AnthropicClient (src/llm/anthropic.ts) implement it.
  */
 export interface ModelClient {
   /**
@@ -16,6 +16,7 @@ export interface ModelClient {
     initialBackoffMs: number,
     validate?: (data: unknown) => T
   ): Promise<JsonResult<T>>;
+  // A provider that caches marked prompts during ordinary calls returns a marker without calling its API.
   createCache(model: string, systemPrompt: string, displayName?: string): Promise<CacheInfo>;
   // Best effort: never throws.
   deleteCache(name: string): Promise<void>;
