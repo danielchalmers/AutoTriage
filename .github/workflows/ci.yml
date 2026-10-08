@@ -38,6 +38,7 @@ jobs:
           prompt-path: examples/AutoTriage.prompt
           dry-run: true
           model-fast: claude-haiku-5-5
+          model-pro: claude-opus-5-5
           strict-mode: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
