@@ -1,7 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { GeminiClient } from '../src/llm/gemini'
+import { classifyApiError } from '../src/llm/errors'
 import {
-  isTransientModelError,
+  failureOf,
   TRANSIENT_INITIAL_BACKOFF_MS,
   TRANSIENT_MAX_BACKOFF_MS,
   TRANSIENT_MAX_RETRIES,
@@ -29,19 +30,60 @@ function okResponse(json: string): Response {
   return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: json }] } }], usageMetadata: {} }), { headers: { 'content-type': 'application/json' } })
 }
 
-describe('isTransientModelError', () => {
-  it('recognises 503 and 429 API errors by status', () => {
-    expect(isTransientModelError(new ModelApiError('x', 503))).toBe(true)
-    expect(isTransientModelError(new ModelApiError('x', 429))).toBe(true)
-    expect(isTransientModelError(new ModelApiError('x', 400))).toBe(false)
-    expect(isTransientModelError(new ModelApiError('x', 500))).toBe(false)
+// Error bodies as each provider documents them, so the shared classifier is pinned against real shapes.
+const GEMINI_BAD_KEY = '{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"API_KEY_INVALID","domain":"googleapis.com"}]}}'
+const GEMINI_PER_DAY_QUOTA = '{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}'
+const GEMINI_BAD_REQUEST = '{"error":{"code":400,"message":"Invalid JSON payload received.","status":"INVALID_ARGUMENT"}}'
+const OPENAI_NO_QUOTA = '{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}'
+const OPENAI_SPEND_LIMIT = '{"error":{"message":"Project spend limit reached.","type":"invalid_request_error","code":"project_spend_limit_exceeded"}}'
+const OPENAI_RATE_LIMIT = '{"error":{"message":"Rate limit reached for gpt-6-luna on tokens per min (TPM).","type":"tokens","code":"rate_limit_exceeded"}}'
+const ANTHROPIC_NO_CREDIT = '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}'
+const ANTHROPIC_USAGE_LIMIT = '{"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits."}}'
+const ANTHROPIC_OVERLOADED = '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'
+
+describe('classifyApiError', () => {
+  it('fails fast on a rejected key, an unknown model, or an account out of credit', () => {
+    expect(classifyApiError(400, GEMINI_BAD_KEY)).toEqual({ kind: 'fatal', cause: 'auth' })
+    expect(classifyApiError(401, '{"error":{"message":"Incorrect API key provided."}}')).toEqual({ kind: 'fatal', cause: 'auth' })
+    expect(classifyApiError(403, '{"error":{"status":"PERMISSION_DENIED"}}')).toEqual({ kind: 'fatal', cause: 'auth' })
+    expect(classifyApiError(404, '{"error":{"status":"NOT_FOUND"}}')).toEqual({ kind: 'fatal', cause: 'model' })
+    expect(classifyApiError(402, '{}')).toEqual({ kind: 'fatal', cause: 'quota' })
+    expect(classifyApiError(429, OPENAI_NO_QUOTA)).toEqual({ kind: 'fatal', cause: 'quota' })
+    expect(classifyApiError(429, OPENAI_SPEND_LIMIT)).toEqual({ kind: 'fatal', cause: 'quota' })
+    expect(classifyApiError(400, ANTHROPIC_NO_CREDIT)).toEqual({ kind: 'fatal', cause: 'quota' })
+    expect(classifyApiError(400, ANTHROPIC_USAGE_LIMIT)).toEqual({ kind: 'fatal', cause: 'quota' })
+  })
+
+  it('waits out overloads and rate limits, including Gemini per-day quotas', () => {
+    expect(classifyApiError(503, HIGH_DEMAND_BODY)).toEqual({ kind: 'capacity' })
+    expect(classifyApiError(429, GEMINI_PER_DAY_QUOTA)).toEqual({ kind: 'capacity' })
+    expect(classifyApiError(429, OPENAI_RATE_LIMIT)).toEqual({ kind: 'capacity' })
+    expect(classifyApiError(529, ANTHROPIC_OVERLOADED)).toEqual({ kind: 'capacity' })
+    expect(classifyApiError(500, '{"error":{"code":500,"status":"UNAVAILABLE"}}')).toEqual({ kind: 'capacity' })
+  })
+
+  it('retries other server errors and treats any other client error as permanent', () => {
+    for (const status of [500, 502, 504]) {
+      expect(classifyApiError(status, '{}'), String(status)).toEqual({ kind: 'retryable' })
+    }
+    expect(classifyApiError(400, GEMINI_BAD_REQUEST)).toEqual({ kind: 'permanent' })
+    expect(classifyApiError(413, '{}')).toEqual({ kind: 'permanent' })
+  })
+})
+
+describe('failureOf', () => {
+  it('reads the failure a model error carries', () => {
+    expect(failureOf(new ModelApiError('x', 503))).toEqual({ kind: 'capacity' })
+    expect(failureOf(new ModelApiError(GEMINI_BAD_KEY, 400))).toEqual({ kind: 'fatal', cause: 'auth' })
+    expect(failureOf(new ModelError('cut off', { kind: 'truncated' }))).toEqual({ kind: 'truncated' })
+    expect(failureOf(new ModelError('bad reply'))).toEqual({ kind: 'retryable' })
   })
 
   it('recognises the high-demand JSON body when only the message survives', () => {
-    expect(isTransientModelError(new Error(HIGH_DEMAND_BODY))).toBe(true)
-    expect(isTransientModelError(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'))).toBe(true)
-    expect(isTransientModelError(new Error('Unable to parse JSON from Gemini response'))).toBe(false)
-    expect(isTransientModelError(new Error('{"error":{"code":400,"status":"INVALID_ARGUMENT"}}'))).toBe(false)
+    expect(failureOf(new Error(HIGH_DEMAND_BODY))).toEqual({ kind: 'capacity' })
+    expect(failureOf(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'))).toEqual({ kind: 'capacity' })
+    expect(failureOf(new Error('Unable to parse JSON from Gemini response'))).toEqual({ kind: 'retryable' })
+    expect(failureOf(new Error('{"error":{"code":400,"status":"INVALID_ARGUMENT"}}'))).toEqual({ kind: 'retryable' })
   })
 })
 
@@ -50,15 +92,55 @@ describe('withRetries', () => {
     vi.restoreAllMocks()
   })
 
-  it('keeps the short caller-supplied schedule for ordinary failures', async () => {
-    const attempt = vi.fn().mockRejectedValue(new ModelApiError('bad request', 400))
+  it('keeps the short caller-supplied schedule for retryable failures', async () => {
+    const attempt = vi.fn().mockRejectedValue(new ModelApiError('server error', 500))
 
     const { result, sleeps } = await retry(attempt)
 
-    expect(result).toEqual({ error: new ModelError('bad request') })
-    expect((result as { error: unknown }).error).toBeInstanceOf(ModelError)
+    expect(result).toEqual({ error: new ModelError('server error') })
+    expect((result as { error: ModelError }).error).toBeInstanceOf(ModelError)
+    expect((result as { error: ModelError }).error.failure).toEqual({ kind: 'retryable' })
     expect(attempt).toHaveBeenCalledTimes(3)
     expect(sleeps).toEqual([7500, 15000])
+  })
+
+  it('throws at once on failures a retry cannot fix, keeping their kind', async () => {
+    const failures = [
+      new ModelApiError(GEMINI_BAD_REQUEST, 400),
+      new ModelApiError(GEMINI_BAD_KEY, 400),
+      new ModelApiError('{}', 404),
+      new ModelError('cut off', { kind: 'truncated' }),
+      new ModelError('declined', { kind: 'refusal' }),
+    ]
+
+    for (const failure of failures) {
+      const attempt = vi.fn().mockRejectedValue(failure)
+
+      const { result, sleeps } = await retry(attempt)
+
+      const error = (result as { error: ModelError }).error
+      expect(error, failure.message).toBeInstanceOf(ModelError)
+      expect(error.message).toBe(failure.message)
+      expect(error.failure).toEqual(failure.failure)
+      expect(attempt).toHaveBeenCalledOnce()
+      expect(sleeps).toEqual([])
+    }
+  })
+
+  it('waits at least as long as Retry-After asks, but no longer than the capacity cap', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const attempt = vi
+      .fn()
+      .mockRejectedValueOnce(new ModelApiError(HIGH_DEMAND_BODY, 503, { retryAfterSeconds: 30 }))
+      .mockRejectedValueOnce(new ModelApiError(HIGH_DEMAND_BODY, 503, { retryAfterSeconds: 30 }))
+      .mockRejectedValueOnce(new ModelApiError(HIGH_DEMAND_BODY, 503, { retryAfterSeconds: 5 }))
+      .mockRejectedValueOnce(new ModelApiError(HIGH_DEMAND_BODY, 503, { retryAfterSeconds: 3600 }))
+      .mockResolvedValueOnce({ ok: true })
+
+    const { result, sleeps } = await retry(attempt)
+
+    expect(result).toEqual({ value: { ok: true } })
+    expect(sleeps).toEqual([30000, 30000, 40000, 60000])
   })
 
   it('waits out a 503 outage with the longer capped schedule before giving up', async () => {
@@ -68,6 +150,7 @@ describe('withRetries', () => {
     const { result, sleeps } = await retry(attempt)
 
     expect((result as { error: Error }).error.message).toMatch(/high demand/)
+    expect((result as { error: ModelError }).error.failure).toEqual({ kind: 'capacity' })
     expect(attempt).toHaveBeenCalledTimes(TRANSIENT_MAX_RETRIES + 1)
     expect(sleeps).toEqual([10000, 20000, 40000, 60000, 60000, 60000])
     expect(sleeps[0]).toBe(TRANSIENT_INITIAL_BACKOFF_MS)
@@ -91,14 +174,14 @@ describe('withRetries', () => {
     expect(sleeps).toEqual([10000, 20000, 40000])
   })
 
-  it('does not let transient retries extend the budget for ordinary failures', async () => {
+  it('does not let transient retries extend the budget for retryable failures', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const attempt = vi
       .fn()
       .mockRejectedValueOnce(new ModelApiError(HIGH_DEMAND_BODY, 503))
-      .mockRejectedValueOnce(new ModelApiError('bad', 400))
-      .mockRejectedValueOnce(new ModelApiError('bad', 400))
-      .mockRejectedValueOnce(new ModelApiError('bad', 400))
+      .mockRejectedValueOnce(new ModelApiError('bad', 502))
+      .mockRejectedValueOnce(new ModelApiError('bad', 502))
+      .mockRejectedValueOnce(new ModelApiError('bad', 502))
 
     const { result, sleeps } = await retry(attempt)
 

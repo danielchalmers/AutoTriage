@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { GeminiClient, GeminiResponseError, geminiModelPath } from '../src/llm/gemini'
 import type { Fetch } from '../src/llm/transport'
-import type { JsonRequest } from '../src/llm/types'
+import { ModelError, type JsonRequest } from '../src/llm/types'
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
@@ -79,6 +79,83 @@ describe('GeminiClient.generateJson response parsing', () => {
     const { client } = makeClient({})
 
     await expect(client.generateJson(REQUEST, 0, 1)).rejects.toThrow('Gemini responded with empty text')
+  })
+})
+
+describe('GeminiClient.generateJson failure kinds', () => {
+  function errorResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+  }
+
+  // Calls with a generous retry budget, so a failure that is thrown after one request proves it was not retried.
+  async function failure(fetch: Fetch, request: JsonRequest = REQUEST) {
+    const client = new GeminiClient('test-key', fetch)
+    vi.spyOn(client as any, 'sleep').mockResolvedValue(undefined)
+    const error = await client.generateJson(request, 2, 1).then(() => undefined, (err: unknown) => err)
+    expect(error).toBeInstanceOf(ModelError)
+    return error as ModelError
+  }
+
+  it('treats a blocked prompt as a refusal without retrying', async () => {
+    const fetch = vi.fn<Fetch>(async () => jsonResponse({ promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } }))
+
+    const error = await failure(fetch)
+
+    expect(error.message).toBe('Gemini blocked the prompt (blockReason PROHIBITED_CONTENT)')
+    expect(error.failure).toEqual({ kind: 'refusal' })
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('treats every safety-style finish as a refusal, even with partial text', async () => {
+    for (const finishReason of ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY']) {
+      const fetch = vi.fn<Fetch>(async () => jsonResponse({ candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason }] }))
+
+      const error = await failure(fetch)
+
+      expect(error.message).toBe(`Gemini declined to answer (finishReason ${finishReason})`)
+      expect(error.failure).toEqual({ kind: 'refusal' })
+      expect(fetch).toHaveBeenCalledOnce()
+    }
+  })
+
+  it('treats a MAX_TOKENS finish as truncated output without retrying', async () => {
+    const fetch = vi.fn<Fetch>(async () => jsonResponse({ candidates: [{ content: { parts: [{ text: '{"summary":"cut' }] }, finishReason: 'MAX_TOKENS' }] }))
+
+    const error = await failure(fetch)
+
+    expect(error.message).toBe('Gemini stopped at the output token limit (finishReason MAX_TOKENS)')
+    expect(error.failure).toEqual({ kind: 'truncated' })
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('fails fast on a bad key or an unknown model', async () => {
+    const badKey = vi.fn<Fetch>(async () => errorResponse(400, { error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' } }))
+    const unknownModel = vi.fn<Fetch>(async () => errorResponse(404, { error: { code: 404, message: 'models/m is not found for API version v1beta', status: 'NOT_FOUND' } }))
+
+    expect((await failure(badKey)).failure).toEqual({ kind: 'fatal', cause: 'auth' })
+    expect((await failure(unknownModel)).failure).toEqual({ kind: 'fatal', cause: 'model' })
+    expect(badKey).toHaveBeenCalledOnce()
+    expect(unknownModel).toHaveBeenCalledOnce()
+  })
+
+  // The cache may have expired during a long backlog run, which says nothing about the key or the model.
+  it('fails only the item on a 403 or 404 from a cached call', async () => {
+    const cached: JsonRequest = { ...REQUEST, cacheName: 'cachedContents/abc', useFlexTier: true }
+    for (const status of [403, 404]) {
+      const fetch = vi.fn<Fetch>(async () => errorResponse(status, { error: { code: status, message: 'CachedContent not found (or permission denied)' } }))
+
+      const error = await failure(fetch, cached)
+
+      expect(error.message).toBe(`{"error":{"code":${status},"message":"CachedContent not found (or permission denied)"}}`)
+      expect(error.failure).toEqual({ kind: 'permanent' })
+      expect(fetch).toHaveBeenCalledOnce()
+    }
+  })
+
+  it('keeps a bad key fatal on a cached call', async () => {
+    const fetch = vi.fn<Fetch>(async () => errorResponse(401, { error: { code: 401, message: 'unauthenticated' } }))
+
+    expect((await failure(fetch, { ...REQUEST, cacheName: 'cachedContents/abc' })).failure).toEqual({ kind: 'fatal', cause: 'auth' })
   })
 })
 

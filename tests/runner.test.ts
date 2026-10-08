@@ -11,10 +11,11 @@ vi.mock('@actions/github', () => ({
   context: githubContextMock,
 }));
 
-// setFailed would otherwise print ::error:: and set process.exitCode for the test worker.
+// setFailed would otherwise print ::error:: and set process.exitCode for the test worker, and error would print an annotation.
 vi.mock('@actions/core', async (importActual) => ({
   ...(await importActual<typeof import('@actions/core')>()),
   setFailed: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock('../src/issueProcessor', async () => {
@@ -30,7 +31,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GeminiResponseError } from '../src/llm/gemini';
-import { ModelError } from '../src/llm/types';
+import { ModelApiError, ModelError } from '../src/llm/types';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { makeClosedIssue, makeConfig, makeDb, makeIssue, withTempDir } from './fixtures';
 
@@ -244,6 +245,17 @@ describe('runAutoTriage', () => {
     expect(options.autoDiscover).toBe(true);
     expect(options.cacheInfos.size).toBe(0);
     expect(model.deleteCache).not.toHaveBeenCalled();
+  });
+
+  it('keeps cache creation best effort even when the key is rejected', async () => {
+    const model = createModel();
+    model.createCache.mockRejectedValue(new ModelApiError('{"error":{"code":403}}', 403));
+
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, model: model as any, stats: createStats() as any });
+
+    expect(processIssueMock).toHaveBeenCalledOnce();
+    expect(processIssueMock.mock.calls[0]![1].cacheInfos.size).toBe(0);
+    expect(core.setFailed).not.toHaveBeenCalled();
   });
 
   it('saves the database after processing the item that reaches max-pro-runs', async () => {
@@ -460,6 +472,76 @@ describe('runAutoTriage', () => {
     });
 
     expect(warnSpy).toHaveBeenCalledWith('#5: fetch failed (ECONNRESET)');
+  });
+
+  it('stops the run and fails the job on a fatal model error, even outside strict mode', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const model = createModel();
+    model.createCache.mockResolvedValue({ name: 'cachedContents/pro', tokenCount: 20 });
+    const gh = createGitHub();
+    gh.listOpenIssues.mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z'), makeIssue(6, '2024-04-06T00:00:00Z')]);
+    const stats = createStats();
+    stats.getCurrentPass.mockReturnValue('fast');
+    processIssueMock.mockRejectedValueOnce(new ModelError('{"error":{"code":400,"message":"API key not valid."}}', { kind: 'fatal', cause: 'auth' }));
+
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, model: model as any, stats: stats as any });
+
+    expect(processIssueMock).toHaveBeenCalledOnce();
+    expect(core.error).toHaveBeenCalledWith('#5: {"error":{"code":400,"message":"API key not valid."}}', { title: 'Fatal model error' });
+    expect(core.setFailed).toHaveBeenCalledOnce();
+    expect(core.setFailed).toHaveBeenCalledWith('Stopped the run because the model API rejected the API key. Check the key secret.');
+    expect(stats.recordItem).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed', failedPass: 'fast' }));
+    // The run still cleans up and reports.
+    expect(model.deleteCache).toHaveBeenCalledWith('cachedContents/pro');
+    expect(stats.printSummary).toHaveBeenCalledOnce();
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('API key not valid'));
+  });
+
+  it('names the cause of each fatal model error and fails the job only once in strict mode', async () => {
+    const reasons = {
+      model: 'Stopped the run because the model API does not know the model. Check model-fast and model-pro.',
+      quota: 'Stopped the run because the model API account is out of credit or over its spend limit. Check its billing.',
+    } as const;
+    for (const [cause, reason] of Object.entries(reasons) as Array<[keyof typeof reasons, string]>) {
+      vi.mocked(core.setFailed).mockClear();
+      processIssueMock.mockRejectedValueOnce(new ModelError('x', { kind: 'fatal', cause }));
+      const stats = createStats();
+      stats.getFailed.mockReturnValue(1);
+
+      await runAutoTriage({
+        cfg: { ...baseConfig, issueNumbers: [5, 6], strictMode: true },
+        db: makeDb(),
+        gh: createGitHub() as any,
+        model: createModel() as any,
+        stats: stats as any,
+      });
+
+      expect(core.setFailed).toHaveBeenCalledOnce();
+      expect(core.setFailed).toHaveBeenCalledWith(reason);
+    }
+  });
+
+  it('does not count refusals toward the consecutive-failure breaker', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failure = new Error('socket hang up');
+    const refusal = new ModelError('declined', { kind: 'refusal' });
+    processIssueMock
+      .mockRejectedValueOnce(failure)
+      .mockRejectedValueOnce(refusal)
+      .mockRejectedValueOnce(failure)
+      .mockRejectedValueOnce(refusal)
+      .mockRejectedValueOnce(failure);
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [1, 2, 3, 4, 5, 6] },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      model: createModel() as any,
+      stats: createStats() as any,
+    });
+
+    expect(processIssueMock).toHaveBeenCalledTimes(5);
   });
 
   it('fails the job in strict mode when any item failed', async () => {

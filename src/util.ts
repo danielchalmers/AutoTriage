@@ -1,5 +1,5 @@
 // Small helpers shared across modules.
-// Kept dependency-free (src/llm/errors.ts imports nothing) so any module can import them without creating cycles.
+// Kept dependency-free (src/llm/errors.ts imports only types) so any module can import them without creating cycles.
 
 // errorMessage lives with the model client so src/llm/ stays self-contained; it is re-exported here for everything else.
 export { errorMessage } from './llm/errors';

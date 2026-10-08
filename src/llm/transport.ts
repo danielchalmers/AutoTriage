@@ -1,3 +1,4 @@
+// Source: AutoTriage (danielchalmers/AutoTriage, src/llm/). Nuntia copies this folder verbatim, so change it in AutoTriage and copy it over in a paired PR.
 import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from 'undici';
 import { ModelApiError } from './types';
 
@@ -50,12 +51,18 @@ export async function requestJson(fetch: Fetch, url: string, init: ModelRequestI
 /**
  * The error for a non-2xx response, with the same message @google/genai gave it so log lines and failure strings don't change.
  * The message is the JSON error body, or the text body wrapped in the same `{"error": ...}` shape when the response isn't JSON.
- * A 4xx or 5xx gives a ModelApiError carrying the status; anything else gives a plain Error.
+ * A 4xx or 5xx gives a ModelApiError carrying the status, its failure kind, and a whole-second Retry-After; anything else gives a plain Error.
  */
 async function responseError(response: Response): Promise<Error> {
   const errorBody: unknown = response.headers.get('content-type')?.includes('application/json')
     ? await response.json()
     : { error: { message: await response.text(), code: response.status, status: response.statusText } };
   const message = JSON.stringify(errorBody);
-  return response.status >= 400 && response.status < 600 ? new ModelApiError(message, response.status) : new Error(message);
+  if (response.status < 400 || response.status >= 600) return new Error(message);
+  return new ModelApiError(message, response.status, { retryAfterSeconds: retryAfterSeconds(response.headers.get('retry-after')) });
+}
+
+// Only the whole-seconds form of Retry-After is read; HTTP dates and fractions are ignored, since the capacity schedule already waits at least 10s.
+function retryAfterSeconds(header: string | null): number | undefined {
+  return header && /^\d+$/.test(header.trim()) ? Number(header.trim()) : undefined;
 }

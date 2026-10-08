@@ -10,7 +10,7 @@ import {
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
 } from './autoDiscover';
 import { THINKING_LEVEL } from './llm/gemini';
-import { ModelError, type CacheInfo } from './llm/types';
+import { ModelError, type CacheInfo, type FatalCause } from './llm/types';
 import { GitHubClient } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import type { RunStatistics } from './stats';
@@ -33,6 +33,13 @@ function reportCapReached(stats: RunStatistics, mode: 'fast' | 'pro', maxRuns: n
   stats.setCapReached(mode);
 }
 
+// What a fatal model error means for the run, finishing "Stopped the run because ...".
+const FATAL_REASONS: Record<FatalCause, string> = {
+  auth: 'the model API rejected the API key. Check the key secret',
+  model: 'the model API does not know the model. Check model-fast and model-pro',
+  quota: 'the model API account is out of credit or over its spend limit. Check its billing',
+};
+
 // Truncated content hash so run summaries can be segmented by prompt version.
 function hashPrompt(text: string): string {
   return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16)}`;
@@ -47,6 +54,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   let triagesPerformed = 0;
   let fastRunsPerformed = 0;
   let consecutiveFailures = 0;
+  let stoppedByFatalError = false;
 
   console.log(`⚙️ Running in ${cfg.dryRun ? 'dry-run' : 'live'} mode (strict: ${cfg.strictMode})`);
   console.log(`▶️ Discovered ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (extended: ${cfg.extended})`);
@@ -129,8 +137,12 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         consecutiveFailures = 0;
       } catch (err) {
         // Any per-item failure, model or otherwise (e.g. a transient GitHub API error), is recorded and skipped so one bad item can't abort the remaining backlog.
-        // The consecutive-failure breaker below still stops the run if errors cascade (auth loss, outage).
-        if (err instanceof ModelError) {
+        // The consecutive-failure breaker below still stops the run if errors cascade (an outage, a cache that expired mid-run).
+        // A fatal model error (bad key, unknown model, no credit) would fail every later item too, so it stops the run and fails the job at once, even outside strict mode.
+        const failure = err instanceof ModelError ? err.failure : undefined;
+        if (err instanceof ModelError && failure?.kind === 'fatal') {
+          core.error(`#${issueNumber}: ${err.message}`, { title: 'Fatal model error' });
+        } else if (err instanceof ModelError) {
           console.warn(`#${issueNumber}: ${err.message}`);
         } else {
           console.warn(`#${issueNumber}: unexpected error: ${errorDetail(err)}`);
@@ -143,6 +155,13 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
           escalatedToPro: failedPass === 'pro',
           failedPass: failedPass ?? undefined,
         });
+        if (failure?.kind === 'fatal') {
+          core.setFailed(`Stopped the run because ${FATAL_REASONS[failure.cause]}.`);
+          stoppedByFatalError = true;
+          break;
+        }
+        // The model answered, so a refusal says nothing about an outage and doesn't count toward the breaker.
+        if (failure?.kind === 'refusal') continue;
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {
           console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
@@ -168,7 +187,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     saveArtifact(0, 'run-summary.json', JSON.stringify(stats.toJSON(), null, 2));
   }
 
-  if (cfg.strictMode && stats.getFailed() > 0) {
+  if (cfg.strictMode && !stoppedByFatalError && stats.getFailed() > 0) {
     core.setFailed(`Strict mode enabled: ${stats.getFailed()} run(s) had errors.`);
   }
 }

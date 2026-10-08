@@ -51,6 +51,8 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 
 For each item — the triggering issue/PR, an explicit `issues` list, or auto-discovered backlog — AutoTriage gathers the body, full timeline, repository labels, and your policy. If `model-fast` is set, a cheap model screens the item first and clear no-ops stop there. The review model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
 
+Overloads and rate limits are waited out. A model error that no retry can fix, such as a rejected API key, an unknown model, or an account out of credit, stops the run and fails the job right away, even without `strict-mode`. An item the review model refuses is recorded as skipped and isn't sent again until it changes, and a reply cut off at the output token limit fails that item.
+
 A real reasoning transcript from MudBlazor's runs:
 
 > 💭 Thinking with gemini-3.5-flash-lite...

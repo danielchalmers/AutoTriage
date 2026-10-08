@@ -9,7 +9,7 @@ import {
   buildUserPrompt,
   parseAnalysisResult,
 } from './analysis';
-import type { CacheInfo, JsonRequest } from './llm/types';
+import { ModelError, type CacheInfo, type JsonRequest } from './llm/types';
 import type { ModelClient } from './model';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { RunStatistics, comparePlans, summarizePlan } from './stats';
@@ -102,19 +102,38 @@ export async function processIssue(
       return { triageUsed: false, fastRunUsed: fastPass.used };
     }
 
-    const proPass = await runPass(
-      { cfg, model, stats },
-      {
-        mode: 'pro',
-        issue,
-        repoLabels,
-        systemPrompt: systemPromptPro,
-        cacheInfos,
-        runTimestamp,
-        context,
-        ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
-      }
-    );
+    let proPass: PassResult;
+    try {
+      proPass = await runPass(
+        { cfg, model, stats },
+        {
+          mode: 'pro',
+          issue,
+          repoLabels,
+          systemPrompt: systemPromptPro,
+          cacheInfos,
+          runTimestamp,
+          context,
+          ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
+        }
+      );
+    } catch (err) {
+      if (!isRefusal(err)) throw err;
+      // The item is recorded as seen so later sweeps don't pay for the same refusal until it changes.
+      console.warn(chalk.yellow(`⚠️ The review model refused #${issue.number} (${err.message}); skipping it until it changes.`));
+      updateDbEntry(db, issue.number, issue.title, {
+        lastSeenUpdatedAt: getConsumedUpdatedAt(issue),
+      });
+      stats.recordItem({
+        issueNumber: issue.number,
+        type: issue.type,
+        outcome: 'skipped',
+        skipReason: 'refused',
+        escalatedToPro: fastPass.used,
+        fastPlan,
+      });
+      return { triageUsed: true, fastRunUsed: fastPass.used };
+    }
 
     const executionResult = await executePlannedOperations(
       { cfg, gh, stats },
@@ -151,6 +170,10 @@ export async function processIssue(
     });
     return { triageUsed: true, fastRunUsed: fastPass.used };
   });
+}
+
+function isRefusal(err: unknown): err is ModelError {
+  return err instanceof ModelError && err.failure.kind === 'refusal';
 }
 
 async function resolveConsumedIssue(
@@ -263,8 +286,15 @@ async function runFastPass(
     return { used: false, shouldSkipPro: false };
   }
 
-  const plan = await runPass(deps, { ...options, mode: 'fast', systemPrompt: options.systemPromptFast });
-  return { used: true, plan, shouldSkipPro: plan.operations.length === 0 };
+  try {
+    const plan = await runPass(deps, { ...options, mode: 'fast', systemPrompt: options.systemPromptFast });
+    return { used: true, plan, shouldSkipPro: plan.operations.length === 0 };
+  } catch (err) {
+    if (!isRefusal(err)) throw err;
+    // A refusal is not a no-op verdict, so the review model decides without a fast plan.
+    console.warn(chalk.yellow(`⚠️ The fast model refused #${options.issue.number} (${err.message}); escalating to the review model.`));
+    return { used: true, shouldSkipPro: false };
+  }
 }
 
 async function executePlannedOperations(

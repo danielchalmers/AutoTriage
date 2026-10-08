@@ -41,10 +41,13 @@ Start with the smallest useful context:
 - `src/github.ts` - GitHub API boundary.
 - `src/model.ts` - the `ModelClient` interface that triage calls the model through.
 - `src/llm/` - the model API boundary, with no SDK.
-  `types.ts` holds provider-neutral requests, results, and errors.
+  `types.ts` holds provider-neutral requests, results, errors, and failure kinds.
+  `errors.ts` holds error text and the status classifier every provider shares.
   `transport.ts` holds the undici fetch and the 600s request deadline.
-  `retry.ts` holds the ordinary and capacity retry schedules.
+  `retry.ts` holds the retry schedules for each failure kind.
   `gemini.ts` is the Gemini API adapter.
+  AutoTriage is the source of this folder and Nuntia copies it verbatim, so it imports only itself and `undici`.
+  Change it in paired AutoTriage and Nuntia PRs, and update the hash pinned in `tests/llmShared.test.ts`.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` and `src/prompt.ts` - prompt loading and prompt assembly.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.

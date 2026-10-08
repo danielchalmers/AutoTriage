@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import { GeminiClient } from '../src/llm/gemini';
+import { ModelError } from '../src/llm/types';
 import { buildRunContext, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
@@ -381,6 +382,78 @@ describe('processIssue', () => {
 
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(db.items['42']).toMatchObject({ summary: baseIssue.title });
+    });
+  });
+
+  it('escalates to the pro pass without a fast plan when the fast model refuses', async () => {
+    await withArtifactsDir(async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const model = {
+        generateJson: vi
+          .fn()
+          .mockRejectedValueOnce(new ModelError('Gemini declined to answer (finishReason SAFETY)', { kind: 'refusal' }))
+          .mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+      } as any;
+
+      const result = await processIssue({ cfg: createConfig(), db, gh: createGitHub(), model, stats }, processOptions());
+
+      expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
+      expect(model.generateJson).toHaveBeenCalledTimes(2);
+      expect(model.generateJson.mock.calls[1][0].userPrompt).not.toContain('FAST PASS PROPOSED PLAN');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('The fast model refused #42'));
+      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
+      expect(item).toMatchObject({ outcome: 'triaged', escalatedToPro: true, proPlan: { kinds: ['add_labels'], labels: ['+bug'] } });
+      expect(item.fastPlan).toBeUndefined();
+      expect(item.agreement).toBeUndefined();
+      expect(db.items['42']).toMatchObject({ summary: 'Pro summary' });
+    });
+  });
+
+  it('records a pro-pass refusal as skipped and consumes its watermark so it is not re-billed', async () => {
+    await withArtifactsDir(async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const gh = createGitHub({ getIssue: vi.fn() });
+      const model = {
+        generateJson: vi
+          .fn()
+          .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
+          .mockRejectedValueOnce(new ModelError('Gemini blocked the prompt (blockReason PROHIBITED_CONTENT)', { kind: 'refusal' })),
+      } as any;
+
+      const result = await processIssue({ cfg: createConfig({ dryRun: false }), db, gh, model, stats }, processOptions());
+
+      expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
+      expect(gh.getIssue).not.toHaveBeenCalled();
+      expect(gh.addLabels).not.toHaveBeenCalled();
+      expect(db.items['42']).toMatchObject({ summary: baseIssue.title, lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
+      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
+      expect(item).toMatchObject({ outcome: 'skipped', skipReason: 'refused', escalatedToPro: true, fastPlan: { kinds: ['add_labels'], labels: ['+bug'] } });
+      expect(item.proPlan).toBeUndefined();
+      // An unchanged item is left out of the next sweep's queue.
+      expect(buildAutoDiscoverQueue([baseIssue], db, true)).toEqual([]);
+    });
+  });
+
+  it('fails the item without retrying when the reply is truncated', async () => {
+    await withArtifactsDir(async () => {
+      const db: TriageDb = { version: 2, items: {} };
+      const fetch = vi.fn(async () => Response.json({ candidates: [{ content: { parts: [{ text: '{"summary":"cut' }] }, finishReason: 'MAX_TOKENS' }] }));
+      const model = new GeminiClient('test-key', fetch);
+      vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
+
+      const error = await processIssue(
+        { cfg: createConfig({ skipFastPass: true }), db, gh: createGitHub(), model, stats: new RunStatistics() },
+        processOptions()
+      ).catch((err: unknown) => err);
+
+      expect(error).toBeInstanceOf(ModelError);
+      expect((error as ModelError).failure).toEqual({ kind: 'truncated' });
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(db.items['42']).toBeUndefined();
     });
   });
 

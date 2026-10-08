@@ -139,11 +139,27 @@ describe('model API errors', () => {
     expect(error).toMatchObject({ status: 429, message: JSON.stringify(body) })
   })
 
+  it('classifies the response and reads a whole-second Retry-After', async () => {
+    const body = '{"error":{"code":503,"status":"UNAVAILABLE"}}'
+    const errorFor = (retryAfter?: string) => {
+      const headers: Record<string, string> = { 'content-type': 'application/json' }
+      if (retryAfter !== undefined) headers['retry-after'] = retryAfter
+      return requestJson(respond(body, { status: 503, headers }), baseUrl, POST).catch((err: unknown) => err)
+    }
+
+    expect(await errorFor('30')).toMatchObject({ failure: { kind: 'capacity' }, retryAfterSeconds: 30 })
+    // Fractions and HTTP dates are ignored, so the capacity schedule decides alone.
+    expect(await errorFor('1.5')).toMatchObject({ retryAfterSeconds: undefined })
+    expect(await errorFor('Wed, 21 Oct 2026 07:28:00 GMT')).toMatchObject({ retryAfterSeconds: undefined })
+    expect(await errorFor()).toMatchObject({ retryAfterSeconds: undefined })
+  })
+
   it('wraps a non-JSON error body in the same shape', async () => {
     const fetch = respond('upstream timed out', { status: 504, statusText: 'Gateway Timeout', headers: { 'content-type': 'text/plain' } })
 
     await expect(requestJson(fetch, baseUrl, POST)).rejects.toMatchObject({
       status: 504,
+      failure: { kind: 'retryable' },
       message: '{"error":{"message":"upstream timed out","code":504,"status":"Gateway Timeout"}}',
     })
   })
