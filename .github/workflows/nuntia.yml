@@ -14,9 +14,9 @@ on:
         required: true
         default: "https://raw.githubusercontent.com/danielchalmers/Nuntia/refs/heads/main/examples/Nuntia.prompt"
       model:
-        description: "Gemini model (use pro for best results)"
+        description: "Model"
         required: true
-        default: "gemini-3.1-pro-preview"
+        default: "claude-opus-5-5"
 
 jobs:
   release-notes:
@@ -38,7 +38,7 @@ jobs:
           model: ${{ inputs.model }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
