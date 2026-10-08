@@ -425,6 +425,25 @@ describe('runAutoTriage', () => {
     expect(stats.incrementTriaged).toHaveBeenCalledOnce();
   });
 
+  it('reports a refused item as skipped but still counts its review call against the pro budget', async () => {
+    processIssueMock
+      .mockResolvedValueOnce({ triageUsed: true, fastRunUsed: true, skipped: true })
+      .mockResolvedValueOnce({ triageUsed: true, fastRunUsed: true });
+    const stats = createStats();
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      models: bothPasses(createModel()),
+      stats: stats as any,
+    });
+
+    expect(processIssueMock).toHaveBeenCalledOnce();
+    expect(stats.incrementSkipped).toHaveBeenCalledOnce();
+    expect(stats.incrementTriaged).not.toHaveBeenCalled();
+  });
+
   it('ignores the fast-run cap and creates only the pro cache when the fast pass is disabled', async () => {
     processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: false });
     const gh = createGitHub();

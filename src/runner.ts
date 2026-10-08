@@ -144,12 +144,12 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       try {
         stats.beginPass(null);
         const issue = await gh.getIssue(issueNumber);
-        const { triageUsed, fastRunUsed } = await processIssue(
+        const { triageUsed, fastRunUsed, skipped } = await processIssue(
           { cfg, db, gh, models, stats },
           { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp }
         );
-        if (triageUsed) {
-          triagesPerformed++;
+        if (triageUsed) triagesPerformed++;
+        if (triageUsed && !skipped) {
           stats.incrementTriaged();
         } else {
           stats.incrementSkipped();

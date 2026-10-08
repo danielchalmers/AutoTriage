@@ -10,7 +10,8 @@ import type { ModelClient, ModelClients } from './model';
 import { GitHubClient } from './github';
 import { RunStatistics } from './stats';
 import { runAutoTriage } from './runner';
-import { errorDetail } from './util';
+import type { Config } from './config';
+import { errorDetail, errorMessage } from './util';
 import chalk from 'chalk';
 
 chalk.level = 3;
@@ -42,7 +43,14 @@ function clientFor(resolved: ResolvedModel): ModelClient {
   return client;
 }
 
-const cfg = getConfig();
+// A configuration error already says what to fix, so it fails the action with that message alone instead of a crash with a stack.
+let cfg: Config;
+try {
+  cfg = getConfig();
+} catch (err) {
+  core.setFailed(errorMessage(err));
+  process.exit(1);
+}
 for (const line of describeModels(cfg.models)) console.log(line);
 const db = loadDatabase(cfg.dbPath);
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);

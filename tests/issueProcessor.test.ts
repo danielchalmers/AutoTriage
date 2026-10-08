@@ -427,7 +427,7 @@ describe('processIssue', () => {
 
       const result = await processIssue({ cfg: createConfig({ dryRun: false }), db, gh, models: bothPasses(model), stats }, processOptions());
 
-      expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
+      expect(result).toEqual({ triageUsed: true, fastRunUsed: true, skipped: true });
       expect(gh.getIssue).not.toHaveBeenCalled();
       expect(gh.addLabels).not.toHaveBeenCalled();
       expect(db.items['42']).toMatchObject({ summary: baseIssue.title, lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });

@@ -161,14 +161,17 @@ describe('AutoTriage action entry point', () => {
     await vi.waitFor(() => expect(mocks.setFailed).toHaveBeenCalledWith(error.stack));
   });
 
-  it('does not start a run when the config is invalid', async () => {
+  it('fails with the config error alone and does not start a run when the config is invalid', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit ${code}`);
+    }) as never);
     mocks.getConfig.mockImplementation(() => {
       throw new Error('GITHUB_TOKEN missing (add: secrets.GITHUB_TOKEN).');
     });
 
-    // At runtime this throw reaches the uncaughtException handler registered just before it.
-    await expect(importEntryPoint()).rejects.toThrow('GITHUB_TOKEN missing');
-    expect(handlers.uncaughtException).toBeTypeOf('function');
+    await expect(importEntryPoint()).rejects.toThrow('exit 1');
+    expect(mocks.setFailed).toHaveBeenCalledWith('GITHUB_TOKEN missing (add: secrets.GITHUB_TOKEN).');
+    expect(exit).toHaveBeenCalledWith(1);
     expect(mocks.runAutoTriage).not.toHaveBeenCalled();
   });
 

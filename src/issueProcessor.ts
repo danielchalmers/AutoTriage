@@ -68,7 +68,7 @@ interface FastPassResult {
 export async function processIssue(
   deps: IssueProcessorDeps,
   options: ProcessIssueOptions
-): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
+): Promise<{ triageUsed: boolean; fastRunUsed: boolean; skipped?: boolean }> {
   const { cfg, db, gh, models, stats } = deps;
   const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp } = options;
 
@@ -132,7 +132,8 @@ export async function processIssue(
         escalatedToPro: fastPass.used,
         fastPlan,
       });
-      return { triageUsed: true, fastRunUsed: fastPass.used };
+      // The refused call still counts against max-pro-runs, but the item is reported as skipped.
+      return { triageUsed: true, fastRunUsed: fastPass.used, skipped: true };
     }
 
     const executionResult = await executePlannedOperations(
