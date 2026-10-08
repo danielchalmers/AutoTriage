@@ -5,6 +5,8 @@ import { vi } from 'vitest';
 import { Issue } from '../src/github';
 import { TriageDb } from '../src/storage';
 import type { Config } from '../src/config';
+import type { ResolvedModel } from '../src/llm/resolve';
+import type { ModelClients } from '../src/model';
 
 export const baseIssue: Omit<Issue, 'number' | 'updated_at' | 'created_at'> = {
   title: 'Sample',
@@ -83,19 +85,39 @@ export function withTempFiles<T>(files: Record<string, string>, fn: (file: (name
   }
 }
 
+// A model resolved to Gemini, as getConfig resolves it with only GEMINI_API_KEY set.
+export function makeResolvedModel(model: string, overrides: Partial<ResolvedModel> = {}): ResolvedModel {
+  return {
+    provider: 'gemini',
+    model,
+    tier: 'best-effort',
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    host: 'generativelanguage.googleapis.com',
+    apiKey: 'key',
+    reason: 'set by model-pro',
+    isDefault: false,
+    ...overrides,
+  };
+}
+
+// The same client for both passes, for tests where only one provider is in play.
+export function bothPasses(model: unknown): ModelClients {
+  return { fast: model, pro: model } as ModelClients;
+}
+
 // Mirrors the production defaults so a new Config field only has to be added here.
 export function makeConfig(overrides: Partial<Config> = {}): Config {
   return {
     owner: 'owner',
     repo: 'repo',
     token: 'token',
-    geminiApiKey: 'key',
     dryRun: true,
     promptPath: 'examples/AutoTriage.prompt',
     readmePath: 'README.md',
     skipFastPass: false,
     modelFast: 'fast-model',
     modelPro: 'pro-model',
+    models: { fast: makeResolvedModel('fast-model', { reason: 'set by model-fast' }), pro: makeResolvedModel('pro-model') },
     limits: {
       fast: { readmeChars: 0, issueBodyChars: 4000, timelineEvents: 12, timelineTextChars: 600 },
       pro: { readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 },

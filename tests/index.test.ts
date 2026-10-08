@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeConfig, makeDb } from './fixtures';
+import { makeConfig, makeDb, makeResolvedModel } from './fixtures';
 
 // src/index.ts wires everything together and starts the run as soon as it is imported, so each test imports a fresh copy with its collaborators mocked.
 const mocks = vi.hoisted(() => ({
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@actions/core', () => ({ setFailed: mocks.setFailed }));
-vi.mock('../src/env', () => ({ getConfig: mocks.getConfig }));
+vi.mock('../src/env', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/env')>()), getConfig: mocks.getConfig }));
 vi.mock('../src/storage', () => ({ loadDatabase: mocks.loadDatabase }));
 vi.mock('../src/runner', () => ({ runAutoTriage: mocks.runAutoTriage }));
 vi.mock('../src/github', () => ({
@@ -30,7 +30,16 @@ vi.mock('../src/llm/gemini', () => ({
   },
 }));
 
-const cfg = makeConfig({ owner: 'octo', repo: 'demo', token: 'gh-token', geminiApiKey: 'gemini-key', dbPath: 'triage-db.json' });
+const cfg = makeConfig({
+  owner: 'octo',
+  repo: 'demo',
+  token: 'gh-token',
+  dbPath: 'triage-db.json',
+  models: {
+    fast: makeResolvedModel('fast-model', { apiKey: 'gemini-key', reason: 'set by model-fast' }),
+    pro: makeResolvedModel('pro-model', { apiKey: 'gemini-key', tier: 'official', reason: 'default for GEMINI_API_KEY', isDefault: true }),
+  },
+});
 const db = makeDb({ '1': { summary: 'known' } });
 
 // Process-level handlers are captured instead of installed, so the test worker keeps its own crash handling.
@@ -71,9 +80,41 @@ describe('AutoTriage action entry point', () => {
     const deps = mocks.runAutoTriage.mock.calls[0]![0];
     expect(deps.cfg).toBe(cfg);
     expect(deps.db).toBe(db);
-    expect(deps.model).toBeDefined();
-    expect(deps.stats.toJSON()).toMatchObject({ repo: 'octo/demo', models: { fast: 'fast-model', pro: 'pro-model' } });
+    // Both passes use Gemini, so they share one client.
+    expect(deps.models.pro).toBeDefined();
+    expect(deps.models.fast).toBe(deps.models.pro);
+    expect(deps.stats.toJSON()).toMatchObject({
+      repo: 'octo/demo',
+      models: { fast: 'fast-model', pro: 'pro-model' },
+      providers: { fast: { provider: 'gemini', tier: 'best-effort' }, pro: { provider: 'gemini', tier: 'official' } },
+    });
     expect(mocks.setFailed).not.toHaveBeenCalled();
+  });
+
+  it('logs which provider serves each pass', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await importEntryPoint();
+
+    expect(log).toHaveBeenCalledWith('Model (fast): fast-model via gemini [best effort] — set by model-fast.');
+    expect(log).toHaveBeenCalledWith('Model (pro): pro-model via gemini [official] — default for GEMINI_API_KEY; set model-pro to change.');
+  });
+
+  it('gives a skipped fast pass the pro client and records no fast provider', async () => {
+    mocks.getConfig.mockReturnValue({ ...cfg, skipFastPass: true, modelFast: '', models: { fast: null, pro: cfg.models.pro } });
+
+    await importEntryPoint();
+
+    const deps = mocks.runAutoTriage.mock.calls[0]![0];
+    expect(deps.models.fast).toBe(deps.models.pro);
+    expect(deps.stats.toJSON().providers).toEqual({ fast: null, pro: { provider: 'gemini', tier: 'official' } });
+  });
+
+  it('does not start a run for a provider without a client yet', async () => {
+    mocks.getConfig.mockReturnValue({ ...cfg, models: { ...cfg.models, pro: makeResolvedModel('claude-haiku-5-5', { provider: 'anthropic' }) } });
+
+    await expect(importEntryPoint()).rejects.toThrow('The anthropic provider is not implemented yet.');
+    expect(mocks.runAutoTriage).not.toHaveBeenCalled();
   });
 
   it('fails the action with the stack when the run rejects', async () => {

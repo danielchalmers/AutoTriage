@@ -13,7 +13,7 @@ import { THINKING_LEVEL } from './llm/gemini';
 import { ModelError, type CacheInfo, type FatalCause } from './llm/types';
 import { GitHubClient } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
-import type { RunStatistics } from './stats';
+import type { FailureReason, RunStatistics } from './stats';
 import type { Config } from './config';
 import { TriageDb, saveArtifact, saveDatabase } from './storage';
 import { errorDetail, errorMessage } from './util';
@@ -40,13 +40,19 @@ const FATAL_REASONS: Record<FatalCause, string> = {
   quota: 'the model API account is out of credit or over its spend limit. Check its billing',
 };
 
+// How a failed item is recorded in the run summary.
+function failureReasonOf(err: unknown): FailureReason {
+  if (!(err instanceof ModelError)) return 'other';
+  return err.failure.kind === 'fatal' ? err.failure.cause : err.failure.kind;
+}
+
 // Truncated content hash so run summaries can be segmented by prompt version.
 function hashPrompt(text: string): string {
   return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16)}`;
 }
 
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
-  const { cfg, db, gh, model, stats } = deps;
+  const { cfg, db, gh, models, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
   stats.setDiscovered(targets.length);
@@ -95,7 +101,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     ];
     for (const { mode, modelName, systemPrompt } of cacheTargets) {
       try {
-        const cacheInfo = await model.createCache(modelName, systemPrompt, `autotriage-${mode}-${cfg.owner}/${cfg.repo}`);
+        const cacheInfo = await models[mode].createCache(modelName, systemPrompt, `autotriage-${mode}-${cfg.owner}/${cfg.repo}`);
         cacheInfos.set(mode, cacheInfo);
         stats.trackCacheCreate({ mode, model: modelName, name: cacheInfo.name, tokenCount: cacheInfo.tokenCount });
       } catch (err) {
@@ -124,7 +130,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         stats.beginPass(null);
         const issue = await gh.getIssue(issueNumber);
         const { triageUsed, fastRunUsed } = await processIssue(
-          { cfg, db, gh, model, stats },
+          { cfg, db, gh, models, stats },
           { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp }
         );
         if (triageUsed) {
@@ -154,6 +160,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
           outcome: 'failed',
           escalatedToPro: failedPass === 'pro',
           failedPass: failedPass ?? undefined,
+          failureReason: failureReasonOf(err),
         });
         if (failure?.kind === 'fatal') {
           core.setFailed(`Stopped the run because ${FATAL_REASONS[failure.cause]}.`);
@@ -178,8 +185,8 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       }
     }
   } finally {
-    for (const [, cacheInfo] of cacheInfos) {
-      await model.deleteCache(cacheInfo.name);
+    for (const [mode, cacheInfo] of cacheInfos) {
+      await models[mode].deleteCache(cacheInfo.name);
     }
     // Emit run telemetry even when the run aborts, so failed runs remain researchable.
     stats.incrementGithubApiCalls(gh.getApiCallCount());

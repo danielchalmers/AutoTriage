@@ -8,14 +8,22 @@ const LLM_DIR = path.join(__dirname, '..', 'src', 'llm')
 const HEADER = '// Source: AutoTriage (danielchalmers/AutoTriage, src/llm/). Nuntia copies this folder verbatim, so change it in AutoTriage and copy it over in a paired PR.'
 
 // Update this after changing src/llm/, and copy the folder to Nuntia in a paired PR.
-const PINNED_HASH = 'sha256:daa0e8789cfad23ab09489c8302c6554f8f6cfc2c5a0979db19ae56dd6f2cdc4'
+const PINNED_HASH = 'sha256:0228fafd1347688a914c5ec6afdf24639b2ff24b53e0d13661bddb4d85bf90cf'
 
-function llmFiles(): Array<{ name: string; text: string }> {
-  return fs.readdirSync(LLM_DIR)
+// Nuntia copies the shared tests too, so they must not reach outside src/llm/ either.
+const LLM_TESTS_DIR = path.join(__dirname, 'llm')
+const TESTS_HEADER = '// Source: AutoTriage (danielchalmers/AutoTriage, tests/llm/). Nuntia copies this folder verbatim, so change it in AutoTriage and copy it over in a paired PR.'
+
+function llmFiles(dir = LLM_DIR): Array<{ name: string; text: string }> {
+  return fs.readdirSync(dir)
     .filter(name => name.endsWith('.ts'))
     .sort()
     // Line endings are normalized so a Windows checkout hashes the same as CI.
-    .map(name => ({ name, text: fs.readFileSync(path.join(LLM_DIR, name), 'utf8').replace(/\r\n/g, '\n') }))
+    .map(name => ({ name, text: fs.readFileSync(path.join(dir, name), 'utf8').replace(/\r\n/g, '\n') }))
+}
+
+function importSpecifiers(text: string): string[] {
+  return [...text.matchAll(/^\s*(?:import|export)\b[^'"]*?from\s+'([^']+)'/gm)].map(match => match[1]!)
 }
 
 describe('src/llm', () => {
@@ -27,9 +35,19 @@ describe('src/llm', () => {
 
   it('imports only its own files and undici', () => {
     for (const { name, text } of llmFiles()) {
-      const specifiers = [...text.matchAll(/^\s*(?:import|export)\b[^'"]*?from\s+'([^']+)'/gm)].map(match => match[1])
-      for (const specifier of specifiers) {
+      for (const specifier of importSpecifiers(text)) {
         expect(specifier, name).toMatch(/^(\.\/[\w-]+|undici)$/)
+      }
+    }
+  })
+
+  it('has shared tests that name AutoTriage as the source and import only vitest, src/llm/ and each other', () => {
+    const tests = llmFiles(LLM_TESTS_DIR)
+    expect(tests.length).toBeGreaterThan(0)
+    for (const { name, text } of tests) {
+      expect(text.split('\n')[0], name).toBe(TESTS_HEADER)
+      for (const specifier of importSpecifiers(text)) {
+        expect(specifier, name).toMatch(/^(\.\/[\w-]+|\.\.\/\.\.\/src\/llm\/[\w-]+|vitest)$/)
       }
     }
   })

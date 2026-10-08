@@ -73,8 +73,8 @@ A real reasoning transcript from MudBlazor's runs:
 | `issues` | Space or comma separated issue or PR numbers. | event target or backlog |
 | `max-fast-runs` | Maximum fast-model analyses per run. | `100` |
 | `max-pro-runs` | Maximum review-model analyses per run. | `20` |
-| `model-fast` | Fast-pass model. Leave blank to skip. | `""` (skip) |
-| `model-pro` | Review model for final planning. | `gemini-3.5-flash-lite` |
+| `model-fast` | Fast-pass model, optionally with a `gemini/`, `anthropic/` or `openai/` prefix. Leave blank to skip. | `""` (skip) |
+| `model-pro` | Review model. Blank uses the default for the API key you set (`gemini-3.5-flash-lite` for `GEMINI_API_KEY`). | `""` (default for your key) |
 | `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
 | `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
 
@@ -82,9 +82,10 @@ A real reasoning transcript from MudBlazor's runs:
 
 Each run writes a machine-readable `run-summary.json` to the `artifacts/` directory (alongside the per-issue prompts and analyses). It mirrors the `📊 Run Statistics` log in structured form so runs can be aggregated across history rather than scraped from logs. It includes:
 
+- `models` / `providers` — the model ID each pass sent, and the provider and support tier (`official` or `best-effort`) that served it. A skipped fast pass is `null`.
 - `config` / `promptHash` — the run's effective settings and truncated hashes of the assembled system prompts, so runs can be segmented by configuration and policy version.
 - `funnel` — items discovered, processed, triaged, skipped, escalated to the pro pass, which run cap was hit, skip reasons, and `planAgreement` (how often the pro pass confirmed, vetoed, or amended the fast pass's plan).
 - `fast` / `pro` — per-pass duration percentiles and token usage, including `thoughtsTokens` (the hidden thinking budget Gemini bills but excludes from output tokens).
-- `items` — per-item rows with outcome, pass timing/tokens, the operations performed, what each pass planned (`fastPlan` / `proPlan` / `agreement`), and for failures, which pass failed (`failedPass`).
+- `items` — per-item rows with outcome, pass timing/tokens, the operations performed, what each pass planned (`fastPlan` / `proPlan` / `agreement`), and for failures, which pass failed (`failedPass`) and why (`failureReason`: a model failure kind such as `capacity` or `truncated`, the fatal cause `auth`, `model` or `quota`, or `other` for an error outside the model call).
 
 Upload it by including `artifacts/` in your workflow's `upload-artifact` step.

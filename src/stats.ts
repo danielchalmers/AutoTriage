@@ -27,6 +27,19 @@ export interface ActionDetail {
 
 export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
 export type SkipReason = 'noop-fast' | 'deferred' | 'refused' | 'other';
+// Why a failed item failed: the model failure kind, the fatal cause (`auth`, `model`, `quota`) for a fatal one, or `other` for an error outside the model call.
+export type FailureReason = 'capacity' | 'retryable' | 'permanent' | 'truncated' | 'refusal' | 'auth' | 'model' | 'quota' | 'other';
+
+// Which provider served a pass and at which support tier.
+export interface PassProvider {
+  provider: string;
+  tier: string;
+}
+
+export interface PassProviders {
+  fast: PassProvider | null;
+  pro: PassProvider | null;
+}
 
 // Compact, comparable form of what a pass planned: sorted unique operation kinds plus signed label changes (`+bug`, `-stale`).
 export interface PlanSummary {
@@ -47,6 +60,7 @@ export interface ItemRecord {
   proPlan?: PlanSummary | undefined;
   agreement?: PlanAgreement | undefined;
   failedPass?: 'fast' | 'pro' | undefined;
+  failureReason?: FailureReason | undefined;
 }
 
 export interface RunConfigSnapshot {
@@ -122,6 +136,7 @@ export class RunStatistics {
   private repo = '';
   private modelFast = '';
   private modelPro = '';
+  private providers: PassProviders = { fast: null, pro: null };
   private discovered = 0;
   private capReached: CapReached = 'none';
   private items = new Map<number, ItemRecord>();
@@ -137,6 +152,10 @@ export class RunStatistics {
   setModelNames(modelFast: string, modelPro: string): void {
     this.modelFast = modelFast;
     this.modelPro = modelPro;
+  }
+
+  setProviders(providers: PassProviders): void {
+    this.providers = providers;
   }
 
   trackFastRun(stats: ModelRunStats): void {
@@ -380,6 +399,7 @@ export class RunStatistics {
           proPlan: record?.proPlan,
           agreement: record?.agreement,
           failedPass: record?.failedPass,
+          failureReason: record?.failureReason,
           fast: this.perItemModel(this.fastRuns, number),
           pro: this.perItemModel(this.proRuns, number),
           operations: actionsByIssue.get(number) ?? [],
@@ -387,12 +407,13 @@ export class RunStatistics {
       });
 
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       repo: this.owner && this.repo ? `${this.owner}/${this.repo}` : '',
       models: {
         fast: this.modelFast || null,
         pro: this.modelPro || null,
       },
+      providers: this.providers,
       config: this.runConfig,
       promptHash: this.promptHashes,
       github: {

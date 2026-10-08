@@ -9,7 +9,7 @@ import { RunStatistics } from '../src/stats';
 import type { TriageDb } from '../src/storage';
 import { TimelineEvent } from '../src/github';
 import { buildAutoDiscoverQueue } from '../src/autoDiscover';
-import { makeConfig, makeIssue, withArtifactsDir } from './fixtures';
+import { bothPasses, makeConfig, makeIssue, withArtifactsDir } from './fixtures';
 
 const baseIssue = makeIssue(42, '2024-04-10T00:00:00Z', { created_at: '2024-04-01T00:00:00Z' });
 
@@ -109,7 +109,7 @@ describe('processIssue', () => {
       } as any;
 
       const result = await processIssue(
-        { cfg: createConfig(), db, gh, model, stats },
+        { cfg: createConfig(), db, gh, models: bothPasses(model), stats },
         processOptions()
       );
 
@@ -152,7 +152,7 @@ describe('processIssue', () => {
       } as any;
 
       const result = await processIssue(
-        { cfg: createConfig({ dryRun: false }), db, gh, model, stats },
+        { cfg: createConfig({ dryRun: false }), db, gh, models: bothPasses(model), stats },
         processOptions()
       );
 
@@ -196,7 +196,7 @@ describe('processIssue', () => {
       } as any;
 
       const result = await processIssue(
-        { cfg: createConfig({ dryRun: false }), db, gh, model, stats },
+        { cfg: createConfig({ dryRun: false }), db, gh, models: bothPasses(model), stats },
         processOptions()
       );
 
@@ -209,27 +209,26 @@ describe('processIssue', () => {
     });
   });
 
-  it('sends each pass to its model, uses the cached flex tier when cached, and hands the fast plan to the pro pass', async () => {
+  it('sends each pass to its own client and model, uses the cached flex tier when cached, and hands the fast plan to the pro pass', async () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub();
-      const model = {
-        generateJson: vi
-          .fn()
-          .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
-          .mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
-      } as any;
+      // model-fast and model-pro can be served by different providers.
+      const fast = { generateJson: vi.fn().mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10)) } as any;
+      const pro = { generateJson: vi.fn().mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)) } as any;
 
       await processIssue(
-        { cfg: createConfig(), db, gh, model, stats },
+        { cfg: createConfig(), db, gh, models: { fast, pro }, stats },
         processOptions({ cacheInfos: new Map([['pro', { name: 'cachedContents/pro', tokenCount: 100 }]]) })
       );
 
-      const [fastRequest] = model.generateJson.mock.calls[0];
+      expect(fast.generateJson).toHaveBeenCalledOnce();
+      expect(pro.generateJson).toHaveBeenCalledOnce();
+      const [fastRequest] = fast.generateJson.mock.calls[0];
       expect(fastRequest).toMatchObject({ model: 'fast-model', systemPrompt: 'fast system prompt', cacheName: undefined, useFlexTier: false });
 
-      const [proRequest] = model.generateJson.mock.calls[1];
+      const [proRequest] = pro.generateJson.mock.calls[0];
       expect(proRequest).toMatchObject({ model: 'pro-model', systemPrompt: 'pro system prompt', cacheName: 'cachedContents/pro', useFlexTier: true });
       const proUserPrompt = proRequest.userPrompt;
       expect(proUserPrompt).toContain('=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===');
@@ -257,7 +256,7 @@ describe('processIssue', () => {
 
       try {
         const result = await processIssue(
-          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, model, stats },
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
           processOptions({ systemPromptFast: '' })
         );
 
@@ -298,7 +297,7 @@ describe('processIssue', () => {
 
       try {
         await processIssue(
-          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, model, stats },
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
           processOptions({ systemPromptFast: '' })
         );
 
@@ -335,7 +334,7 @@ describe('processIssue', () => {
 
       try {
         await processIssue(
-          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, model, stats },
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
           processOptions({ systemPromptFast: '' })
         );
 
@@ -360,7 +359,7 @@ describe('processIssue', () => {
       } as any;
 
       await processIssue(
-        { cfg: createConfig({ dryRun: true, skipFastPass: true }), db, gh, model, stats },
+        { cfg: createConfig({ dryRun: true, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
         processOptions({ systemPromptFast: '' })
       );
 
@@ -378,7 +377,7 @@ describe('processIssue', () => {
       const model = new GeminiClient('test-key', fetch);
       vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
 
-      await processIssue({ cfg: createConfig(), db, gh: createGitHub(), model, stats }, processOptions());
+      await processIssue({ cfg: createConfig(), db, gh: createGitHub(), models: bothPasses(model), stats }, processOptions());
 
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(db.items['42']).toMatchObject({ summary: baseIssue.title });
@@ -397,7 +396,7 @@ describe('processIssue', () => {
           .mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
       } as any;
 
-      const result = await processIssue({ cfg: createConfig(), db, gh: createGitHub(), model, stats }, processOptions());
+      const result = await processIssue({ cfg: createConfig(), db, gh: createGitHub(), models: bothPasses(model), stats }, processOptions());
 
       expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
       expect(model.generateJson).toHaveBeenCalledTimes(2);
@@ -424,7 +423,7 @@ describe('processIssue', () => {
           .mockRejectedValueOnce(new ModelError('Gemini blocked the prompt (blockReason PROHIBITED_CONTENT)', { kind: 'refusal' })),
       } as any;
 
-      const result = await processIssue({ cfg: createConfig({ dryRun: false }), db, gh, model, stats }, processOptions());
+      const result = await processIssue({ cfg: createConfig({ dryRun: false }), db, gh, models: bothPasses(model), stats }, processOptions());
 
       expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
       expect(gh.getIssue).not.toHaveBeenCalled();
@@ -446,7 +445,7 @@ describe('processIssue', () => {
       vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
 
       const error = await processIssue(
-        { cfg: createConfig({ skipFastPass: true }), db, gh: createGitHub(), model, stats: new RunStatistics() },
+        { cfg: createConfig({ skipFastPass: true }), db, gh: createGitHub(), models: bothPasses(model), stats: new RunStatistics() },
         processOptions()
       ).catch((err: unknown) => err);
 
@@ -471,7 +470,7 @@ describe('processIssue', () => {
       } as any;
 
       await expect(
-        processIssue({ cfg: createConfig(), db, gh, model, stats }, processOptions())
+        processIssue({ cfg: createConfig(), db, gh, models: bothPasses(model), stats }, processOptions())
       ).rejects.toThrow('503');
       expect(stats.getCurrentPass()).toBe('pro');
     });

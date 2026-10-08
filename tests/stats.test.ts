@@ -114,6 +114,7 @@ describe('RunStatistics', () => {
     it('captures the funnel, per-pass thinking tokens, and per-item rows', () => {
       stats.setRepository('octo', 'demo');
       stats.setModelNames('fast-model', 'pro-model');
+      stats.setProviders({ fast: { provider: 'gemini', tier: 'official' }, pro: { provider: 'anthropic', tier: 'best-effort' } });
       stats.setDiscovered(100);
       stats.setCapReached('fast');
       stats.incrementGithubApiCalls(12);
@@ -182,14 +183,15 @@ describe('RunStatistics', () => {
       stats.incrementTriaged();
 
       // Item 3: escalated but the pro call failed.
-      stats.recordItem({ issueNumber: 3, outcome: 'failed', escalatedToPro: true, failedPass: 'pro' });
+      stats.recordItem({ issueNumber: 3, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'capacity' });
       stats.incrementFailed();
 
       const json = stats.toJSON() as any;
 
-      expect(json.schemaVersion).toBe(2);
+      expect(json.schemaVersion).toBe(3);
       expect(json.repo).toBe('octo/demo');
       expect(json.models).toEqual({ fast: 'fast-model', pro: 'pro-model' });
+      expect(json.providers).toEqual({ fast: { provider: 'gemini', tier: 'official' }, pro: { provider: 'anthropic', tier: 'best-effort' } });
       expect(json.config).toMatchObject({ maxFastRuns: 30, thinkingLevel: 'high' });
       expect(json.promptHash).toEqual({ fast: 'sha256:aaaa', pro: 'sha256:bbbb' });
       expect(json.github).toEqual({ calls: 12, retries: 0 });
@@ -220,7 +222,8 @@ describe('RunStatistics', () => {
       expect(item2.operations).toEqual(['add_labels']);
 
       const item3 = json.items.find((i: any) => i.number === 3);
-      expect(item3).toMatchObject({ outcome: 'failed', escalatedToPro: true, failedPass: 'pro' });
+      expect(item3).toMatchObject({ outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'capacity' });
+      expect(JSON.stringify(item2)).not.toContain('failureReason');
     });
 
     it('serializes an empty run without throwing', () => {
@@ -230,6 +233,7 @@ describe('RunStatistics', () => {
       expect(json.items).toEqual([]);
       expect(json.config).toBeNull();
       expect(json.promptHash).toBeNull();
+      expect(json.providers).toEqual({ fast: null, pro: null });
     });
 
   });

@@ -1,11 +1,16 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import type { Config, PromptPassLimits } from './config';
+import { describeModel, resolveModel, type ModelEnv, type ProviderId, type ResolvedModel } from './llm/resolve';
 
 const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
-const DEFAULT_MODEL_FAST = '';
-const DEFAULT_MODEL_PRO = 'gemini-3.5-flash-lite';
+// The review model each key gets when model-pro is blank. GEMINI_API_KEY keeps the model it had before other providers were supported.
+const DEFAULT_MODELS: Record<ProviderId, string> = {
+  gemini: 'gemini-3.5-flash-lite',
+  anthropic: 'claude-haiku-5-5',
+  openai: 'gpt-6-luna',
+};
 const DEFAULT_BUDGET_SCALE = 1;
 const DEFAULT_MAX_PRO_RUNS = 20;
 const DEFAULT_MAX_FAST_RUNS = 100;
@@ -59,12 +64,46 @@ function parseOptionalInput(name: string): string | undefined {
   return normalizeInput(core.getInput(name));
 }
 
-function parseModelFastInput(): { modelFast: string; skipFastPass: boolean } {
-  // An omitted or blank model-fast is how a workflow opts out of the screening pass.
-  const normalized = parseOptionalInput('model-fast');
-  return normalized
-    ? { modelFast: normalized, skipFastPass: false }
-    : { modelFast: DEFAULT_MODEL_FAST, skipFastPass: true };
+/**
+ * The model API settings, read only from the variables resolution documents.
+ * Keys are masked so a later log line can't print them.
+ */
+function readModelEnv(): ModelEnv {
+  const env: ModelEnv = {
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL,
+  };
+  for (const key of [env.GEMINI_API_KEY, env.ANTHROPIC_API_KEY, env.OPENAI_API_KEY]) {
+    if (key?.trim()) core.setSecret(key.trim());
+  }
+  return env;
+}
+
+/**
+ * Resolve both passes' models.
+ * A blank model-fast is how a workflow opts out of the screening pass, and a blank model-pro uses the default for the first key set.
+ */
+function resolveModels(env: ModelEnv): Config['models'] {
+  const pro = resolveModel({ input: 'model-pro', value: core.getInput('model-pro'), env, defaults: DEFAULT_MODELS });
+  const fastInput = parseOptionalInput('model-fast');
+  const fast: ResolvedModel | null = fastInput
+    ? resolveModel({ input: 'model-fast', value: fastInput, env, defaults: DEFAULT_MODELS })
+    : null;
+  return { fast, pro };
+}
+
+/**
+ * The startup log lines that say which provider serves each pass and why.
+ * e.g. `Model (pro): claude-haiku-5-5 via anthropic [official] — default for ANTHROPIC_API_KEY; set model-pro to change.`
+ */
+export function describeModels(models: Config['models']): string[] {
+  const passes = [['fast', models.fast], ['pro', models.pro]] as const;
+  return passes.flatMap(([pass, resolved]) => resolved
+    ? [`Model (${pass}): ${describeModel(resolved)}${resolved.isDefault ? `; set model-${pass} to change.` : '.'}`]
+    : []);
 }
 
 function applyMultiplier(base: number, multiplier: number): number {
@@ -99,22 +138,19 @@ function resolveWorkflowRepository(): { owner: string; repo: string } {
 
 /**
  * Resolve runtime config.
- * Throws early with actionable messages if mandatory secrets (GITHUB_TOKEN, GEMINI_API_KEY) are missing or repo context is absent.
+ * Throws early with actionable messages if GITHUB_TOKEN is missing, no model input can be resolved to a provider with its key, or repo context is absent.
  */
 export function getConfig(): Config {
   const { owner, repo } = resolveWorkflowRepository();
   const token = process.env.GITHUB_TOKEN || '';
-  const geminiApiKey = process.env.GEMINI_API_KEY || '';
 
   if (!token) throw new Error('GITHUB_TOKEN missing (add: secrets.GITHUB_TOKEN).');
-  if (!geminiApiKey) throw new Error('GEMINI_API_KEY missing (add it as a repository secret).');
+  const models = resolveModels(readModelEnv());
 
   const dryRun = parseBooleanInput('dry-run');
   const promptPath = parseInputOrDefault('prompt-path', DEFAULT_PROMPT_PATH);
   const readmePath = DEFAULT_README_PATH;
   const dbPath = parseOptionalInput('db-path');
-  const { modelFast, skipFastPass } = parseModelFastInput();
-  const modelPro = parseInputOrDefault('model-pro', DEFAULT_MODEL_PRO);
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
   // The fast pass reads a trimmed slice of the same context the pro pass gets; budget-scale moves both together.
   const limits = {
@@ -133,17 +169,17 @@ export function getConfig(): Config {
     owner,
     repo,
     token,
-    geminiApiKey,
     dryRun,
-    skipFastPass,
+    skipFastPass: models.fast === null,
 
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
     promptPath,
     readmePath,
     ...(dbPath ? { dbPath } : {}),
-    modelFast,
-    modelPro,
+    modelFast: models.fast?.model ?? '',
+    modelPro: models.pro.model,
+    models,
     limits,
     maxProRuns,
     maxFastRuns,
