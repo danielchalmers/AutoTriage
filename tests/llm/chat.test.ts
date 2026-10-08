@@ -187,6 +187,14 @@ describe('ChatClient errors', () => {
     expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([30000, 20000, 40000, 60000, 60000, 60000])
   })
 
+  it('puts a pretty-printed error body on one line', async () => {
+    const fetch = stubFetch(error(400, '{\n  "error": {\n    "message": "messages too long"\n  }\n}\n'))
+
+    await expect(new ChatClient(OPENAI, fetch).generateJson(REQUEST, data => data)).rejects.toMatchObject({
+      message: 'api.openai.com returned HTTP 400: { "error": { "message": "messages too long" } }',
+    })
+  })
+
   it('retries a server error twice, and fails any other 4xx at once', async () => {
     const serverError = stubFetch(error(500, 'oops'), error(502, 'oops'), reply('{"ok":true}'))
     expect((await new ChatClient(OPENAI, serverError).generateJson(REQUEST, data => data)).data).toEqual({ ok: true })

@@ -236,7 +236,8 @@ export class ChatClient {
         throw new ModelError(`${host} redirected the request (HTTP ${response.status}), and redirects are not followed because the request carries the API key.`, 'permanent');
       }
       if (!response.ok) {
-        const text = (await response.text()).slice(0, 2000);
+        // OpenAI pretty-prints its error bodies, and a log annotation reads better on one line.
+        const text = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 2000);
         const { kind, hint } = classify(response.status, text, keyName);
         const retryAfter = response.headers.get('retry-after')?.trim() ?? '';
         throw new ModelError(`${host} returned HTTP ${response.status}: ${text}${hint}`, kind, /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : 0);
