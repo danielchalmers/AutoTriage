@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import type { Fetch } from '@google/genai'
+import { GoogleGenAI, type Fetch } from '@google/genai'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
 import { buildJsonPayload, createModelFetch, GeminiClient, MODEL_TIMEOUT_MS } from '../src/gemini'
 import { errorMessage } from '../src/util'
@@ -10,6 +10,7 @@ import { errorMessage } from '../src/util'
 // undici only checks this timeout about every half second, so the server waits well past it.
 const HEADERS_DELAY_MS = 2000
 const SHORT_DISPATCHER_TIMEOUT_MS = 100
+const SHORT_DEADLINE_MS = 100
 
 const REPLY = { candidates: [{ content: { parts: [{ text: '{"ok":true}' }] } }] }
 
@@ -41,6 +42,15 @@ describe('createModelFetch', () => {
 
     expect(errorMessage(await timedOut)).toBe('fetch failed (UND_ERR_HEADERS_TIMEOUT)')
     expect(await (await completed).json()).toEqual(REPLY)
+  })
+
+  // With the dispatcher's timers off, genai's per-attempt deadline is the only limit on a stuck request.
+  // genai builds that AbortSignal from Node's built-in undici, so this proves undici's own fetch still honors it.
+  // If the signal were ignored, the request would succeed once the slow server answers instead.
+  it("aborts at genai's deadline before the server sends headers", async () => {
+    const genai = new GoogleGenAI({ apiKey: 'test-key', httpOptions: { baseUrl, fetch: createModelFetch(), timeout: SHORT_DEADLINE_MS } })
+
+    await expect(genai.models.generateContent(buildJsonPayload('system', 'user', {}, 'm'))).rejects.toMatchObject({ name: 'AbortError' })
   })
 })
 
