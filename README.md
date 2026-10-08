@@ -77,12 +77,12 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 | `OPENAI_BASE_URL` (`OPENAI_API_KEY` optional) | none, so set `model-pro` | any OpenAI-compatible service |
 
 - With one key set, both passes use it, and a blank `model-pro` uses its default.
-- With several keys set, `gemini-*` models go to Gemini, `claude-*` models to Claude, and any other model to OpenAI or `OPENAI_BASE_URL`. A blank `model-pro` uses the default of the first key in the table.
+- With several keys set, a `gemini-*` or `claude-*` model goes to Gemini or Claude when that key is set, and any other model goes to OpenAI or `OPENAI_BASE_URL`. A blank `model-pro` uses the default of the first key in the table.
 - The log names each pass's model and host, such as `Model (pro): gpt-6-luna at api.openai.com (default for OPENAI_API_KEY).`
 
 **Any OpenAI-compatible service** (OpenRouter, Azure OpenAI, Groq, Mistral, xAI, DeepSeek, Together, Fireworks, Cerebras, LiteLLM, vLLM, Ollama, ...) works by setting `OPENAI_BASE_URL` to its API base, such as `https://openrouter.ai/api/v1`, and `model-pro` to a model it serves. For Azure OpenAI, use `https://<resource>.openai.azure.com/openai/v1` and your deployment name as the model. The key is optional for a local server such as Ollama on a self-hosted runner. `OPENAI_BASE_URL` must use https (plain http is allowed only for localhost) and can't include a user name or password, and redirects aren't followed.
 
-**What each call asks for.** Every plan is requested as strict JSON that matches the plan schema, with `reasoning_effort: high`. A service that rejects either setting gets requests without it for the rest of the run. OpenAI and Gemini enforce the schema. Anywhere else, the schema is also written into the prompt, and a reply that doesn't match it is retried. Claude's compatibility API ignores both settings, so Claude follows the schema from the prompt and thinks at its default effort, and Anthropic describes that API as meant for evaluation rather than production.
+**What each call asks for.** Every plan is requested as strict JSON that matches the plan schema, with `reasoning_effort: high`. A service that rejects either setting by name gets requests without it for the rest of the run. OpenAI and Gemini enforce the schema. Anywhere else, the schema is also written into the prompt. A reply that isn't a JSON plan is retried, and operations that don't fit the schema are dropped. Claude's compatibility API ignores both settings, so Claude follows the schema from the prompt and thinks at its default effort, and Anthropic describes that API as meant for evaluation rather than production.
 
 **After switching providers**, run with `dry-run: "true"` for a while and review the plans, because the actions are only as good as the model's instruction-following.
 
