@@ -111,7 +111,8 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     repo: 'repo',
     token: 'token',
     dryRun: true,
-    promptPath: 'examples/AutoTriage.prompt',
+    // Absolute, so tests that point process.cwd() at a temp directory still load the example prompt.
+    promptPath: path.join(__dirname, '..', 'examples', 'AutoTriage.prompt'),
     readmePath: 'README.md',
     skipFastPass: false,
     modelFast: 'fast-model',
