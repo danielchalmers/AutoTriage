@@ -16,8 +16,8 @@ export interface ModelClient {
     initialBackoffMs: number,
     validate?: (data: unknown) => T
   ): Promise<JsonResult<T>>;
-  // A provider that caches marked prompts during ordinary calls returns a marker without calling its API.
-  createCache(model: string, systemPrompt: string, displayName?: string): Promise<CacheInfo>;
+  // A provider that caches marked prompts during ordinary calls returns a marker without calling its API, and one that offers no cache returns undefined.
+  createCache(model: string, systemPrompt: string, displayName?: string): Promise<CacheInfo | undefined>;
   // Best effort: never throws.
   deleteCache(name: string): Promise<void>;
 }

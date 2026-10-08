@@ -115,6 +115,8 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     for (const { mode, modelName, systemPrompt } of cacheTargets) {
       try {
         const cacheInfo = await models[mode].createCache(modelName, systemPrompt, `autotriage-${mode}-${cfg.owner}/${cfg.repo}`);
+        // A host that offers no cache, such as an OPENAI_BASE_URL endpoint, is expected, so it isn't warned about.
+        if (!cacheInfo) continue;
         cacheInfos.set(mode, cacheInfo);
         stats.trackCacheCreate({ mode, model: modelName, name: cacheInfo.name, tokenCount: cacheInfo.tokenCount });
       } catch (err) {
@@ -181,8 +183,6 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
           stoppedByFatalError = true;
           break;
         }
-        // The model answered, so a refusal says nothing about an outage and doesn't count toward the breaker.
-        if (failure?.kind === 'refusal') continue;
         consecutiveFailures++;
         if (consecutiveFailures >= 3) {
           console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);

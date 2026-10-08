@@ -356,13 +356,10 @@ export class OpenAIClient {
   /**
    * OpenAI caches a marked prompt as part of an ordinary call, so there is nothing to create and no API call is made.
    * The marker it returns makes later requests place a cache breakpoint, and the cache writes those calls report are their own usage.
-   * A best-effort host gets no caching settings, so it has no cache to offer.
+   * A best-effort host gets no caching settings, so there is no cache to offer and it returns undefined; such a host caches repeated prompts on its own, if at all.
    */
-  async createCache(_model: string, _systemPrompt: string, _displayName?: string): Promise<CacheInfo> {
-    if (!this.official) {
-      throw new OpenAIResponseError(`Prompt caching is only requested from OpenAI's own API, and ${this.host} caches repeated prompts on its own, if at all`, { kind: 'permanent' });
-    }
-    return { name: PROMPT_CACHE_BREAKPOINT, tokenCount: 0 };
+  async createCache(_model: string, _systemPrompt: string, _displayName?: string): Promise<CacheInfo | undefined> {
+    return this.official ? { name: PROMPT_CACHE_BREAKPOINT, tokenCount: 0 } : undefined;
   }
 
   // The cache expires on its own 30 minutes after its last use.

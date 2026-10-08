@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import type { FailureKind, FatalCause } from './llm/types';
 
 export interface ModelRunStats {
   startTime: number;
@@ -30,7 +31,7 @@ export interface ActionDetail {
 export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
 export type SkipReason = 'noop-fast' | 'deferred' | 'refused' | 'other';
 // Why a failed item failed: the model failure kind, the fatal cause (`auth`, `model`, `quota`) for a fatal one, or `other` for an error outside the model call.
-export type FailureReason = 'capacity' | 'retryable' | 'permanent' | 'truncated' | 'refusal' | 'auth' | 'model' | 'quota' | 'other';
+export type FailureReason = Exclude<FailureKind, 'fatal'> | FatalCause | 'other';
 
 // Which provider served a pass and at which support tier.
 export interface PassProvider {

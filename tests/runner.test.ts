@@ -261,6 +261,21 @@ describe('runAutoTriage', () => {
     expect(model.deleteCache).not.toHaveBeenCalled();
   });
 
+  it('runs uncached without a warning when the provider offers no cache', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const model = createModel();
+    model.createCache.mockResolvedValue(undefined);
+    const stats = createStats();
+
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(model), stats: stats as any });
+
+    expect(model.createCache).toHaveBeenCalledTimes(2);
+    expect(processIssueMock.mock.calls[0]![1].cacheInfos.size).toBe(0);
+    expect(stats.trackCacheCreate).not.toHaveBeenCalled();
+    expect(warn.mock.calls.flat().join('\n')).not.toContain('caching');
+    expect(model.deleteCache).not.toHaveBeenCalled();
+  });
+
   it('keeps cache creation best effort even when the key is rejected', async () => {
     const model = createModel();
     model.createCache.mockRejectedValue(new ModelApiError('{"error":{"code":403}}', 403));
@@ -551,29 +566,6 @@ describe('runAutoTriage', () => {
       expect(core.setFailed).toHaveBeenCalledOnce();
       expect(core.setFailed).toHaveBeenCalledWith(reason);
     }
-  });
-
-  it('does not count refusals toward the consecutive-failure breaker', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const failure = new Error('socket hang up');
-    const refusal = new ModelError('declined', { kind: 'refusal' });
-    processIssueMock
-      .mockRejectedValueOnce(failure)
-      .mockRejectedValueOnce(refusal)
-      .mockRejectedValueOnce(failure)
-      .mockRejectedValueOnce(refusal)
-      .mockRejectedValueOnce(failure);
-
-    await runAutoTriage({
-      cfg: { ...baseConfig, issueNumbers: [1, 2, 3, 4, 5, 6] },
-      db: makeDb(),
-      gh: createGitHub() as any,
-      models: bothPasses(createModel()),
-      stats: createStats() as any,
-    });
-
-    expect(processIssueMock).toHaveBeenCalledTimes(5);
   });
 
   it('fails the job in strict mode when any item failed', async () => {

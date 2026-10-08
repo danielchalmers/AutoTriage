@@ -144,8 +144,8 @@ describe('OpenAI requests', () => {
     const client = new TestClient('test-key', fetch)
 
     const cache = await client.createCache('gpt-6-luna', SYSTEM_PROMPT, 'autotriage-pro-owner/repo')
-    await client.generateJson({ ...JSON_REQUEST, cacheName: cache.name, useFlexTier: true }, 0, 1)
-    await client.deleteCache(cache.name)
+    await client.generateJson({ ...JSON_REQUEST, cacheName: cache?.name, useFlexTier: true }, 0, 1)
+    await client.deleteCache(PROMPT_CACHE_BREAKPOINT)
 
     // Creating and deleting the cache make no API calls, and the flex tier is Gemini's alone.
     expect(cache).toEqual({ name: PROMPT_CACHE_BREAKPOINT, tokenCount: 0 })
@@ -251,10 +251,7 @@ describe('OpenAI-compatible requests', () => {
   it('has no prompt cache to create', async () => {
     const { sent, fetch } = respondWith(() => jsonResponse(REPLY))
 
-    expect(await failureOf(new TestClient('test-key', fetch, COMPATIBLE_URL).createCache('model', SYSTEM_PROMPT))).toEqual({
-      message: 'Prompt caching is only requested from OpenAI\'s own API, and openrouter.ai caches repeated prompts on its own, if at all',
-      failure: { kind: 'permanent' },
-    })
+    expect(await new TestClient('test-key', fetch, COMPATIBLE_URL).createCache('model', SYSTEM_PROMPT)).toBeUndefined()
     expect(sent).toHaveLength(0)
   })
 })
