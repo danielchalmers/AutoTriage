@@ -9,7 +9,8 @@ import {
   buildAutoDiscoverQueue,
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
 } from './autoDiscover';
-import { GeminiCacheInfo, GeminiResponseError, THINKING_LEVEL } from './gemini';
+import { THINKING_LEVEL } from './llm/gemini';
+import { ModelError, type CacheInfo } from './llm/types';
 import { GitHubClient } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import type { RunStatistics } from './stats';
@@ -38,7 +39,7 @@ function hashPrompt(text: string): string {
 }
 
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
-  const { cfg, db, gh, gemini, stats } = deps;
+  const { cfg, db, gh, model, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
   stats.setDiscovered(targets.length);
@@ -71,26 +72,26 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     skipFastPass: cfg.skipFastPass,
     maxFastRuns: cfg.maxFastRuns,
     maxProRuns: cfg.maxProRuns,
-    thinkingLevel: String(THINKING_LEVEL).toLowerCase(),
+    thinkingLevel: THINKING_LEVEL.toLowerCase(),
   });
   stats.setPromptHashes({
     fast: cfg.skipFastPass ? null : hashPrompt(systemPromptFast),
     pro: hashPrompt(systemPromptPro),
   });
 
-  const cacheInfos: Map<'fast' | 'pro', GeminiCacheInfo> = new Map();
+  const cacheInfos: Map<'fast' | 'pro', CacheInfo> = new Map();
   if (autoDiscover) {
     const cacheTargets = [
-      ...(cfg.skipFastPass ? [] : [{ mode: 'fast' as const, model: cfg.modelFast, systemPrompt: systemPromptFast }]),
-      { mode: 'pro' as const, model: cfg.modelPro, systemPrompt: systemPromptPro },
+      ...(cfg.skipFastPass ? [] : [{ mode: 'fast' as const, modelName: cfg.modelFast, systemPrompt: systemPromptFast }]),
+      { mode: 'pro' as const, modelName: cfg.modelPro, systemPrompt: systemPromptPro },
     ];
-    for (const { mode, model, systemPrompt } of cacheTargets) {
+    for (const { mode, modelName, systemPrompt } of cacheTargets) {
       try {
-        const cacheInfo = await gemini.createCache(model, systemPrompt, `autotriage-${mode}-${cfg.owner}/${cfg.repo}`);
+        const cacheInfo = await model.createCache(modelName, systemPrompt, `autotriage-${mode}-${cfg.owner}/${cfg.repo}`);
         cacheInfos.set(mode, cacheInfo);
-        stats.trackCacheCreate({ mode, model, name: cacheInfo.name, tokenCount: cacheInfo.tokenCount });
+        stats.trackCacheCreate({ mode, model: modelName, name: cacheInfo.name, tokenCount: cacheInfo.tokenCount });
       } catch (err) {
-        console.warn(`⚠️ Context caching unavailable for ${model}, falling back to uncached: ${errorMessage(err)}`);
+        console.warn(`⚠️ Context caching unavailable for ${modelName}, falling back to uncached: ${errorMessage(err)}`);
       }
     }
   }
@@ -115,7 +116,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
         stats.beginPass(null);
         const issue = await gh.getIssue(issueNumber);
         const { triageUsed, fastRunUsed } = await processIssue(
-          { cfg, db, gh, gemini, stats },
+          { cfg, db, gh, model, stats },
           { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, cacheInfos, runTimestamp }
         );
         if (triageUsed) {
@@ -129,7 +130,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       } catch (err) {
         // Any per-item failure, model or otherwise (e.g. a transient GitHub API error), is recorded and skipped so one bad item can't abort the remaining backlog.
         // The consecutive-failure breaker below still stops the run if errors cascade (auth loss, outage).
-        if (err instanceof GeminiResponseError) {
+        if (err instanceof ModelError) {
           console.warn(`#${issueNumber}: ${err.message}`);
         } else {
           console.warn(`#${issueNumber}: unexpected error: ${errorDetail(err)}`);
@@ -159,7 +160,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     }
   } finally {
     for (const [, cacheInfo] of cacheInfos) {
-      await gemini.deleteCache(cacheInfo.name);
+      await model.deleteCache(cacheInfo.name);
     }
     // Emit run telemetry even when the run aborts, so failed runs remain researchable.
     stats.incrementGithubApiCalls(gh.getApiCallCount());

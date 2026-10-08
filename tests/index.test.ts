@@ -22,7 +22,7 @@ vi.mock('../src/github', () => ({
     }
   },
 }));
-vi.mock('../src/gemini', () => ({
+vi.mock('../src/llm/gemini', () => ({
   GeminiClient: class {
     constructor(...args: unknown[]) {
       mocks.geminiArgs.push(args);
@@ -71,6 +71,7 @@ describe('AutoTriage action entry point', () => {
     const deps = mocks.runAutoTriage.mock.calls[0]![0];
     expect(deps.cfg).toBe(cfg);
     expect(deps.db).toBe(db);
+    expect(deps.model).toBeDefined();
     expect(deps.stats.toJSON()).toMatchObject({ repo: 'octo/demo', models: { fast: 'fast-model', pro: 'pro-model' } });
     expect(mocks.setFailed).not.toHaveBeenCalled();
   });

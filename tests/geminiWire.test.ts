@@ -1,9 +1,10 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import type { Fetch } from '@google/genai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildAnalysisResultSchema } from '../src/analysis'
-import { buildJsonPayload, GeminiClient } from '../src/gemini'
+import { GeminiClient } from '../src/llm/gemini'
+import type { Fetch } from '../src/llm/transport'
+import type { JsonRequest } from '../src/llm/types'
 
 // Both fixtures were recorded from the @google/genai client before it was replaced (#178).
 // A workflow that only sets GEMINI_API_KEY must keep sending these exact requests and reading these exact results, so neither fixture is edited to make a change pass.
@@ -16,6 +17,10 @@ const USER_PROMPT = 'Triage #42: Crash on save — naïve café 🚀\n{"title":"
 const LABELS = [{ name: 'enhancement' }, { name: 'bug' }, { name: 'breaking change' }]
 const CACHE_NAME = 'cachedContents/abc123'
 const REPLY = { candidates: [{ content: { parts: [{ text: '{"summary":"ok","operations":[]}' }] } }] }
+
+function request(model: string, labels: Array<{ name: string }>, cacheName?: string, useFlexTier?: boolean): JsonRequest {
+  return { model, systemPrompt: SYSTEM_PROMPT, userPrompt: USER_PROMPT, schema: buildAnalysisResultSchema(labels), cacheName, useFlexTier }
+}
 
 interface RecordedRequest {
   method: string
@@ -52,15 +57,15 @@ function recordingFetch(requests: RecordedRequest[]): Fetch {
 // Each call the action makes, named as it appears in the fixture.
 const REQUEST_CASES: Record<string, (client: GeminiClient) => Promise<unknown>> = {
   'generate with labels': client =>
-    client.generateJson(buildJsonPayload(SYSTEM_PROMPT, USER_PROMPT, buildAnalysisResultSchema(LABELS), 'gemini-3.5-flash-lite'), 0, 1),
+    client.generateJson(request('gemini-3.5-flash-lite', LABELS), 0, 1),
   'generate without labels': client =>
-    client.generateJson(buildJsonPayload(SYSTEM_PROMPT, USER_PROMPT, buildAnalysisResultSchema([]), 'gemini-3.5-flash-lite'), 0, 1),
+    client.generateJson(request('gemini-3.5-flash-lite', []), 0, 1),
   'generate cached on the flex tier': client =>
-    client.generateJson(buildJsonPayload(SYSTEM_PROMPT, USER_PROMPT, buildAnalysisResultSchema(LABELS), 'gemini-3.8-flash', CACHE_NAME, true), 0, 1),
+    client.generateJson(request('gemini-3.8-flash', LABELS, CACHE_NAME, true), 0, 1),
   'generate with a models/ name': client =>
-    client.generateJson(buildJsonPayload(SYSTEM_PROMPT, USER_PROMPT, buildAnalysisResultSchema(LABELS), 'models/gemini-3.5-flash-lite'), 0, 1),
+    client.generateJson(request('models/gemini-3.5-flash-lite', LABELS), 0, 1),
   'generate with a tunedModels/ name': client =>
-    client.generateJson(buildJsonPayload(SYSTEM_PROMPT, USER_PROMPT, buildAnalysisResultSchema(LABELS), 'tunedModels/triage-tuned'), 0, 1),
+    client.generateJson(request('tunedModels/triage-tuned', LABELS), 0, 1),
   'create cache': client => client.createCache('gemini-3.8-flash', SYSTEM_PROMPT, 'autotriage-pro-owner/repo'),
   'delete cache': client => client.deleteCache(CACHE_NAME),
 }
@@ -85,7 +90,6 @@ function readFixture<T>(file: string): T {
 beforeEach(() => {
   // Requests must not depend on the runner's environment.
   vi.stubEnv('GOOGLE_GEMINI_BASE_URL', '')
-  vi.stubEnv('GOOGLE_GENAI_USE_VERTEXAI', '')
 })
 
 afterEach(() => {
@@ -123,7 +127,7 @@ describe('Gemini responses', () => {
       try {
         const result = call === 'createCache'
           ? await client.createCache('gemini-3.8-flash', SYSTEM_PROMPT)
-          : await client.generateJson(buildJsonPayload(SYSTEM_PROMPT, USER_PROMPT, buildAnalysisResultSchema([]), 'gemini-3.5-flash-lite'), 0, 1)
+          : await client.generateJson(request('gemini-3.5-flash-lite', []), 0, 1)
         outcomes[name] = { result }
       } catch (err) {
         const status = (err as { status?: unknown }).status
