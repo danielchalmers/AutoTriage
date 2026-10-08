@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeConfig, makeDb, makeResolvedModel } from './fixtures';
+import { makeConfig, makeDb, makeEndpoint } from './fixtures';
 
 // src/index.ts wires everything together and starts the run as soon as it is imported, so each test imports a fresh copy with its collaborators mocked.
 const mocks = vi.hoisted(() => ({
@@ -8,9 +8,7 @@ const mocks = vi.hoisted(() => ({
   loadDatabase: vi.fn(),
   runAutoTriage: vi.fn(),
   githubArgs: [] as unknown[][],
-  geminiArgs: [] as unknown[][],
-  anthropicArgs: [] as unknown[][],
-  openaiArgs: [] as unknown[][],
+  chatArgs: [] as unknown[][],
 }));
 
 vi.mock('@actions/core', () => ({ setFailed: mocks.setFailed }));
@@ -24,24 +22,11 @@ vi.mock('../src/github', () => ({
     }
   },
 }));
-vi.mock('../src/llm/gemini', () => ({
-  GeminiClient: class {
+vi.mock('../src/llm/chat', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/llm/chat')>()),
+  ChatClient: class {
     constructor(...args: unknown[]) {
-      mocks.geminiArgs.push(args);
-    }
-  },
-}));
-vi.mock('../src/llm/anthropic', () => ({
-  AnthropicClient: class {
-    constructor(...args: unknown[]) {
-      mocks.anthropicArgs.push(args);
-    }
-  },
-}));
-vi.mock('../src/llm/openai', () => ({
-  OpenAIClient: class {
-    constructor(...args: unknown[]) {
-      mocks.openaiArgs.push(args);
+      mocks.chatArgs.push(args);
     }
   },
 }));
@@ -52,8 +37,8 @@ const cfg = makeConfig({
   token: 'gh-token',
   dbPath: 'triage-db.json',
   models: {
-    fast: makeResolvedModel('fast-model', { apiKey: 'gemini-key', reason: 'set by model-fast' }),
-    pro: makeResolvedModel('pro-model', { apiKey: 'gemini-key', tier: 'official', reason: 'default for GEMINI_API_KEY', isDefault: true }),
+    fast: makeEndpoint('fast-model'),
+    pro: makeEndpoint('pro-model', { isDefault: true }),
   },
 });
 const db = makeDb({ '1': { summary: 'known' } });
@@ -69,9 +54,7 @@ async function importEntryPoint() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.githubArgs.length = 0;
-  mocks.geminiArgs.length = 0;
-  mocks.anthropicArgs.length = 0;
-  mocks.openaiArgs.length = 0;
+  mocks.chatArgs.length = 0;
   handlers = {};
   vi.spyOn(process, 'on').mockImplementation(((event: string, listener: (...args: any[]) => void) => {
     handlers[event] = listener;
@@ -87,69 +70,39 @@ afterEach(() => {
 });
 
 describe('AutoTriage action entry point', () => {
-  it('builds the clients from config and runs triage with them', async () => {
+  it('builds a client for each pass from config and runs triage with them', async () => {
     await importEntryPoint();
 
     expect(mocks.loadDatabase).toHaveBeenCalledWith('triage-db.json');
     expect(mocks.githubArgs).toEqual([['gh-token', 'octo', 'demo']]);
-    expect(mocks.geminiArgs).toEqual([['gemini-key']]);
+    expect(mocks.chatArgs).toEqual([[cfg.models.pro], [cfg.models.fast]]);
     expect(mocks.runAutoTriage).toHaveBeenCalledOnce();
 
     const deps = mocks.runAutoTriage.mock.calls[0]![0];
     expect(deps.cfg).toBe(cfg);
     expect(deps.db).toBe(db);
-    // Both passes use Gemini, so they share one client.
-    expect(deps.models.pro).toBeDefined();
-    expect(deps.models.fast).toBe(deps.models.pro);
-    expect(deps.stats.toJSON()).toMatchObject({
-      repo: 'octo/demo',
-      models: { fast: 'fast-model', pro: 'pro-model' },
-      providers: { fast: { provider: 'gemini', tier: 'best-effort' }, pro: { provider: 'gemini', tier: 'official' } },
-    });
+    expect(deps.models.fast).not.toBe(deps.models.pro);
+    expect(deps.stats.toJSON()).toMatchObject({ repo: 'octo/demo', models: { fast: 'fast-model', pro: 'pro-model' } });
     expect(mocks.setFailed).not.toHaveBeenCalled();
   });
 
-  it('logs which provider serves each pass', async () => {
+  it('logs the model and host for each pass', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await importEntryPoint();
 
-    expect(log).toHaveBeenCalledWith('Model (fast): fast-model via gemini [best effort] — set by model-fast.');
-    expect(log).toHaveBeenCalledWith('Model (pro): pro-model via gemini [official] — default for GEMINI_API_KEY; set model-pro to change.');
+    expect(log).toHaveBeenCalledWith('Model (fast): fast-model at api.openai.com.');
+    expect(log).toHaveBeenCalledWith('Model (pro): pro-model at api.openai.com (default for OPENAI_API_KEY).');
   });
 
-  it('gives a skipped fast pass the pro client and records no fast provider', async () => {
+  it('gives a skipped fast pass the pro client', async () => {
     mocks.getConfig.mockReturnValue({ ...cfg, skipFastPass: true, modelFast: '', models: { fast: null, pro: cfg.models.pro } });
 
     await importEntryPoint();
 
     const deps = mocks.runAutoTriage.mock.calls[0]![0];
+    expect(mocks.chatArgs).toEqual([[cfg.models.pro]]);
     expect(deps.models.fast).toBe(deps.models.pro);
-    expect(deps.stats.toJSON().providers).toEqual({ fast: null, pro: { provider: 'gemini', tier: 'official' } });
-  });
-
-  it('gives each pass the client for its provider, with that provider key and base URL', async () => {
-    const pro = makeResolvedModel('claude-haiku-5-5', { provider: 'anthropic', apiKey: 'anthropic-key', baseUrl: 'https://api.anthropic.com', host: 'api.anthropic.com' });
-    mocks.getConfig.mockReturnValue({ ...cfg, modelPro: 'claude-haiku-5-5', models: { fast: cfg.models.fast, pro } });
-
-    await importEntryPoint();
-
-    expect(mocks.geminiArgs).toEqual([['gemini-key']]);
-    expect(mocks.anthropicArgs).toEqual([['anthropic-key', expect.any(Function), 'https://api.anthropic.com']]);
-    const deps = mocks.runAutoTriage.mock.calls[0]![0];
-    expect(deps.models.fast).not.toBe(deps.models.pro);
-    expect(deps.stats.toJSON().providers).toEqual({ fast: { provider: 'gemini', tier: 'best-effort' }, pro: { provider: 'anthropic', tier: 'best-effort' } });
-  });
-
-  it('gives an OpenAI-compatible endpoint the Chat Completions client with its base URL, and no key when none is set', async () => {
-    const pro = makeResolvedModel('llama4', { provider: 'openai', apiKey: undefined, baseUrl: 'http://localhost:11434/v1', host: 'localhost:11434' });
-    mocks.getConfig.mockReturnValue({ ...cfg, skipFastPass: true, modelFast: '', modelPro: 'llama4', models: { fast: null, pro } });
-
-    await importEntryPoint();
-
-    expect(mocks.geminiArgs).toEqual([]);
-    expect(mocks.openaiArgs).toEqual([[undefined, expect.any(Function), 'http://localhost:11434/v1']]);
-    expect(mocks.runAutoTriage).toHaveBeenCalledOnce();
   });
 
   it('fails the action with the stack when the run rejects', async () => {

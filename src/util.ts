@@ -1,5 +1,5 @@
 // errorMessage lives in src/llm/ so that folder stays self-contained; it is re-exported here for everything else.
-export { errorMessage } from './llm/errors';
+export { errorMessage } from './llm/chat';
 
 // Stack-preferring form, for failures that end a run or an item and need to stay diagnosable.
 export function errorDetail(error: unknown): string {

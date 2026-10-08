@@ -1,5 +1,4 @@
 import { buildAnalysisResultSchema } from '../src/analysis';
-import { relaxSchema, toJsonSchema } from '../src/llm/schema';
 
 function findOperationSchema(schema: ReturnType<typeof buildAnalysisResultSchema>, propertyName: string) {
   const operationSchema = schema.properties.operations.items.anyOf.find(
@@ -52,30 +51,30 @@ describe('buildAnalysisResultSchema', () => {
     const labelItems = getLabelItems(schema);
 
     expect(labelItems).not.toHaveProperty('enum');
-    expect(labelItems.type).toBe('STRING');
+    expect(labelItems.type).toBe('string');
   });
 
   it('preserves other schema properties', () => {
     const repoLabels = [{ name: 'test', description: null }];
     const schema = buildAnalysisResultSchema(repoLabels);
 
-    expect(schema.type).toBe('OBJECT');
+    expect(schema.type).toBe('object');
     expect(schema.required).toEqual(['summary', 'operations']);
-    expect(schema.properties.summary).toEqual({ type: 'STRING' });
-    expect(schema.properties.operations.type).toBe('ARRAY');
+    expect(schema.properties.summary).toEqual({ type: 'string' });
+    expect(schema.properties.operations.type).toBe('array');
     expect(schema.properties.operations.items.anyOf).toHaveLength(4);
     const commentOperationSchema = findOperationSchema(schema, 'body');
     if (!('body' in commentOperationSchema.properties)) {
       throw new Error('Expected body property');
     }
-    expect(commentOperationSchema.properties.body).toEqual({ type: 'STRING' });
+    expect(commentOperationSchema.properties.body).toEqual({ type: 'string' });
 
     const stateOperationSchema = findOperationSchema(schema, 'state');
     if (!('state' in stateOperationSchema.properties)) {
       throw new Error('Expected state property');
     }
     expect(stateOperationSchema.properties.state).toEqual({
-      type: 'STRING',
+      type: 'string',
       enum: ['open', 'completed', 'not_planned'],
     });
 
@@ -83,12 +82,12 @@ describe('buildAnalysisResultSchema', () => {
     if (!('title' in titleOperationSchema.properties)) {
       throw new Error('Expected title property');
     }
-    expect(titleOperationSchema.properties.title).toEqual({ type: 'STRING' });
+    expect(titleOperationSchema.properties.title).toEqual({ type: 'string' });
   });
 });
 
-// Claude and OpenAI take the schema as standard JSON Schema in strict mode.
-describe('analysis schema as standard JSON Schema', () => {
+// Chat Completions takes the schema as JSON Schema in strict mode.
+describe('analysis schema in strict mode', () => {
   // Every object node, so the strict-mode rules can be checked on each.
   function objectNodes(node: unknown): Array<Record<string, unknown>> {
     if (Array.isArray(node)) return node.flatMap(objectNodes);
@@ -98,7 +97,7 @@ describe('analysis schema as standard JSON Schema', () => {
   }
 
   it('closes every object and requires all of its properties', () => {
-    const objects = objectNodes(toJsonSchema(buildAnalysisResultSchema([{ name: 'bug' }])));
+    const objects = objectNodes(buildAnalysisResultSchema([{ name: 'bug' }]));
 
     // The result and its four operation variants.
     expect(objects).toHaveLength(5);
@@ -108,17 +107,10 @@ describe('analysis schema as standard JSON Schema', () => {
     }
   });
 
-  it('keeps the label enum, and the relaxed schema drops only that enum', () => {
-    const schema = buildAnalysisResultSchema([{ name: 'bug' }, { name: 'enhancement' }]);
-    const strict = toJsonSchema(schema) as any;
-    const relaxed = toJsonSchema(relaxSchema(schema)) as any;
-    const [labelsStrict, , stateStrict] = strict.properties.operations.items.anyOf;
-    const [labelsRelaxed, , stateRelaxed] = relaxed.properties.operations.items.anyOf;
+  it('leaves out the label enum for a repository with more labels than strict mode allows', () => {
+    const labels = Array.from({ length: 251 }, (_, i) => ({ name: 'label-' + i }));
 
-    expect(labelsStrict.properties.labels.items).toEqual({ type: 'string', enum: ['bug', 'enhancement'] });
-    expect(labelsRelaxed.properties.labels.items).toEqual({ type: 'string' });
-    expect(labelsRelaxed.properties.kind).toEqual(labelsStrict.properties.kind);
-    expect(stateRelaxed).toEqual(stateStrict);
-    expect(toJsonSchema(relaxSchema(buildAnalysisResultSchema([])))).toEqual(toJsonSchema(buildAnalysisResultSchema([])));
+    expect(getLabelItems(buildAnalysisResultSchema(labels.slice(0, 250))).enum).toHaveLength(250);
+    expect(getLabelItems(buildAnalysisResultSchema(labels))).toEqual({ type: 'string' });
   });
 });

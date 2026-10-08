@@ -40,25 +40,15 @@ Start with the smallest useful context:
 - `src/config.ts` and `src/env.ts` - action inputs and environment handling.
 - `src/runner.ts` and `src/issueProcessor.ts` - orchestration and per-item work.
 - `src/github.ts` - GitHub API boundary.
-- `src/model.ts` - the `ModelClient` interface that triage calls the model through.
 - `src/llm/` - the model API boundary, with no SDK.
-  `types.ts` holds provider-neutral requests, results, errors, and failure kinds.
-  `errors.ts` holds error text and the status classifier every provider shares.
-  `transport.ts` holds the undici fetch and the 600s request deadline.
-  `retry.ts` holds the retry schedules for each failure kind.
-  `resolve.ts` picks the provider, key, and support tier for a model input.
-  `schema.ts` converts the response schema for APIs that take JSON Schema.
-  `gemini.ts`, `anthropic.ts`, and `openai.ts` are the Gemini, Claude Messages, and Chat Completions adapters; `openai.ts` also serves any `OPENAI_BASE_URL` endpoint.
-  AutoTriage is the source of this folder and danielchalmers/Nuntia copies it verbatim, so it imports only itself and `undici`.
-  `tests/llmShared.test.ts` pins the folder's content hash, so change it in paired AutoTriage and Nuntia PRs and update the pinned hash in the same commit.
+  `endpoint.ts` picks the Chat Completions endpoint and key for a model input.
+  `chat.ts` is the one client every provider goes through, with its retries, error classification, and undici fetch.
+  danielchalmers/Nuntia copies `src/llm/` and `tests/llm/` verbatim, so change them here first and copy them over in a paired PR.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` and `src/prompt.ts` - prompt loading and prompt assembly.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.
 - `src/util.ts` - shared error-message and timestamp helpers, dependency-free.
 - `tests/` - Vitest coverage and examples of expected behavior.
-- `tests/fixtures/gemini-*.json` - the exact Gemini requests and response handling recorded from `@google/genai` before it was replaced (#178).
-  Change the client to match `gemini-requests.json`, never that fixture.
-  `gemini-responses.json` may change when error or result handling deliberately changes.
 - `action.yml` - public GitHub Action metadata.
 - `examples/AutoTriage.prompt` - example starting-point prompt to copy into a repo (not bundled).
 - `.github/workflows/` - CI expectations.
@@ -165,7 +155,7 @@ For GitHub integration boundaries, prefer mocked clients and representative
 payload fixtures over live network calls. Local development against real GitHub
 and a model API requires `GITHUB_TOKEN` and one of `GEMINI_API_KEY`,
 `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` (optionally with `OPENAI_BASE_URL`), but
-unit tests must not depend on any of them. Model adapter tests use an injected
+unit tests must not depend on any of them. Model client tests use an injected
 fetch or a localhost server.
 
 ## Failure Recovery
@@ -196,6 +186,6 @@ mechanical checks, and feedback loops rather than repeated manual guidance.
 
 - Add representative GitHub issue, pull request, and comment fixtures for
   behavior tests.
-- Add model-response fixtures for Gemini planning edge cases.
+- Add model-response fixtures for planning edge cases.
 - Add a periodic documentation freshness check once the project has more
   repository-local design notes.

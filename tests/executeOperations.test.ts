@@ -27,7 +27,7 @@ describe('executeOperations', () => {
     const operations: PlannedOperation[] = [
       { kind: 'add_labels', labels: ['bug'], authorization: 'auth' },
       { kind: 'remove_labels', labels: ['help wanted'], authorization: 'auth' },
-      { kind: 'comment', body: 'Hello', authorization: 'auth', thoughts: 'hidden' },
+      { kind: 'comment', body: 'Hello', authorization: 'auth', explanation: 'hidden' },
       { kind: 'set_title', title: 'New title', authorization: 'auth' },
       { kind: 'set_state', state: 'completed', authorization: 'auth' },
     ];
@@ -57,18 +57,18 @@ describe('executeOperations', () => {
     expect(gh.removeLabel).toHaveBeenNthCalledWith(2, 42, 'needs info');
   });
 
-  it('preserves the hidden thoughts comment block', async () => {
+  it('preserves the hidden explanation comment block', async () => {
     await executeOperations(
-      [{ kind: 'comment', body: 'Hello there', authorization: 'auth', thoughts: 'Internal note' }],
+      [{ kind: 'comment', body: 'Hello there', authorization: 'auth', explanation: 'Internal note' }],
       { issue, dryRun: false, gh }
     );
 
     expect(gh.createComment).toHaveBeenCalledWith(42, 'Hello there\n\n<!--\nInternal note\n-->');
   });
 
-  it('escapes anything in the thoughts that would close the hidden comment block early', async () => {
+  it('escapes anything in the explanation that would close the hidden comment block early', async () => {
     await executeOperations(
-      [{ kind: 'comment', body: 'Hello there', authorization: 'auth', thoughts: 'Arrow --> here, bang --!> there -- done' }],
+      [{ kind: 'comment', body: 'Hello there', authorization: 'auth', explanation: 'Arrow --> here, bang --!> there -- done' }],
       { issue, dryRun: false, gh }
     );
 
@@ -77,13 +77,13 @@ describe('executeOperations', () => {
     expect(body.match(/--!?>/g)).toEqual(['-->']);
   });
 
-  it('falls back to a placeholder when thoughts are missing', async () => {
+  it('falls back to a placeholder when the explanation is missing', async () => {
     await executeOperations(
       [{ kind: 'comment', body: 'Hello there', authorization: 'auth' }],
       { issue, dryRun: false, gh }
     );
 
-    expect(gh.createComment).toHaveBeenCalledWith(42, 'Hello there\n\n<!--\nNo thoughts provided\n-->');
+    expect(gh.createComment).toHaveBeenCalledWith(42, 'Hello there\n\n<!--\nNo explanation provided\n-->');
   });
 
   it('updates the title with the planned value', async () => {

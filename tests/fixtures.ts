@@ -5,8 +5,8 @@ import { vi } from 'vitest';
 import { Issue } from '../src/github';
 import { TriageDb } from '../src/storage';
 import type { Config } from '../src/config';
-import type { ResolvedModel } from '../src/llm/resolve';
-import type { ModelClients } from '../src/model';
+import type { Endpoint } from '../src/llm/endpoint';
+import type { ModelClients } from '../src/issueProcessor';
 
 export const baseIssue: Omit<Issue, 'number' | 'updated_at' | 'created_at'> = {
   title: 'Sample',
@@ -85,22 +85,21 @@ export function withTempFiles<T>(files: Record<string, string>, fn: (file: (name
   }
 }
 
-// A model resolved to Gemini, as getConfig resolves it with only GEMINI_API_KEY set.
-export function makeResolvedModel(model: string, overrides: Partial<ResolvedModel> = {}): ResolvedModel {
+// An OpenAI endpoint, as getConfig resolves it with only OPENAI_API_KEY set.
+export function makeEndpoint(model: string, overrides: Partial<Endpoint> = {}): Endpoint {
   return {
-    provider: 'gemini',
+    provider: 'openai',
     model,
-    tier: 'best-effort',
-    baseUrl: 'https://generativelanguage.googleapis.com',
-    host: 'generativelanguage.googleapis.com',
+    baseUrl: 'https://api.openai.com/v1',
+    host: 'api.openai.com',
     apiKey: 'key',
-    reason: 'set by model-pro',
+    keyName: 'OPENAI_API_KEY',
     isDefault: false,
     ...overrides,
   };
 }
 
-// The same client for both passes, for tests where only one provider is in play.
+// The same client for both passes.
 export function bothPasses(model: unknown): ModelClients {
   return { fast: model, pro: model } as ModelClients;
 }
@@ -117,7 +116,7 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     skipFastPass: false,
     modelFast: 'fast-model',
     modelPro: 'pro-model',
-    models: { fast: makeResolvedModel('fast-model', { reason: 'set by model-fast' }), pro: makeResolvedModel('pro-model') },
+    models: { fast: makeEndpoint('fast-model'), pro: makeEndpoint('pro-model') },
     limits: {
       fast: { readmeChars: 0, issueBodyChars: 4000, timelineEvents: 12, timelineTextChars: 600 },
       pro: { readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 },

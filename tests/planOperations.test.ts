@@ -102,12 +102,12 @@ describe('planOperations', () => {
         kind: 'comment',
         body: 'Hello there',
         authorization: 'policy requires a response',
-        thoughts: 'internal reasoning',
+        explanation: 'internal reasoning',
       },
     ]);
   });
 
-  it('omits the thoughts field when there are no thoughts to attach', () => {
+  it('omits the explanation field when there is none to attach', () => {
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'comment', body: 'Hello there', authorization: 'policy requires a response' }],
@@ -252,7 +252,6 @@ describe('explainPlan', () => {
     };
 
     expect(explainPlan(analysis)).toBe([
-      "The model returned no thoughts, so this is the plan's own explanation.",
       'Summary: Crash on save',
       'Operations:',
       '- add_labels: Policy 2 labels crashes as bugs',
@@ -267,7 +266,6 @@ describe('explainPlan', () => {
     } as unknown as AnalysisResult;
 
     expect(explainPlan(analysis)).toBe([
-      "The model returned no thoughts, so this is the plan's own explanation.",
       'Summary: (none)',
       'Operations: none',
     ].join('\n'));
