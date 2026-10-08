@@ -66,6 +66,17 @@ describe('executeOperations', () => {
     expect(gh.createComment).toHaveBeenCalledWith(42, 'Hello there\n\n<!--\nInternal note\n-->');
   });
 
+  it('escapes anything in the thoughts that would close the hidden comment block early', async () => {
+    await executeOperations(
+      [{ kind: 'comment', body: 'Hello there', authorization: 'auth', thoughts: 'Arrow --> here, bang --!> there -- done' }],
+      { issue, dryRun: false, gh }
+    );
+
+    const body = vi.mocked(gh.createComment).mock.calls[0]![1];
+    expect(body).toBe('Hello there\n\n<!--\nArrow --&gt; here, bang --!&gt; there -- done\n-->');
+    expect(body.match(/--!?>/g)).toEqual(['-->']);
+  });
+
   it('falls back to a placeholder when thoughts are missing', async () => {
     await executeOperations(
       [{ kind: 'comment', body: 'Hello there', authorization: 'auth' }],

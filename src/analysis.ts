@@ -17,6 +17,19 @@ export type FastPassPlan = {
   operations: unknown[];
 };
 
+/**
+ * Narrow the model's parsed reply to the AnalysisResult shape.
+ * A reply that isn't an object with an operations array throws, so the model call retries it like a parse error.
+ * A non-string summary becomes '' so callers fall back to the issue title; each operation is still checked by planOperations.
+ */
+export function parseAnalysisResult(data: unknown): AnalysisResult {
+  const reply = data !== null && typeof data === 'object' ? data as { summary?: unknown; operations?: unknown } : {};
+  if (!Array.isArray(reply.operations)) {
+    throw new Error('Model reply is not an object with an operations array');
+  }
+  return { ...reply, summary: typeof reply.summary === 'string' ? reply.summary : '', operations: reply.operations };
+}
+
 // Every operation shares the kind/payload/authorization skeleton.
 // The payload must be spread rather than set through a computed key: a computed key collapses `properties` to an index signature and the label-schema tests lose the `in` narrowing they rely on.
 function operationSchema<T extends object>(kinds: readonly string[], payload: T) {
