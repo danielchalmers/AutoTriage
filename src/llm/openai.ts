@@ -113,7 +113,7 @@ function rejectedParameter(message: string, sent: readonly OptionalParameter[]):
 /**
  * Split a Chat Completions response into the answer text and the model's thoughts, and read its token usage.
  * A refusal or a content filter stop throws as a refusal, and a reply cut off by the token limit throws as truncated, before any text is read.
- * OpenAI returns no thoughts on this API; compatible hosts put them in `reasoning_content`, `reasoning`, thinking parts of the content, or a leading <think> block, which is kept out of the answer.
+ * OpenAI returns no thoughts on this API; compatible hosts put them in `reasoning_content`, `reasoning`, thinking parts of the content, or a leading <think> block (whose opening tag may be missing), which is kept out of the answer.
  * `prompt_tokens` already includes cached tokens and `completion_tokens` includes reasoning, which is counted on its own.
  */
 function readReply(response: unknown, label: string): { text: string; thoughts: string; usage: ModelUsage } {
@@ -151,7 +151,9 @@ function readReply(response: unknown, label: string): { text: string; thoughts: 
       }
     }
   }
-  const think = /^\s*<think>([\s\S]*?)<\/think>/.exec(text);
+  // Some chat templates write the opening <think> into the prompt, so the reply starts inside the block and only closes it.
+  // A reply that starts as JSON is left alone, since a </think> there is part of the answer.
+  const think = /^\s*<think>([\s\S]*?)<\/think>/.exec(text) ?? (/^\s*[{[]/.test(text) ? null : /^([\s\S]*?)<\/think>/.exec(text));
   if (think) {
     thoughts.push(think[1]!);
     text = text.slice(think[0].length);
@@ -272,7 +274,10 @@ export class OpenAIClient {
     };
   }
 
-  // The request body for a plain text reply, with each model's default reasoning and no token limit.
+  /**
+   * The request body for a plain text reply, with each model's default reasoning and no token limit.
+   * OpenAI's own API also gets explicit prompt caching with no breakpoint, because its default implicit mode bills a cache write for a prompt that is never reused.
+   */
   private textBody(request: TextRequest) {
     return {
       model: request.model,
@@ -281,6 +286,7 @@ export class OpenAIClient {
         { role: 'user', content: request.userPrompt },
       ],
       ...this.optionalParameters({ store: false }),
+      ...(this.official ? { prompt_cache_options: { mode: 'explicit' } } : {}),
     };
   }
 

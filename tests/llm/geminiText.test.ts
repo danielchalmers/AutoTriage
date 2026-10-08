@@ -28,14 +28,12 @@ afterEach(() => {
 })
 
 describe('Gemini text calls', () => {
-  it('sends only the contents and the system instruction', async () => {
+  it('sends the same bytes as Nuntia\'s @google/genai text call', async () => {
     const sent: string[] = []
     await new GeminiClient('test-key', respond({ candidates: [{ content: { parts: [{ text: 'Notes' }] } }] }, sent)).generateText(REQUEST, 0, 1)
 
-    expect(sent).toEqual([JSON.stringify({
-      contents: [{ parts: [{ text: REQUEST.userPrompt }], role: 'user' }],
-      systemInstruction: { parts: [{ text: REQUEST.systemPrompt }], role: 'user' },
-    })])
+    // Recorded from @google/genai 2.27.0 with Nuntia's buildTextPayload and these prompts, empty generationConfig included.
+    expect(sent).toEqual(['{"contents":[{"parts":[{"text":"PR #7: Fix crash on save — café 🚀"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"Write release notes.\\nUse \\"Fixes\\" and \\"Features\\"."}],"role":"user"},"generationConfig":{}}'])
   })
 
   it('returns the trimmed answer without thoughts, with its usage', async () => {

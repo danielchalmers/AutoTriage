@@ -164,7 +164,7 @@ describe('OpenAI requests', () => {
     }))
   })
 
-  it('sends the official text request with only the model, the prompts, and store false', async () => {
+  it('sends the official text request with only the model, the prompts, store false, and explicit caching with no breakpoint', async () => {
     const { sent, fetch } = respondWith(() => jsonResponse(completion({ content: 'Release notes' })))
     await new TestClient('test-key', fetch).generateText(TEXT_REQUEST, 0, 1)
 
@@ -176,6 +176,7 @@ describe('OpenAI requests', () => {
         { role: 'user', content: USER_PROMPT },
       ],
       store: false,
+      prompt_cache_options: { mode: 'explicit' },
     }))
   })
 
@@ -223,7 +224,7 @@ describe('OpenAI-compatible requests', () => {
     ].join('\n'))
   })
 
-  it('sends the best-effort text request the same as the official one, without a key for a local server', async () => {
+  it('sends the best-effort text request without caching, and without a key for a local server', async () => {
     const { sent, fetch } = respondWith(() => jsonResponse(completion({ content: 'Release notes' })))
     await new TestClient(undefined, fetch, 'http://localhost:11434/v1').generateText({ ...TEXT_REQUEST, model: 'llama4' }, 0, 1)
 
@@ -291,6 +292,7 @@ describe('Chat Completions responses', () => {
     ['Groq, Cerebras and OpenRouter', { content: '{"summary":"ok","labels":[]}', reasoning: 'It is a bug.\n\n\nLabel it.' }],
     ['Mistral', { content: [{ type: 'thinking', thinking: [{ type: 'text', text: 'It is a bug.\n\n' }, { type: 'text', text: '\nLabel it.' }] }, { type: 'text', text: '{"summary":"ok","labels":[]}' }] }],
     ['an inline <think> block', { content: '<think>\nIt is a bug.\n\n\nLabel it.\n</think>\n\n{"summary":"ok","labels":[]}' }],
+    ['a <think> block opened by the chat template', { content: 'It is a bug.\n\n\nLabel it.\n</think>\n\n{"summary":"ok","labels":[]}' }],
   ]
 
   it.each(thoughtCases)('takes the thoughts from %s out of the answer', async (_host, message) => {
@@ -318,8 +320,20 @@ describe('Chat Completions responses', () => {
     })
   })
 
-  it('returns trimmed text without the thoughts from a text call', async () => {
-    const { fetch } = respondWith(() => jsonResponse(completion({ content: '<think>Group the changes.</think>\n## Fixes\n- Crash on save\n' })))
+  it('keeps a </think> that is part of a JSON answer', async () => {
+    const { fetch } = respondWith(() => jsonResponse(completion({ content: '{"summary":"Closes a stray </think> tag","labels":[]}' })))
+
+    expect(await new TestClient(undefined, fetch, COMPATIBLE_URL).generateJson(JSON_REQUEST, 0, 1)).toMatchObject({
+      data: { summary: 'Closes a stray </think> tag', labels: [] },
+      thoughts: '',
+    })
+  })
+
+  it.each([
+    ['a <think> block', '<think>Group the changes.</think>\n## Fixes\n- Crash on save\n'],
+    ['a <think> block opened by the chat template', 'Group the changes.\n</think>\n\n## Fixes\n- Crash on save\n'],
+  ])('returns trimmed text without the thoughts from a text call with %s', async (_label, content) => {
+    const { fetch } = respondWith(() => jsonResponse(completion({ content })))
 
     expect(await new TestClient(undefined, fetch, COMPATIBLE_URL).generateText(TEXT_REQUEST, 0, 1)).toEqual({
       text: '## Fixes\n- Crash on save',

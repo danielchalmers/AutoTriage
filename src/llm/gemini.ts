@@ -79,11 +79,13 @@ function tokenCount(value: unknown): number {
 
 /**
  * The text-only generateContent request body, with no schema or thinking settings, as Nuntia sends it.
+ * @google/genai sent an empty generationConfig for Nuntia's text call, so it is kept to send the same bytes.
  */
 export function generateTextBody(request: TextRequest) {
   return {
     contents: [userContent(request.userPrompt)],
     systemInstruction: userContent(request.systemPrompt),
+    generationConfig: {},
   };
 }
 
