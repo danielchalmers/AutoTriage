@@ -45,7 +45,6 @@ jobs:
           dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry-run || false }}
           db-path: triage-db.json
           additional-instructions: ${{ github.event.inputs.additional-instructions }}
-          model-pro: claude-opus-5-5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

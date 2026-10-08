@@ -32,7 +32,6 @@ jobs:
           issues: ${{ github.event.issue.number }}
           prompt-path: examples/AutoTriage.prompt
           db-path: triage-db.json
-          model-pro: claude-opus-5-5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
