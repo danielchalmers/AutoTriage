@@ -164,6 +164,21 @@ describe('resolveModel', () => {
     it('never puts credentials from the URL in an error', () => {
       expect(() => resolve('llama3', { OPENAI_BASE_URL: 'http://user:secret@models.example.com/v1' })).toThrow(/^(?!.*secret).*$/s)
     })
+
+    // fetch refuses such a URL and prints it, password included, in an error on every call.
+    it('rejects a user name or password in the URL, without echoing them', () => {
+      for (const value of ['https://user:secret@proxy.example.com/v1', 'https://secret@proxy.example.com/v1']) {
+        expect(() => resolve('llama3', { OPENAI_BASE_URL: value })).toThrow('OPENAI_BASE_URL for proxy.example.com includes a user name or password, which would show up in error messages. Remove them from the URL and put the key in OPENAI_API_KEY.')
+        expect(() => resolve('llama3', { OPENAI_BASE_URL: value })).toThrow(/^(?!.*secret).*$/s)
+      }
+    })
+
+    it('keeps a query string, such as Azure\'s api-version', () => {
+      expect(resolve('my-gpt-deploy', { ...O, OPENAI_BASE_URL: 'https://contoso.openai.azure.com/openai/v1?api-version=preview' })).toMatchObject({
+        baseUrl: 'https://contoso.openai.azure.com/openai/v1?api-version=preview',
+        host: 'contoso.openai.azure.com',
+      })
+    })
   })
 
   describe('GOOGLE_GEMINI_BASE_URL', () => {

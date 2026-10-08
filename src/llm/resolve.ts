@@ -108,7 +108,7 @@ function withoutTrailingSlash(url: string): string {
 
 /**
  * The OPENAI_BASE_URL endpoint, which decides where the key and the issue text go.
- * It must be https, except on loopback.
+ * It must be https, except on loopback, and carry no user name or password, which fetch would print in its errors.
  */
 function parseEndpoint(value: string): { baseUrl: string; host: string } {
   let url: URL;
@@ -116,6 +116,9 @@ function parseEndpoint(value: string): { baseUrl: string; host: string } {
     url = new URL(value);
   } catch {
     throw new ModelResolutionError('OPENAI_BASE_URL is not a valid URL. Set it to the API base of an OpenAI-compatible service, such as https://openrouter.ai/api/v1.');
+  }
+  if (url.username || url.password) {
+    throw new ModelResolutionError(`OPENAI_BASE_URL for ${url.host} includes a user name or password, which would show up in error messages. Remove them from the URL and put the key in OPENAI_API_KEY.`);
   }
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopback(url.hostname))) {
     throw new ModelResolutionError(`OPENAI_BASE_URL must use https (${url.protocol}//${url.host} was given), because it receives the API key and the issue text. Plain http is allowed only for localhost.`);
@@ -142,7 +145,8 @@ interface Route {
  * Resolve a model input to the provider that serves it.
  * - A recognized name, or one with a `gemini/`, `anthropic/` or `openai/` prefix, goes to that provider when its key is set.
  * - OPENAI_BASE_URL makes the `openai` provider that endpoint, and a name whose provider has no key goes there unchanged (an explicit `openai/` prefix is removed).
- * - Any other name goes to the only provider with a key.
+ *   So does any unrecognized name without a prefix, whichever keys are set, because the endpoint is the only place that knows its models.
+ * - Without OPENAI_BASE_URL, any other name goes to the only provider with a key.
  * - A blank input uses the default for the first key set, in the order Gemini, Anthropic, OpenAI.
  * Throws ModelResolutionError with a message that names the input, the model and the key or setting to fix.
  */

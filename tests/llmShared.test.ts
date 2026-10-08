@@ -8,7 +8,7 @@ const LLM_DIR = path.join(__dirname, '..', 'src', 'llm')
 const HEADER = '// Source: AutoTriage (danielchalmers/AutoTriage, src/llm/). Nuntia copies this folder verbatim, so change it in AutoTriage and copy it over in a paired PR.'
 
 // Update this after changing src/llm/, and copy the folder to Nuntia in a paired PR.
-const PINNED_HASH = 'sha256:adf62de84a992fb49b03e770a8ae63eb1c41e34c7b17c822fd67340dc9fd0525'
+const PINNED_HASH = 'sha256:40bc91faa9aa1f2877abe6cd4d6ece59b26104fa0c4285ac16e89f83333250a3'
 
 // Nuntia copies the shared tests too, so they must not reach outside src/llm/ either.
 const LLM_TESTS_DIR = path.join(__dirname, 'llm')

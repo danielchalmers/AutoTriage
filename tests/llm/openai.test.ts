@@ -212,6 +212,14 @@ describe('OpenAI-compatible requests', () => {
     expect(log).toHaveBeenCalledWith('Chat Completions requests go to openrouter.ai.')
   })
 
+  it('keeps the base URL\'s query string after the path', async () => {
+    const { sent, fetch } = respondWith(() => jsonResponse(REPLY))
+    await new TestClient('test-key', fetch, 'https://contoso.openai.azure.com/openai/v1/?api-version=preview').generateJson(JSON_REQUEST, 0, 1)
+
+    expect(sent[0]!.url).toBe('https://contoso.openai.azure.com/openai/v1/chat/completions?api-version=preview')
+    expect(log).toHaveBeenCalledWith('Chat Completions requests go to contoso.openai.azure.com.')
+  })
+
   it('spells out the schema and the JSON rules, overriding any claim that the schema is enforced', () => {
     expect(NOTE).toBe([
       '=== SECTION: RESPONSE FORMAT ===',

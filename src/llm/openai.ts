@@ -183,7 +183,7 @@ function readReply(response: unknown, label: string): { text: string; thoughts: 
 export class OpenAIClient {
   private readonly apiKey: string | undefined;
   private readonly fetch: Fetch;
-  private readonly baseUrl: string;
+  private readonly url: string;
   private readonly host: string;
   // OpenAI's own API, which gets the official request; any other host is best effort.
   private readonly official: boolean;
@@ -198,13 +198,15 @@ export class OpenAIClient {
 
   /**
    * `apiKey` is sent as a Bearer token, and left out when absent, as for a local server that takes no key.
-   * `baseUrl` is OPENAI_BASE_URL when set, and the request goes to its /chat/completions.
+   * `baseUrl` is OPENAI_BASE_URL when set, and the request goes to its /chat/completions, keeping any query string such as Azure's `?api-version=preview`.
    */
   constructor(apiKey: string | undefined, fetch: Fetch = createModelFetch(), baseUrl = OPENAI_BASE_URL) {
     this.apiKey = apiKey;
     this.fetch = fetch;
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this.host = new URL(this.baseUrl).host;
+    const url = new URL(baseUrl);
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/chat/completions`;
+    this.url = url.toString();
+    this.host = url.host;
     this.official = this.host === OFFICIAL_HOST;
     this.label = this.official ? 'OpenAI' : this.host;
   }
@@ -219,7 +221,7 @@ export class OpenAIClient {
       this.hostLogged = true;
       console.log(`Chat Completions requests go to ${this.host}.`);
     }
-    return requestJson(this.fetch, `${this.baseUrl}/chat/completions`, {
+    return requestJson(this.fetch, this.url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
