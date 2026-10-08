@@ -16,6 +16,8 @@ const OPERATION_KINDS: readonly ModelOperation['kind'][] = [
   'set_state',
 ];
 
+const ISSUE_STATES: readonly Extract<ModelOperation, { kind: 'set_state' }>['state'][] = ['open', 'completed', 'not_planned'];
+
 export interface GitHubWriteClient {
   addLabels(issueNumber: number, labels: string[]): Promise<void>;
   removeLabel(issueNumber: number, name: string): Promise<void>;
@@ -33,7 +35,8 @@ type StatefulIssue = Pick<Issue, 'number' | 'title' | 'state'> & {
 };
 
 function formatCommentBody(body: string, thoughts?: string): string {
-  const thoughtLog = (thoughts ?? '').trim();
+  // A '-->' or '--!>' in the thoughts would end the hidden comment early and publish the rest, so escape its '>'.
+  const thoughtLog = (thoughts ?? '').trim().replace(/--(!?)>/g, '--$1&gt;');
   const hiddenBlock = thoughtLog.length ? thoughtLog : 'No thoughts provided';
   return `${body}\n\n<!--\n${hiddenBlock}\n-->`;
 }
@@ -113,7 +116,13 @@ function filterLabels(labels: unknown, repoLabels: string[] | undefined): string
   const unique = [...new Set(labels.filter((label): label is string => typeof label === 'string' && label.trim().length > 0))];
   if (!repoLabels || repoLabels.length === 0) return unique;
   const allowed = new Set(repoLabels);
-  return unique.filter(label => allowed.has(label));
+  // An exact match wins; otherwise take the repository's spelling when exactly one label matches ignoring case.
+  const resolved = unique.flatMap(label => {
+    if (allowed.has(label)) return [label];
+    const matches = [...allowed].filter(name => name.toLowerCase() === label.toLowerCase());
+    return matches.length === 1 ? matches : [];
+  });
+  return [...new Set(resolved)];
 }
 
 function hasAuthorization(op: unknown): op is ModelOperation {
@@ -170,6 +179,8 @@ export function planOperations(
         }
         break;
       case 'set_state': {
+        // A missing or unknown state would otherwise fall through to closing the issue.
+        if (!ISSUE_STATES.includes(op.state)) break;
         const currentState = issue.state;
         const currentReason = issue.state_reason ?? undefined;
         if (op.state === 'open') {

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
+import { GeminiClient } from '../src/gemini';
 import { buildRunContext, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
@@ -369,6 +370,25 @@ describe('processIssue', () => {
 
       expect(gh.getIssue).not.toHaveBeenCalled();
       expect(gh.addLabels).not.toHaveBeenCalled();
+    });
+  });
+
+  it('retries a model reply without an operations array and falls back to the title for a non-string summary', async () => {
+    await withArtifactsDir(async () => {
+      const db: TriageDb = { version: 2, items: {} };
+      const stats = new RunStatistics();
+      const generateContent = vi
+        .fn()
+        .mockResolvedValueOnce({ candidates: [{ content: { parts: [{ text: '{"summary":"s","operations":{}}' }] } }] })
+        .mockResolvedValueOnce({ candidates: [{ content: { parts: [{ text: '{"summary":7,"operations":[]}' }] } }] });
+      const gemini = new GeminiClient('test-key');
+      (gemini as any).client = { models: { generateContent } };
+      vi.spyOn(gemini as any, 'sleep').mockResolvedValue(undefined);
+
+      await processIssue({ cfg: createConfig(), db, gh: createGitHub(), gemini, stats }, processOptions());
+
+      expect(generateContent).toHaveBeenCalledTimes(2);
+      expect(db.items['42']).toMatchObject({ summary: baseIssue.title });
     });
   });
 

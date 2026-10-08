@@ -7,6 +7,7 @@ import {
   RepoLabel,
   buildAnalysisResultSchema,
   buildUserPrompt,
+  parseAnalysisResult,
 } from './analysis';
 import { GeminiCacheInfo, GeminiClient, buildJsonPayload } from './gemini';
 import { GitHubClient, Issue, TimelineEvent } from './github';
@@ -366,7 +367,7 @@ export async function generateAnalysis(
   console.log(chalk.blue(`💭 Thinking with ${model}${cacheInfo ? ' (cached)' : ''}...`));
   stats.beginPass(isFastModel ? 'fast' : 'pro');
   const startTime = Date.now();
-  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500);
+  const { data, thoughts, inputTokens, cachedInputTokens, outputTokens, thoughtsTokens } = await gemini.generateJson<AnalysisResult>(payload, 2, 7500, parseAnalysisResult);
   const endTime = Date.now();
 
   const modelRunStats = {

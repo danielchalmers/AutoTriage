@@ -65,6 +65,32 @@ describe('planOperations', () => {
     ]);
   });
 
+  it('maps labels to the repository spelling when exactly one matches ignoring case', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [
+        { kind: 'add_labels', labels: ['Feature', 'feature', 'BUG'], authorization: 'policy allows labels' },
+        { kind: 'remove_labels', labels: ['Help Wanted'], authorization: 'policy allows cleanup' },
+      ],
+    };
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, ['bug', 'feature', 'help wanted'])).toEqual([
+      { kind: 'add_labels', labels: ['feature'], authorization: 'policy allows labels' },
+      { kind: 'remove_labels', labels: ['help wanted'], authorization: 'policy allows cleanup' },
+    ]);
+  });
+
+  it('prefers an exact label match and drops a label that matches several repository labels ignoring case', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [{ kind: 'add_labels', labels: ['Docs', 'UI'], authorization: 'policy allows labels' }],
+    };
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, ['docs', 'Docs', 'ui', 'Ui'])).toEqual([
+      { kind: 'add_labels', labels: ['Docs'], authorization: 'policy allows labels' },
+    ]);
+  });
+
   it('adds comment data when comment present', () => {
     const analysis: AnalysisResult = {
       summary: 's',
@@ -173,6 +199,18 @@ describe('planOperations', () => {
     expect(planOperations(issue, analysis, baseMetadata, [])).toEqual([
       { kind: 'set_state', state: 'open', authorization: 'policy allows reopening when info arrives' },
     ]);
+  });
+
+  it('drops state changes without a known state instead of closing the issue', () => {
+    const analysis = {
+      summary: 's',
+      operations: [
+        { kind: 'set_state', authorization: 'policy allows closing' },
+        { kind: 'set_state', state: 'closed', authorization: 'policy allows closing' },
+      ],
+    } as unknown as AnalysisResult;
+
+    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
   });
 
   it('returns no operations for an explicit empty operation plan', () => {

@@ -196,12 +196,14 @@ export class GeminiClient {
   /**
    * Call the model and parse its JSON reply.
    * `maxRetries`/`initialBackoffMs` govern ordinary failures (parse errors, 4xx, 5xx other than capacity).
+   * `validate`, when given, narrows the parsed reply; a reply it rejects by throwing counts as an ordinary failure, like a parse error.
    * Transient capacity errors (see isTransientModelError) switch to the longer TRANSIENT_* schedule instead, and each transient retry is logged so the run output shows the outage being waited out.
    */
   async generateJson<T = unknown>(
     payload: GenerateContentParameters,
     maxRetries: number,
-    initialBackoffMs: number
+    initialBackoffMs: number,
+    validate?: (data: unknown) => T
   ): Promise<GeminiJsonResult<T>> {
     let ordinaryFailures = 0;
     let transientFailures = 0;
@@ -212,7 +214,9 @@ export class GeminiClient {
     for (;;) {
       try {
         const response = await this.client.models.generateContent(payload);
-        return await this.parseJson<T>(response);
+        const result = await this.parseJson<T>(response);
+        if (validate) result.data = validate(result.data);
+        return result;
       } catch (err) {
         lastError = err;
       }

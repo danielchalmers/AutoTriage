@@ -15,6 +15,12 @@ function okResponse(json: string) {
   return { candidates: [{ content: { parts: [{ text: json }] } }], usageMetadata: {} }
 }
 
+// Stands in for a shape check such as parseAnalysisResult.
+function requireObject(data: unknown) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('reply is not an object')
+  return data as { ok: boolean }
+}
+
 // Subclass so the backoff is recorded instead of slept and the SDK client is a stub.
 class TestClient extends GeminiClient {
   sleeps: number[] = []
@@ -84,6 +90,28 @@ describe('GeminiClient.generateJson retry policy', () => {
     expect(result.data).toEqual({ ok: true })
     expect(generateContent).toHaveBeenCalledTimes(4)
     expect(client.sleeps).toEqual([10000, 20000, 40000])
+  })
+
+  it('retries a reply the validator rejects on the ordinary schedule', async () => {
+    const generateContent = vi
+      .fn()
+      .mockResolvedValueOnce(okResponse('[]'))
+      .mockResolvedValueOnce(okResponse('{"ok":true}'))
+    const client = new TestClient(generateContent)
+
+    const result = await client.generateJson({ model: 'm', contents: [] }, 2, 7500, requireObject)
+    expect(result.data).toEqual({ ok: true })
+    expect(generateContent).toHaveBeenCalledTimes(2)
+    expect(client.sleeps).toEqual([7500])
+  })
+
+  it('gives up with the validator error once ordinary retries run out', async () => {
+    const generateContent = vi.fn().mockResolvedValue(okResponse('[]'))
+    const client = new TestClient(generateContent)
+
+    await expect(client.generateJson({ model: 'm', contents: [] }, 2, 7500, requireObject)).rejects.toThrow('reply is not an object')
+    expect(generateContent).toHaveBeenCalledTimes(3)
+    expect(client.sleeps).toEqual([7500, 15000])
   })
 
   it('does not let transient retries extend the budget for ordinary failures', async () => {
