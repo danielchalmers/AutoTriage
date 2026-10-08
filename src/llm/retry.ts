@@ -1,4 +1,4 @@
-import { errorMessage } from '../util';
+import { errorMessage } from './errors';
 import { ModelApiError, ModelError } from './types';
 
 // Capacity errors (503 UNAVAILABLE "high demand", 429 RESOURCE_EXHAUSTED) are outages, not bad requests.

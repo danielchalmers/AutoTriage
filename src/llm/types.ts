@@ -5,7 +5,7 @@ export interface JsonRequest {
   model: string;
   systemPrompt: string;
   userPrompt: string;
-  // Written in the Gemini API's schema dialect (see analysis.ts).
+  // Written in the Gemini API's schema dialect by the caller.
   schema: unknown;
   // A context cache that already holds the system prompt, so the prompt is not sent again.
   cacheName?: string | undefined;

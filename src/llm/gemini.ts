@@ -2,8 +2,8 @@ import { withRetries } from './retry';
 import { createModelFetch, MODEL_TIMEOUT_MS, requestJson, type Fetch } from './transport';
 import { ModelError, type CacheInfo, type JsonRequest, type JsonResult } from './types';
 
-// Gemini API adapter, sending the same requests @google/genai sent before it was replaced (#178).
-// tests/fixtures/gemini-requests.json holds those requests, and tests/geminiWire.test.ts checks every call against it.
+// Gemini API adapter, sending the same requests @google/genai sent before it was replaced.
+// A recorded fixture of those requests is checked against every call in the tests.
 
 // Single source of truth for the thinking budget, also stamped into run telemetry.
 export const THINKING_LEVEL = 'HIGH';
@@ -54,7 +54,7 @@ export function generateContentBody(request: JsonRequest) {
       : { systemInstruction: userContent(request.systemPrompt) }),
     generationConfig: {
       responseMimeType: 'application/json',
-      // analysis.ts writes the schema in this API's own dialect, so it is sent as is.
+      // The caller writes the schema in this API's own dialect, so it is sent as is.
       responseSchema: request.schema,
       thinkingConfig: {
         includeThoughts: true,

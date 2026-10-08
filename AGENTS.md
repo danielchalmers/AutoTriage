@@ -51,7 +51,8 @@ Start with the smallest useful context:
 - `src/util.ts` - shared error-message and timestamp helpers, dependency-free.
 - `tests/` - Vitest coverage and examples of expected behavior.
 - `tests/fixtures/gemini-*.json` - the exact Gemini requests and response handling recorded from `@google/genai` before it was replaced (#178).
-  Change the client to match them, never the fixtures.
+  Change the client to match `gemini-requests.json`, never that fixture.
+  `gemini-responses.json` may change when error or result handling deliberately changes.
 - `action.yml` - public GitHub Action metadata.
 - `examples/AutoTriage.prompt` - example starting-point prompt to copy into a repo (not bundled).
 - `.github/workflows/` - CI expectations.

@@ -7,7 +7,8 @@ import type { Fetch } from '../src/llm/transport'
 import type { JsonRequest } from '../src/llm/types'
 
 // Both fixtures were recorded from the @google/genai client before it was replaced (#178).
-// A workflow that only sets GEMINI_API_KEY must keep sending these exact requests and reading these exact results, so neither fixture is edited to make a change pass.
+// A workflow that only sets GEMINI_API_KEY must keep sending these exact requests, so the request fixture is never edited to make a change pass.
+// The response fixture pins today's result and error handling; it changes only when that handling deliberately changes.
 const REQUESTS_FIXTURE = path.join(__dirname, 'fixtures', 'gemini-requests.json')
 const RESPONSES_FIXTURE = path.join(__dirname, 'fixtures', 'gemini-responses.json')
 

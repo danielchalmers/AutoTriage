@@ -1,16 +1,8 @@
 // Small helpers shared across modules.
-// Kept dependency-free so any module can import them without creating cycles.
+// Kept dependency-free (src/llm/errors.ts imports nothing) so any module can import them without creating cycles.
 
-// Message-only form, for warnings where a stack would be noise.
-// Network failures carry their code on the cause (fetch only says "fetch failed"), so it is appended when present.
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message + causeCode(error) : String(error);
-}
-
-function causeCode(error: Error): string {
-  const cause = 'cause' in error ? error.cause : undefined;
-  return typeof cause === 'object' && cause !== null && 'code' in cause && typeof cause.code === 'string' ? ` (${cause.code})` : '';
-}
+// errorMessage lives with the model client so src/llm/ stays self-contained; it is re-exported here for everything else.
+export { errorMessage } from './llm/errors';
 
 // Stack-preferring form, for failures that end a run or an item and need to stay diagnosable.
 export function errorDetail(error: unknown): string {

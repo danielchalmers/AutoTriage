@@ -197,6 +197,17 @@ describe('runAutoTriage', () => {
     expect(model.deleteCache).toHaveBeenCalledWith('cachedContents/pro');
   });
 
+  it('stamps the thinking level into the run summary config as before', async () => {
+    const model = createModel();
+    model.createCache.mockResolvedValue({ name: 'cachedContents/any', tokenCount: 10 });
+    const stats = createStats();
+
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, model: model as any, stats: stats as any });
+
+    // run-summary.json v2 has always recorded "high", so replacing the Gemini client must not change it.
+    expect(stats.setRunConfig).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: 'high' }));
+  });
+
   it('skips caches for explicit target runs', async () => {
     const gh = createGitHub();
     const model = createModel();
