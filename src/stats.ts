@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { FailureKind, FatalCause } from './llm/types';
+import type { FailureKind } from './llm/chat';
 
 export interface ModelRunStats {
   startTime: number;
@@ -7,18 +7,8 @@ export interface ModelRunStats {
   inputTokens: number;
   cachedInputTokens?: number;
   outputTokens: number;
-  thoughtsTokens?: number;
-  // Prompt-cache writes billed during the call itself, as Claude reports them.
-  cacheWriteTokens?: number;
-  cacheName?: string;
+  reasoningTokens?: number;
   issueNumber?: number;
-}
-
-export interface CacheCreateStats {
-  mode: 'fast' | 'pro';
-  model: string;
-  name: string;
-  tokenCount: number;
 }
 
 // Stated independently of the operation union: this is the run-summary artifact's contract.
@@ -29,20 +19,9 @@ export interface ActionDetail {
 }
 
 export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
-export type SkipReason = 'noop-fast' | 'deferred' | 'refused' | 'other';
-// Why a failed item failed: the model failure kind, the fatal cause (`auth`, `model`, `quota`) for a fatal one, or `other` for an error outside the model call.
-export type FailureReason = Exclude<FailureKind, 'fatal'> | FatalCause | 'other';
-
-// Which provider served a pass and at which support tier.
-export interface PassProvider {
-  provider: string;
-  tier: string;
-}
-
-export interface PassProviders {
-  fast: PassProvider | null;
-  pro: PassProvider | null;
-}
+export type SkipReason = 'noop-fast' | 'deferred' | 'other';
+// Why a failed item failed: the model failure kind, or `other` for an error outside the model call.
+export type FailureReason = FailureKind | 'other';
 
 // Compact, comparable form of what a pass planned: sorted unique operation kinds plus signed label changes (`+bug`, `-stale`).
 export interface PlanSummary {
@@ -72,7 +51,6 @@ export interface RunConfigSnapshot {
   skipFastPass: boolean;
   maxFastRuns: number;
   maxProRuns: number;
-  thinkingLevel: string;
 }
 
 export interface PromptHashes {
@@ -99,7 +77,7 @@ function sumTokens(runs: ModelRunStats[]) {
   return {
     inputTokens: runs.reduce((sum, r) => sum + r.inputTokens, 0),
     cachedInputTokens: runs.reduce((sum, r) => sum + (r.cachedInputTokens ?? 0), 0),
-    thoughtsTokens: runs.reduce((sum, r) => sum + (r.thoughtsTokens ?? 0), 0),
+    reasoningTokens: runs.reduce((sum, r) => sum + (r.reasoningTokens ?? 0), 0),
     outputTokens: runs.reduce((sum, r) => sum + r.outputTokens, 0),
   };
 }
@@ -128,7 +106,6 @@ export type CapReached = 'fast' | 'pro' | 'none';
 export class RunStatistics {
   private fastRuns: ModelRunStats[] = [];
   private proRuns: ModelRunStats[] = [];
-  private cacheCreates: CacheCreateStats[] = [];
   private actionsPerformed: ActionDetail[] = [];
   private triaged = 0;
   private skipped = 0;
@@ -139,7 +116,6 @@ export class RunStatistics {
   private repo = '';
   private modelFast = '';
   private modelPro = '';
-  private providers: PassProviders = { fast: null, pro: null };
   private discovered = 0;
   private capReached: CapReached = 'none';
   private items = new Map<number, ItemRecord>();
@@ -157,9 +133,6 @@ export class RunStatistics {
     this.modelPro = modelPro;
   }
 
-  setProviders(providers: PassProviders): void {
-    this.providers = providers;
-  }
 
   trackFastRun(stats: ModelRunStats): void {
     this.fastRuns.push(stats);
@@ -169,9 +142,6 @@ export class RunStatistics {
     this.proRuns.push(stats);
   }
 
-  trackCacheCreate(stats: CacheCreateStats): void {
-    this.cacheCreates.push(stats);
-  }
 
   trackAction(action: ActionDetail): void {
     this.actionsPerformed.push(action);
@@ -266,16 +236,7 @@ export class RunStatistics {
     };
   }
 
-  // Tokens written to the prompt cache: Gemini's at cache creation, plus Claude's during calls.
-  private getCacheCreateStats(mode: 'fast' | 'pro', runs: ModelRunStats[]): { tokenCount: number; count: number } {
-    const creates = this.cacheCreates.filter(cache => cache.mode === mode);
-    return {
-      tokenCount: creates.reduce((sum, cache) => sum + cache.tokenCount, 0) + runs.reduce((sum, r) => sum + (r.cacheWriteTokens ?? 0), 0),
-      count: creates.length,
-    };
-  }
-
-  private printModelSummary(label: string, mode: 'fast' | 'pro', model: string, runs: ModelRunStats[]): void {
+  private printModelSummary(label: string, model: string, runs: ModelRunStats[]): void {
     if (runs.length === 0) return;
 
     const stats = this.calculateStats(runs);
@@ -289,23 +250,12 @@ export class RunStatistics {
     console.log(
       `    Tokens: ${this.formatTokens(stats.inputTokens)} input • ` +
       `${this.formatTokens(stats.outputTokens)} output` +
-      (stats.thoughtsTokens > 0 ? ` • ${this.formatTokens(stats.thoughtsTokens)} thinking` : '')
+      (stats.reasoningTokens > 0 ? ` • ${this.formatTokens(stats.reasoningTokens)} reasoning` : '')
     );
 
-    const cacheCreate = this.getCacheCreateStats(mode, runs);
-    if (cacheCreate.count > 0 || cacheCreate.tokenCount > 0 || stats.cachedInputTokens > 0) {
-      const cacheParts: string[] = [];
-      if (cacheCreate.count > 0 || cacheCreate.tokenCount > 0) {
-        cacheParts.push(`${this.formatTokens(cacheCreate.tokenCount)} created`);
-      }
-      if (stats.cachedInputTokens > 0) {
-        const reused = `${this.formatTokens(stats.cachedInputTokens)}`;
-        const reusedPercent = stats.inputTokens > 0
-          ? ` (${this.formatPercent(stats.cachedInputTokens / stats.inputTokens)})`
-          : '';
-        cacheParts.push(`${reused}${reusedPercent} reused`);
-      }
-      console.log(`    Cache: ${cacheParts.join(' • ')}`);
+    if (stats.cachedInputTokens > 0) {
+      const reusedPercent = stats.inputTokens > 0 ? ` (${this.formatPercent(stats.cachedInputTokens / stats.inputTokens)})` : '';
+      console.log(`    Cache: ${this.formatTokens(stats.cachedInputTokens)}${reusedPercent} reused`);
     }
   }
 
@@ -316,8 +266,8 @@ export class RunStatistics {
       console.log(`  GitHub API: ${this.githubApiCalls} calls • ${this.githubApiRetries} retries`);
     }
 
-    this.printModelSummary('Fast', 'fast', this.modelFast, this.fastRuns);
-    this.printModelSummary('Pro', 'pro', this.modelPro, this.proRuns);
+    this.printModelSummary('Fast', this.modelFast, this.fastRuns);
+    this.printModelSummary('Pro', this.modelPro, this.proRuns);
 
     const actionParts: string[] = [];
     if (this.triaged > 0) actionParts.push(`✅ ${this.triaged} triaged`);
@@ -339,16 +289,14 @@ export class RunStatistics {
     }
   }
 
-  private summarizeRuns(mode: 'fast' | 'pro', runs: ModelRunStats[]) {
+  private summarizeRuns(runs: ModelRunStats[]) {
     const stats = this.calculateStats(runs);
-    const cacheCreate = this.getCacheCreateStats(mode, runs);
     return {
       runs: runs.length,
       totalMs: Math.round(stats.total),
       avgMs: Math.round(stats.avg),
       p95Ms: Math.round(stats.p95),
       ...sumTokens(runs),
-      cacheCreatedTokens: cacheCreate.tokenCount,
     };
   }
 
@@ -411,13 +359,12 @@ export class RunStatistics {
       });
 
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       repo: this.owner && this.repo ? `${this.owner}/${this.repo}` : '',
       models: {
         fast: this.modelFast || null,
         pro: this.modelPro || null,
       },
-      providers: this.providers,
       config: this.runConfig,
       promptHash: this.promptHashes,
       github: {
@@ -435,8 +382,8 @@ export class RunStatistics {
         skipReasons,
         planAgreement,
       },
-      fast: this.summarizeRuns('fast', this.fastRuns),
-      pro: this.summarizeRuns('pro', this.proRuns),
+      fast: this.summarizeRuns(this.fastRuns),
+      pro: this.summarizeRuns(this.proRuns),
       actions: {
         total: this.actionsPerformed.length,
         byKind: actionsByKind,

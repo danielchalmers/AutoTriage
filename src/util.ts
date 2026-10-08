@@ -1,8 +1,5 @@
-// Small helpers shared across modules.
-// Kept dependency-free (src/llm/errors.ts imports only types) so any module can import them without creating cycles.
-
-// errorMessage lives with the model client so src/llm/ stays self-contained; it is re-exported here for everything else.
-export { errorMessage } from './llm/errors';
+// errorMessage lives in src/llm/ so that folder stays self-contained; it is re-exported here for everything else.
+export { errorMessage } from './llm/chat';
 
 // Stack-preferring form, for failures that end a run or an item and need to stay diagnosable.
 export function errorDetail(error: unknown): string {

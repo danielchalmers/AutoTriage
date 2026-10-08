@@ -29,7 +29,6 @@ beforeEach(() => {
   vi.stubEnv('ANTHROPIC_API_KEY', '');
   vi.stubEnv('OPENAI_API_KEY', '');
   vi.stubEnv('OPENAI_BASE_URL', '');
-  vi.stubEnv('GOOGLE_GEMINI_BASE_URL', '');
   vi.stubEnv('GITHUB_REPOSITORY', 'danielchalmers/AutoTriage');
   // On GitHub Actions the context loads the triggering event's payload at import; clear it so it can't stand in for GITHUB_REPOSITORY.
   github.context.payload = {};
@@ -50,7 +49,7 @@ describe('getConfig required context', () => {
   it('fails fast when no model API key is set, naming every key it accepts', () => {
     vi.stubEnv('GEMINI_API_KEY', '');
 
-    expect(() => getConfig()).toThrow('model-pro is blank and no model API key is set. Add GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY');
+    expect(() => getConfig()).toThrow('No model API key is set. Add GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY');
   });
 
   it('checks GITHUB_TOKEN before the model keys', () => {
@@ -199,7 +198,7 @@ describe('getConfig model inputs', () => {
     expect(cfg.modelPro).toBe('gemini-3.5-flash-lite');
     expect(cfg.models).toEqual({
       fast: null,
-      pro: expect.objectContaining({ provider: 'gemini', model: 'gemini-3.5-flash-lite', tier: 'official', apiKey: 'gemini-key', isDefault: true }),
+      pro: expect.objectContaining({ provider: 'gemini', model: 'gemini-3.5-flash-lite', apiKey: 'gemini-key', isDefault: true }),
     });
   });
 
@@ -213,12 +212,12 @@ describe('getConfig model inputs', () => {
     const cfg = getConfig();
 
     expect(cfg.modelPro).toBe(model);
-    expect(cfg.models.pro).toMatchObject({ provider, model, tier: 'official', apiKey: 'other-key' });
+    expect(cfg.models.pro).toMatchObject({ provider, model, apiKey: 'other-key' });
   });
 
-  it('resolves each pass on its own, sending the bare model ID', () => {
+  it('resolves each pass on its own', () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key');
-    setInputs({ 'model-fast': ' anthropic/claude-haiku-5-5 ', 'model-pro': 'gemini/gemini-3.8-flash' });
+    setInputs({ 'model-fast': ' claude-haiku-5-5 ', 'model-pro': 'gemini-3.8-flash' });
 
     const cfg = getConfig();
 
@@ -227,11 +226,6 @@ describe('getConfig model inputs', () => {
     expect(cfg.models.pro).toMatchObject({ provider: 'gemini', apiKey: 'gemini-key' });
   });
 
-  it('fails at startup when a model needs a key that is not set', () => {
-    setInputs({ 'model-fast': 'claude-haiku-5-5' });
-
-    expect(() => getConfig()).toThrow('model-fast "claude-haiku-5-5" is served by anthropic, which needs ANTHROPIC_API_KEY');
-  });
 
   it('masks every model API key that is set', () => {
     vi.stubEnv('OPENAI_API_KEY', ' openai-key ');
@@ -241,13 +235,13 @@ describe('getConfig model inputs', () => {
     expect(mocks.setSecret.mock.calls).toEqual([['gemini-key'], ['openai-key']]);
   });
 
-  it('describes which provider serves each pass and why', () => {
+  it('describes the model and host for each pass', () => {
     vi.stubEnv('OPENAI_BASE_URL', 'http://localhost:11434/v1');
     setInputs({ 'model-fast': 'llama3:8b' });
 
     expect(describeModels(getConfig().models)).toEqual([
-      'Model (fast): llama3:8b via openai at localhost:11434 [best effort] — set by model-fast; sent to OPENAI_BASE_URL.',
-      'Model (pro): gemini-3.5-flash-lite via gemini [official] — default for GEMINI_API_KEY; set model-pro to change.',
+      'Model (fast): llama3:8b at localhost:11434.',
+      'Model (pro): gemini-3.5-flash-lite at generativelanguage.googleapis.com (default for GEMINI_API_KEY).',
     ]);
   });
 

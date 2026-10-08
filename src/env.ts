@@ -1,11 +1,11 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import type { Config, PromptPassLimits } from './config';
-import { describeModel, resolveModel, type ModelEnv, type ProviderId, type ResolvedModel } from './llm/resolve';
+import { describeEndpoint, resolveModel, type Endpoint, type ModelEnv, type ProviderId } from './llm/endpoint';
 
 const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
-// The review model each key gets when model-pro is blank. GEMINI_API_KEY keeps the model it had before other providers were supported.
+// The review model each key gets when model-pro is blank.
 const DEFAULT_MODELS: Record<ProviderId, string> = {
   gemini: 'gemini-3.5-flash-lite',
   anthropic: 'claude-haiku-5-5',
@@ -64,17 +64,12 @@ function parseOptionalInput(name: string): string | undefined {
   return normalizeInput(core.getInput(name));
 }
 
-/**
- * The model API settings, read only from the variables resolution documents.
- * Keys are masked so a later log line can't print them.
- */
 function readModelEnv(): ModelEnv {
   const env: ModelEnv = {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
-    GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL,
   };
   for (const key of [env.GEMINI_API_KEY, env.ANTHROPIC_API_KEY, env.OPENAI_API_KEY]) {
     if (key?.trim()) core.setSecret(key.trim());
@@ -82,28 +77,17 @@ function readModelEnv(): ModelEnv {
   return env;
 }
 
-/**
- * Resolve both passes' models.
- * A blank model-fast is how a workflow opts out of the screening pass, and a blank model-pro uses the default for the first key set.
- */
+// A blank model-fast skips the screening pass, and a blank model-pro uses the default for the first key set.
 function resolveModels(env: ModelEnv): Config['models'] {
-  const pro = resolveModel({ input: 'model-pro', value: core.getInput('model-pro'), env, defaults: DEFAULT_MODELS });
+  const pro = resolveModel('model-pro', core.getInput('model-pro'), env, DEFAULT_MODELS);
   const fastInput = parseOptionalInput('model-fast');
-  const fast: ResolvedModel | null = fastInput
-    ? resolveModel({ input: 'model-fast', value: fastInput, env, defaults: DEFAULT_MODELS })
-    : null;
+  const fast: Endpoint | null = fastInput ? resolveModel('model-fast', fastInput, env, DEFAULT_MODELS) : null;
   return { fast, pro };
 }
 
-/**
- * The startup log lines that say which provider serves each pass and why.
- * e.g. `Model (pro): claude-haiku-5-5 via anthropic [official] — default for ANTHROPIC_API_KEY; set model-pro to change.`
- */
 export function describeModels(models: Config['models']): string[] {
   const passes = [['fast', models.fast], ['pro', models.pro]] as const;
-  return passes.flatMap(([pass, resolved]) => resolved
-    ? [`Model (${pass}): ${describeModel(resolved)}${resolved.isDefault ? `; set model-${pass} to change.` : '.'}`]
-    : []);
+  return passes.flatMap(([pass, endpoint]) => endpoint ? [`Model (${pass}): ${describeEndpoint(endpoint)}.`] : []);
 }
 
 function applyMultiplier(base: number, multiplier: number): number {
@@ -138,7 +122,7 @@ function resolveWorkflowRepository(): { owner: string; repo: string } {
 
 /**
  * Resolve runtime config.
- * Throws early with actionable messages if GITHUB_TOKEN is missing, no model input can be resolved to a provider with its key, or repo context is absent.
+ * Throws early with actionable messages if GITHUB_TOKEN is missing, no model API key is set, or repo context is absent.
  */
 export function getConfig(): Config {
   const { owner, repo } = resolveWorkflowRepository();

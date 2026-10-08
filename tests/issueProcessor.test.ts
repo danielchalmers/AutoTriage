@@ -1,10 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { AnthropicClient } from '../src/llm/anthropic';
-import { GeminiClient } from '../src/llm/gemini';
-import { OpenAIClient } from '../src/llm/openai';
-import { ModelError } from '../src/llm/types';
+import { ChatClient, ModelError } from '../src/llm/chat';
 import { buildRunContext, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
@@ -82,20 +79,33 @@ function processOptions(overrides: Record<string, unknown> = {}) {
     autoDiscover: false,
     systemPromptFast: 'fast system prompt',
     systemPromptPro: 'pro system prompt',
-    cacheInfos: new Map(),
     runTimestamp: '2026-05-19T16:16:13.737Z',
     ...overrides,
   };
 }
 
-function modelReply(summary: string, thoughts: string, operations: unknown[], tokens: number) {
+function modelReply(summary: string, operations: unknown[], tokens: number) {
   return {
     data: { summary, operations },
-    thoughts,
     inputTokens: tokens,
     cachedInputTokens: 0,
     outputTokens: tokens / 2,
+    reasoningTokens: 0,
   };
+}
+
+const OPENAI = { baseUrl: 'https://api.openai.com/v1', host: 'api.openai.com', apiKey: 'test-key', keyName: 'OPENAI_API_KEY' };
+
+// A Chat Completions reply for each request in turn, recording the request bodies.
+function chatFetch(...contents: Array<string | Record<string, unknown>>) {
+  const bodies: any[] = [];
+  const fetch = vi.fn(async (_input: unknown, init?: RequestInit) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    const next = contents.shift();
+    const choice = typeof next === 'string' ? { message: { role: 'assistant', content: next }, finish_reason: 'stop' } : next;
+    return Response.json({ choices: [choice], usage: { prompt_tokens: 3050, completion_tokens: 80, completion_tokens_details: { reasoning_tokens: 60 } } });
+  });
+  return Object.assign(fetch, { bodies });
 }
 
 const addBugLabel = (authorization: string) => ({ kind: 'add_labels', labels: ['bug'], authorization });
@@ -107,7 +117,7 @@ describe('processIssue', () => {
       const stats = new RunStatistics();
       const gh = createGitHub();
       const model = {
-        generateJson: vi.fn().mockResolvedValue(modelReply('Fast summary', 'Fast thoughts', [], 10)),
+        generateJson: vi.fn().mockResolvedValue(modelReply('Fast summary', [], 10)),
       } as any;
 
       const result = await processIssue(
@@ -149,8 +159,8 @@ describe('processIssue', () => {
       const model = {
         generateJson: vi
           .fn()
-          .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
-          .mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+          .mockResolvedValueOnce(modelReply('Fast summary', [addBugLabel('fast policy')], 10))
+          .mockResolvedValueOnce(modelReply('Pro summary', [addBugLabel('pro policy')], 20)),
       } as any;
 
       const result = await processIssue(
@@ -193,8 +203,8 @@ describe('processIssue', () => {
       const model = {
         generateJson: vi
           .fn()
-          .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
-          .mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [], 20)),
+          .mockResolvedValueOnce(modelReply('Fast summary', [addBugLabel('fast policy')], 10))
+          .mockResolvedValueOnce(modelReply('Pro summary', [], 20)),
       } as any;
 
       const result = await processIssue(
@@ -211,27 +221,27 @@ describe('processIssue', () => {
     });
   });
 
-  it('sends each pass to its own client and model, uses the cached flex tier when cached, and hands the fast plan to the pro pass', async () => {
+  it('sends each pass to its own client and model, and hands the fast plan to the pro pass', async () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub();
       // model-fast and model-pro can be served by different providers.
-      const fast = { generateJson: vi.fn().mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10)) } as any;
-      const pro = { generateJson: vi.fn().mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)) } as any;
+      const fast = { generateJson: vi.fn().mockResolvedValueOnce(modelReply('Fast summary', [addBugLabel('fast policy')], 10)) } as any;
+      const pro = { generateJson: vi.fn().mockResolvedValueOnce(modelReply('Pro summary', [addBugLabel('pro policy')], 20)) } as any;
 
       await processIssue(
         { cfg: createConfig(), db, gh, models: { fast, pro }, stats },
-        processOptions({ cacheInfos: new Map([['pro', { name: 'cachedContents/pro', tokenCount: 100 }]]) })
+        processOptions()
       );
 
       expect(fast.generateJson).toHaveBeenCalledOnce();
       expect(pro.generateJson).toHaveBeenCalledOnce();
       const [fastRequest] = fast.generateJson.mock.calls[0];
-      expect(fastRequest).toMatchObject({ model: 'fast-model', systemPrompt: 'fast system prompt', cacheName: undefined, useFlexTier: false });
+      expect(fastRequest).toMatchObject({ model: 'fast-model', systemPrompt: 'fast system prompt' });
 
       const [proRequest] = pro.generateJson.mock.calls[0];
-      expect(proRequest).toMatchObject({ model: 'pro-model', systemPrompt: 'pro system prompt', cacheName: 'cachedContents/pro', useFlexTier: true });
+      expect(proRequest).toMatchObject({ model: 'pro-model', systemPrompt: 'pro system prompt' });
       const proUserPrompt = proRequest.userPrompt;
       expect(proUserPrompt).toContain('=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===');
       expect(proUserPrompt).toContain('"authorization": "fast policy"');
@@ -249,7 +259,7 @@ describe('processIssue', () => {
       const model = {
         generateJson: vi
           .fn()
-          .mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [{
+          .mockResolvedValue(modelReply('Pro summary', [{
             kind: 'set_state',
             state: 'not_planned',
             authorization: 'pro policy',
@@ -294,7 +304,7 @@ describe('processIssue', () => {
       const stats = new RunStatistics();
       const gh = createGitHub({ getIssue: vi.fn().mockRejectedValue(new Error('recheck failed')) });
       const model = {
-        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', [addBugLabel('pro policy')], 20)),
       } as any;
 
       try {
@@ -331,7 +341,7 @@ describe('processIssue', () => {
           .mockRejectedValueOnce(new Error('refresh failed')),
       });
       const model = {
-        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', [addBugLabel('pro policy')], 20)),
       } as any;
 
       try {
@@ -357,7 +367,7 @@ describe('processIssue', () => {
       const stats = new RunStatistics();
       const gh = createGitHub({ getIssue: vi.fn() });
       const model = {
-        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
+        generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', [addBugLabel('pro policy')], 20)),
       } as any;
 
       await processIssue(
@@ -374,9 +384,9 @@ describe('processIssue', () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
-      const replies = ['{"summary":"s","operations":{}}', '{"summary":7,"operations":[]}'];
-      const fetch = vi.fn(async () => Response.json({ candidates: [{ content: { parts: [{ text: replies.shift() }] } }] }));
-      const model = new GeminiClient('test-key', fetch);
+      const fetch = chatFetch('{"summary":"s","operations":{}}', '{"summary":7,"operations":[]}');
+      const model = new ChatClient(OPENAI, fetch);
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
       vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
 
       await processIssue({ cfg: createConfig(), db, gh: createGitHub(), models: bothPasses(model), stats }, processOptions());
@@ -386,65 +396,11 @@ describe('processIssue', () => {
     });
   });
 
-  it('escalates to the pro pass without a fast plan when the fast model refuses', async () => {
-    await withArtifactsDir(async () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
-      const model = {
-        generateJson: vi
-          .fn()
-          .mockRejectedValueOnce(new ModelError('Gemini declined to answer (finishReason SAFETY)', { kind: 'refusal' }))
-          .mockResolvedValueOnce(modelReply('Pro summary', 'Pro thoughts', [addBugLabel('pro policy')], 20)),
-      } as any;
-
-      const result = await processIssue({ cfg: createConfig(), db, gh: createGitHub(), models: bothPasses(model), stats }, processOptions());
-
-      expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
-      expect(model.generateJson).toHaveBeenCalledTimes(2);
-      expect(model.generateJson.mock.calls[1][0].userPrompt).not.toContain('FAST PASS PROPOSED PLAN');
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('The fast model refused #42'));
-      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
-      expect(item).toMatchObject({ outcome: 'triaged', escalatedToPro: true, proPlan: { kinds: ['add_labels'], labels: ['+bug'] } });
-      expect(item.fastPlan).toBeUndefined();
-      expect(item.agreement).toBeUndefined();
-      expect(db.items['42']).toMatchObject({ summary: 'Pro summary' });
-    });
-  });
-
-  it('records a pro-pass refusal as skipped and consumes its watermark so it is not re-billed', async () => {
-    await withArtifactsDir(async () => {
-      vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
-      const gh = createGitHub({ getIssue: vi.fn() });
-      const model = {
-        generateJson: vi
-          .fn()
-          .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
-          .mockRejectedValueOnce(new ModelError('Gemini blocked the prompt (blockReason PROHIBITED_CONTENT)', { kind: 'refusal' })),
-      } as any;
-
-      const result = await processIssue({ cfg: createConfig({ dryRun: false }), db, gh, models: bothPasses(model), stats }, processOptions());
-
-      expect(result).toEqual({ triageUsed: true, fastRunUsed: true, skipped: true });
-      expect(gh.getIssue).not.toHaveBeenCalled();
-      expect(gh.addLabels).not.toHaveBeenCalled();
-      expect(db.items['42']).toMatchObject({ summary: baseIssue.title, lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
-      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
-      expect(item).toMatchObject({ outcome: 'skipped', skipReason: 'refused', escalatedToPro: true, fastPlan: { kinds: ['add_labels'], labels: ['+bug'] } });
-      expect(item.proPlan).toBeUndefined();
-      // An unchanged item is left out of the next sweep's queue.
-      expect(buildAutoDiscoverQueue([baseIssue], db, true)).toEqual([]);
-    });
-  });
-
-  it('fails the item without retrying when the reply is truncated', async () => {
+  it('fails the item without retrying when the reply is cut off', async () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
-      const fetch = vi.fn(async () => Response.json({ candidates: [{ content: { parts: [{ text: '{"summary":"cut' }] }, finishReason: 'MAX_TOKENS' }] }));
-      const model = new GeminiClient('test-key', fetch);
-      vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
+      const fetch = chatFetch({ message: { role: 'assistant', content: '{"summary":"cut' }, finish_reason: 'length' });
+      const model = new ChatClient(OPENAI, fetch);
 
       const error = await processIssue(
         { cfg: createConfig({ skipFastPass: true }), db, gh: createGitHub(), models: bothPasses(model), stats: new RunStatistics() },
@@ -452,98 +408,47 @@ describe('processIssue', () => {
       ).catch((err: unknown) => err);
 
       expect(error).toBeInstanceOf(ModelError);
-      expect((error as ModelError).failure).toEqual({ kind: 'truncated' });
+      expect(error).toMatchObject({ kind: 'permanent', message: 'api.openai.com stopped the reply at the output token limit' });
       expect(fetch).toHaveBeenCalledOnce();
       expect(db.items['42']).toBeUndefined();
     });
   });
 
-  it('triages through Claude with the system prompt marked for caching, and counts its cache writes as created', async () => {
-    await withArtifactsDir(async () => {
-      const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
-      const bodies: any[] = [];
-      const reply = (operations: unknown[], usage: Record<string, number>) => Response.json({
-        content: [{ type: 'thinking', thinking: 'Looks like a bug.', signature: 'sig' }, { type: 'text', text: JSON.stringify({ summary: 'Crash', operations }) }],
-        stop_reason: 'end_turn',
-        usage: { input_tokens: 50, output_tokens: 80, output_tokens_details: { thinking_tokens: 60 }, ...usage },
-      });
-      const replies = [
-        reply([addBugLabel('fast policy')], { cache_creation_input_tokens: 1000 }),
-        reply([addBugLabel('pro policy')], { cache_creation_input_tokens: 3000 }),
-      ];
-      const fetch = vi.fn(async (_input: unknown, init?: RequestInit) => {
-        bodies.push(JSON.parse(String(init?.body)));
-        return replies.shift()!;
-      });
-      const model = new AnthropicClient('test-key', fetch);
-      const cacheInfos = new Map([
-        ['fast', await model.createCache('fast-model', 'fast system prompt')],
-        ['pro', await model.createCache('pro-model', 'pro system prompt')],
-      ]);
-
-      await processIssue(
-        { cfg: createConfig(), db, gh: createGitHub(), models: bothPasses(model), stats },
-        processOptions({ cacheInfos })
-      );
-
-      expect(fetch).toHaveBeenCalledTimes(2);
-      for (const body of bodies) {
-        expect(body.system[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
-        expect(body.output_config.format.schema.properties.operations.items.anyOf[0].properties.labels.items).toEqual({ type: 'string', enum: ['bug'] });
-      }
-      const json = stats.toJSON() as any;
-      expect(json.fast).toMatchObject({ runs: 1, inputTokens: 1050, thoughtsTokens: 60, outputTokens: 20, cacheCreatedTokens: 1000 });
-      expect(json.pro).toMatchObject({ runs: 1, inputTokens: 3050, cacheCreatedTokens: 3000 });
-      expect(db.items['42']).toMatchObject({ summary: 'Crash' });
-    });
-  });
-
-  it('triages through OpenAI with a cache breakpoint, and explains the plan in the log and the comment since OpenAI returns no thoughts', async () => {
+  it('triages through Chat Completions, and explains the plan in the log and the comment', async () => {
     await withArtifactsDir(async (tempDir) => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub({ getIssue: vi.fn().mockResolvedValue(baseIssue) });
-      const bodies: any[] = [];
       const operations = [
         addBugLabel('Policy 2 labels crashes as bugs'),
         { kind: 'comment', body: 'Thanks for the report.', authorization: 'Policy 4 thanks first-time reporters' },
       ];
-      const fetch = vi.fn(async (_input: unknown, init?: RequestInit) => {
-        bodies.push(JSON.parse(String(init?.body)));
-        return Response.json({
-          choices: [{ message: { role: 'assistant', content: JSON.stringify({ summary: 'Crash on save', operations }), refusal: null }, finish_reason: 'stop' }],
-          usage: { prompt_tokens: 3050, completion_tokens: 80, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 3000 }, completion_tokens_details: { reasoning_tokens: 60 } },
-        });
-      });
-      const model = new OpenAIClient('test-key', fetch);
-      const cacheInfos = new Map([['pro', await model.createCache('gpt-6-luna', 'pro system prompt')]]);
+      const fetch = chatFetch(JSON.stringify({ summary: 'Crash on save', operations }));
 
       try {
         await processIssue(
-          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
-          processOptions({ cacheInfos, systemPromptFast: '' })
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(new ChatClient(OPENAI, fetch)), stats },
+          processOptions({ systemPromptFast: '' })
         );
 
         const explanation = [
-          "The model returned no thoughts, so this is the plan's own explanation.",
           'Summary: Crash on save',
           'Operations:',
           '- add_labels: Policy 2 labels crashes as bugs',
           '- comment: Policy 4 thanks first-time reporters',
         ].join('\n');
         expect(fetch).toHaveBeenCalledOnce();
-        expect(bodies[0].messages[0].content).toEqual([{ type: 'text', text: 'pro system prompt', prompt_cache_breakpoint: { mode: 'explicit' } }]);
-        expect(bodies[0].response_format.json_schema.schema.properties.operations.items.anyOf[0].properties.labels.items).toEqual({ type: 'string', enum: ['bug'] });
+        expect(fetch.bodies[0].messages[0]).toEqual({ role: 'system', content: 'pro system prompt' });
+        expect(fetch.bodies[0].response_format.json_schema.schema.properties.operations.items.anyOf[0].properties.labels.items).toEqual({ type: 'string', enum: ['bug'] });
         expect(log.mock.calls.map(call => String(call[0]))).toContainEqual(expect.stringContaining(explanation));
         expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
         expect(gh.createComment).toHaveBeenCalledWith(42, `Thanks for the report.\n\n<!--\n${explanation}\n-->`);
-        expect((stats.toJSON() as any).pro).toMatchObject({ runs: 1, inputTokens: 3050, outputTokens: 20, thoughtsTokens: 60, cacheCreatedTokens: 3000 });
+        expect((stats.toJSON() as any).pro).toMatchObject({ runs: 1, inputTokens: 3050, outputTokens: 20, reasoningTokens: 60 });
         expect(db.items['42']).toMatchObject({ summary: 'Crash on save' });
         // The raw artifact keeps what the model actually returned.
         const artifact = JSON.parse(fs.readFileSync(path.join(tempDir, 'artifacts', '42-pro-analysis.json'), 'utf8'));
-        expect(artifact).toMatchObject({ summary: 'Crash on save', thoughts: '' });
+        expect(artifact).toEqual({ summary: 'Crash on save', operations });
       } finally {
         log.mockRestore();
       }
@@ -559,7 +464,7 @@ describe('processIssue', () => {
         generateJson: vi
           .fn()
           // Fast pass escalates, then the pro pass dies.
-          .mockResolvedValueOnce(modelReply('Fast summary', 'Fast thoughts', [addBugLabel('fast policy')], 10))
+          .mockResolvedValueOnce(modelReply('Fast summary', [addBugLabel('fast policy')], 10))
           .mockRejectedValueOnce(new Error('503 UNAVAILABLE')),
       } as any;
 

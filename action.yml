@@ -36,7 +36,7 @@ inputs:
     required: false
     default: "20"
   model-fast:
-    description: "Fast-pass model, optionally with a gemini/, anthropic/ or openai/ prefix. Leave blank to skip."
+    description: "Fast-pass model. Leave blank to skip."
     required: false
     default: ""
   model-pro:

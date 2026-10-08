@@ -30,7 +30,7 @@ function applyTimelineLimits(events: TimelineEvent[], limits: PromptPassLimits):
 
 /**
  * Build the static system prompt that is identical across all issues in a run.
- * This content is suitable for Gemini context caching.
+ * It leads every request unchanged, so providers that cache prompt prefixes can reuse it across the run.
  */
 export function buildSystemPrompt(
   promptPath: string,

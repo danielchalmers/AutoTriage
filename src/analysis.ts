@@ -30,38 +30,43 @@ export function parseAnalysisResult(data: unknown): AnalysisResult {
   return { ...reply, summary: typeof reply.summary === 'string' ? reply.summary : '', operations: reply.operations };
 }
 
-// Every operation shares the kind/payload/authorization skeleton.
+// Every operation shares the kind/payload/authorization skeleton, as strict JSON Schema: every property required and no others allowed.
 // The payload must be spread rather than set through a computed key: a computed key collapses `properties` to an index signature and the label-schema tests lose the `in` narrowing they rely on.
 function operationSchema<T extends object>(kinds: readonly string[], payload: T) {
   return {
-    type: 'OBJECT',
-    properties: { kind: { type: 'STRING', enum: kinds }, ...payload, authorization: { type: 'STRING' } },
+    type: 'object',
+    properties: { kind: { type: 'string', enum: kinds }, ...payload, authorization: { type: 'string' } },
     required: ['kind', ...Object.keys(payload), 'authorization'],
+    additionalProperties: false,
   };
 }
 
-function analysisResultSchema(labelItems: { type: 'STRING'; enum?: string[] }) {
+function analysisResultSchema(labelItems: { type: 'string'; enum?: string[] }) {
   return {
-    type: 'OBJECT',
+    type: 'object',
     properties: {
-      summary: { type: 'STRING' },
+      summary: { type: 'string' },
       operations: {
-        type: 'ARRAY',
+        type: 'array',
         items: {
           anyOf: [
-            operationSchema(['add_labels', 'remove_labels'], { labels: { type: 'ARRAY', items: labelItems } }),
-            operationSchema(['comment'], { body: { type: 'STRING' } }),
-            operationSchema(['set_state'], { state: { type: 'STRING', enum: ['open', 'completed', 'not_planned'] } }),
-            operationSchema(['set_title'], { title: { type: 'STRING' } }),
+            operationSchema(['add_labels', 'remove_labels'], { labels: { type: 'array', items: labelItems } }),
+            operationSchema(['comment'], { body: { type: 'string' } }),
+            operationSchema(['set_state'], { state: { type: 'string', enum: ['open', 'completed', 'not_planned'] } }),
+            operationSchema(['set_title'], { title: { type: 'string' } }),
           ],
         },
       },
     },
     required: ['summary', 'operations'],
+    additionalProperties: false,
   };
 }
 
-export const AnalysisResultSchema = analysisResultSchema({ type: 'STRING' });
+export const AnalysisResultSchema = analysisResultSchema({ type: 'string' });
+
+// OpenAI caps enums at 250 values before it also limits their total length, and unknown labels are dropped when the plan is applied anyway.
+const MAX_LABEL_ENUM = 250;
 
 export type RepoLabel = { name: string; description?: string | null };
 
@@ -78,11 +83,11 @@ export function normalizeRepoLabels<T extends { name: string; description?: stri
  * This ensures the AI returns labels in the exact format they exist in the repository, preventing issues like "breaking change" being converted to "breaking_change".
  */
 export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
-  if (repoLabels.length === 0) {
+  if (repoLabels.length === 0 || repoLabels.length > MAX_LABEL_ENUM) {
     return AnalysisResultSchema;
   }
 
-  return analysisResultSchema({ type: 'STRING', enum: normalizeRepoLabels(repoLabels).map(l => l.name) });
+  return analysisResultSchema({ type: 'string', enum: normalizeRepoLabels(repoLabels).map(l => l.name) });
 }
 
 export { buildSystemPrompt, buildUserPrompt } from './prompts';

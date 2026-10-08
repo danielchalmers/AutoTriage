@@ -1,4 +1,4 @@
-import type { ResolvedModel } from './llm/resolve';
+import type { Endpoint } from './llm/endpoint';
 
 export type PromptPassMode = 'fast' | 'pro';
 
@@ -23,8 +23,8 @@ export interface Config {
   // The IDs sent to each pass's API; modelFast is '' when the fast pass is skipped.
   modelFast: string;
   modelPro: string;
-  // Which provider serves each pass, with its key and support tier; fast is null when the fast pass is skipped.
-  models: { fast: ResolvedModel | null; pro: ResolvedModel };
+  // The endpoint that serves each pass; fast is null when the fast pass is skipped.
+  models: { fast: Endpoint | null; pro: Endpoint };
   limits: Record<PromptPassMode, PromptPassLimits>;
   maxProRuns: number;
   maxFastRuns: number;

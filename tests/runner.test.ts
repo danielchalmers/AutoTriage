@@ -11,11 +11,10 @@ vi.mock('@actions/github', () => ({
   context: githubContextMock,
 }));
 
-// setFailed would otherwise print ::error:: and set process.exitCode for the test worker, and error would print an annotation.
+// setFailed would otherwise print ::error:: and set process.exitCode for the test worker.
 vi.mock('@actions/core', async (importActual) => ({
   ...(await importActual<typeof import('@actions/core')>()),
   setFailed: vi.fn(),
-  error: vi.fn(),
 }));
 
 vi.mock('../src/issueProcessor', async () => {
@@ -30,10 +29,9 @@ import * as core from '@actions/core';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { GeminiResponseError } from '../src/llm/gemini';
-import { ModelApiError, ModelError } from '../src/llm/types';
+import { ModelError } from '../src/llm/chat';
 import { listTargets, runAutoTriage } from '../src/runner';
-import { bothPasses, makeClosedIssue, makeConfig, makeDb, makeIssue, makeResolvedModel, withTempDir } from './fixtures';
+import { bothPasses, makeClosedIssue, makeConfig, makeDb, makeIssue, withTempDir } from './fixtures';
 
 const baseConfig = makeConfig();
 
@@ -143,7 +141,6 @@ describe('runAutoTriage', () => {
 
   function createStats() {
     return {
-      trackCacheCreate: vi.fn(),
       incrementTriaged: vi.fn(),
       incrementSkipped: vi.fn(),
       incrementFailed: vi.fn(),
@@ -162,10 +159,7 @@ describe('runAutoTriage', () => {
   }
 
   function createModel() {
-    return {
-      createCache: vi.fn(),
-      deleteCache: vi.fn().mockResolvedValue(undefined),
-    };
+    return { generateJson: vi.fn() };
   }
 
   function createGitHub() {
@@ -178,113 +172,11 @@ describe('runAutoTriage', () => {
     };
   }
 
-  it('creates caches for backlog auto-discovery runs', async () => {
-    const gh = createGitHub();
-    const model = createModel();
-    model.createCache
-      .mockResolvedValueOnce({ name: 'cachedContents/fast', tokenCount: 10 })
-      .mockResolvedValueOnce({ name: 'cachedContents/pro', tokenCount: 20 });
-    const stats = createStats();
+  it('tells each item whether it came from backlog auto-discovery', async () => {
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() as any });
+    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() as any });
 
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, models: bothPasses(model), stats: stats as any });
-
-    expect(model.createCache).toHaveBeenCalledTimes(2);
-    expect(processIssueMock).toHaveBeenCalledOnce();
-    const options = processIssueMock.mock.calls[0]![1];
-    expect(options.autoDiscover).toBe(true);
-    expect(options.cacheInfos.get('fast')?.name).toBe('cachedContents/fast');
-    expect(options.cacheInfos.get('pro')?.name).toBe('cachedContents/pro');
-    expect(model.deleteCache).toHaveBeenCalledWith('cachedContents/fast');
-    expect(model.deleteCache).toHaveBeenCalledWith('cachedContents/pro');
-  });
-
-  it('creates and deletes each pass cache with that pass client', async () => {
-    const fast = createModel();
-    const pro = createModel();
-    fast.createCache.mockResolvedValue({ name: 'cachedContents/fast', tokenCount: 10 });
-    pro.createCache.mockResolvedValue({ name: 'cachedContents/pro', tokenCount: 20 });
-
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: { fast, pro } as any, stats: createStats() as any });
-
-    expect(fast.createCache).toHaveBeenCalledWith('fast-model', expect.any(String), 'autotriage-fast-owner/repo');
-    expect(pro.createCache).toHaveBeenCalledWith('pro-model', expect.any(String), 'autotriage-pro-owner/repo');
-    expect(fast.deleteCache).toHaveBeenCalledExactlyOnceWith('cachedContents/fast');
-    expect(pro.deleteCache).toHaveBeenCalledExactlyOnceWith('cachedContents/pro');
-  });
-
-  it('stamps the thinking level into the run summary config as before', async () => {
-    const model = createModel();
-    model.createCache.mockResolvedValue({ name: 'cachedContents/any', tokenCount: 10 });
-    const stats = createStats();
-
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(model), stats: stats as any });
-
-    // run-summary.json v2 has always recorded "high", so replacing the Gemini client must not change it.
-    expect(stats.setRunConfig).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: 'high' }));
-  });
-
-  it('skips caches for explicit target runs', async () => {
-    const gh = createGitHub();
-    const model = createModel();
-    const stats = createStats();
-
-    await runAutoTriage({
-      cfg: { ...baseConfig, issueNumbers: [5] },
-      db: makeDb(),
-      gh: gh as any,
-      models: bothPasses(model),
-      stats: stats as any,
-    });
-
-    expect(model.createCache).not.toHaveBeenCalled();
-    expect(processIssueMock).toHaveBeenCalledOnce();
-    const options = processIssueMock.mock.calls[0]![1];
-    expect(options.autoDiscover).toBe(false);
-    expect(options.cacheInfos.size).toBe(0);
-  });
-
-  it('falls back to uncached processing when cache creation is unavailable', async () => {
-    const gh = createGitHub();
-    const model = createModel();
-    model.createCache.mockRejectedValue(new Error('Caching is not supported for this account'));
-    const stats = createStats();
-
-    await expect(
-      runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, models: bothPasses(model), stats: stats as any })
-    ).resolves.toBeUndefined();
-
-    expect(model.createCache).toHaveBeenCalledTimes(2);
-    expect(processIssueMock).toHaveBeenCalledOnce();
-    const options = processIssueMock.mock.calls[0]![1];
-    expect(options.autoDiscover).toBe(true);
-    expect(options.cacheInfos.size).toBe(0);
-    expect(model.deleteCache).not.toHaveBeenCalled();
-  });
-
-  it('runs uncached without a warning when the provider offers no cache', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const model = createModel();
-    model.createCache.mockResolvedValue(undefined);
-    const stats = createStats();
-
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(model), stats: stats as any });
-
-    expect(model.createCache).toHaveBeenCalledTimes(2);
-    expect(processIssueMock.mock.calls[0]![1].cacheInfos.size).toBe(0);
-    expect(stats.trackCacheCreate).not.toHaveBeenCalled();
-    expect(warn.mock.calls.flat().join('\n')).not.toContain('caching');
-    expect(model.deleteCache).not.toHaveBeenCalled();
-  });
-
-  it('keeps cache creation best effort even when the key is rejected', async () => {
-    const model = createModel();
-    model.createCache.mockRejectedValue(new ModelApiError('{"error":{"code":403}}', 403));
-
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(model), stats: createStats() as any });
-
-    expect(processIssueMock).toHaveBeenCalledOnce();
-    expect(processIssueMock.mock.calls[0]![1].cacheInfos.size).toBe(0);
-    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(processIssueMock.mock.calls.map(([, options]) => options.autoDiscover)).toEqual([true, false]);
   });
 
   it('saves the database after processing the item that reaches max-pro-runs', async () => {
@@ -425,42 +317,19 @@ describe('runAutoTriage', () => {
     expect(stats.incrementTriaged).toHaveBeenCalledOnce();
   });
 
-  it('reports a refused item as skipped but still counts its review call against the pro budget', async () => {
-    processIssueMock
-      .mockResolvedValueOnce({ triageUsed: true, fastRunUsed: true, skipped: true })
-      .mockResolvedValueOnce({ triageUsed: true, fastRunUsed: true });
-    const stats = createStats();
-
-    await runAutoTriage({
-      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 },
-      db: makeDb(),
-      gh: createGitHub() as any,
-      models: bothPasses(createModel()),
-      stats: stats as any,
-    });
-
-    expect(processIssueMock).toHaveBeenCalledOnce();
-    expect(stats.incrementSkipped).toHaveBeenCalledOnce();
-    expect(stats.incrementTriaged).not.toHaveBeenCalled();
-  });
-
-  it('ignores the fast-run cap and creates only the pro cache when the fast pass is disabled', async () => {
+  it('ignores the fast-run cap when the fast pass is disabled', async () => {
     processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: false });
     const gh = createGitHub();
     gh.listOpenIssues.mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z'), makeIssue(6, '2024-04-06T00:00:00Z')]);
-    const model = createModel();
-    model.createCache.mockResolvedValue({ name: 'cachedContents/pro', tokenCount: 20 });
 
     await runAutoTriage({
       cfg: { ...baseConfig, skipFastPass: true, modelFast: '', maxFastRuns: 1 },
       db: makeDb(),
       gh: gh as any,
-      models: bothPasses(model),
+      models: bothPasses(createModel()),
       stats: createStats() as any,
     });
 
-    expect(model.createCache).toHaveBeenCalledOnce();
-    expect(model.createCache).toHaveBeenCalledWith('pro-model', expect.any(String), 'autotriage-pro-owner/repo');
     expect(processIssueMock).toHaveBeenCalledTimes(2);
     expect(processIssueMock.mock.calls[0]![1].systemPromptFast).toBe('');
   });
@@ -491,7 +360,7 @@ describe('runAutoTriage', () => {
 
   it('logs model errors without a stack and attributes the failure to the pass in flight', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    processIssueMock.mockRejectedValueOnce(new GeminiResponseError('Unable to parse JSON from Gemini response'));
+    processIssueMock.mockRejectedValueOnce(new ModelError('Unable to parse JSON from the api.openai.com response'));
     const stats = createStats();
     stats.getCurrentPass.mockReturnValue('pro');
 
@@ -503,7 +372,7 @@ describe('runAutoTriage', () => {
       stats: stats as any,
     });
 
-    expect(warnSpy).toHaveBeenCalledWith('#5: Unable to parse JSON from Gemini response');
+    expect(warnSpy).toHaveBeenCalledWith('#5: Unable to parse JSON from the api.openai.com response');
     expect(stats.recordItem).toHaveBeenCalledWith({ issueNumber: 5, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'retryable' });
   });
 
@@ -524,67 +393,38 @@ describe('runAutoTriage', () => {
 
   it('stops the run and fails the job on a fatal model error, even outside strict mode', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const model = createModel();
-    model.createCache.mockResolvedValue({ name: 'cachedContents/pro', tokenCount: 20 });
     const gh = createGitHub();
     gh.listOpenIssues.mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z'), makeIssue(6, '2024-04-06T00:00:00Z')]);
     const stats = createStats();
     stats.getCurrentPass.mockReturnValue('fast');
-    processIssueMock.mockRejectedValueOnce(new ModelError('{"error":{"code":400,"message":"API key not valid."}}', { kind: 'fatal', cause: 'auth' }));
+    const message = 'api.openai.com returned HTTP 401: {"error":{"message":"Incorrect API key provided"}} Check OPENAI_API_KEY.';
+    processIssueMock.mockRejectedValueOnce(new ModelError(message, 'fatal'));
 
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, models: bothPasses(model), stats: stats as any });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, models: bothPasses(createModel()), stats: stats as any });
 
     expect(processIssueMock).toHaveBeenCalledOnce();
-    expect(core.error).toHaveBeenCalledWith('#5: {"error":{"code":400,"message":"API key not valid."}}', { title: 'Fatal model error' });
-    expect(core.setFailed).toHaveBeenCalledOnce();
-    expect(core.setFailed).toHaveBeenCalledWith('Stopped the run because the model API rejected the API key. Check the GEMINI_API_KEY secret.');
-    expect(stats.recordItem).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed', failedPass: 'fast', failureReason: 'auth' }));
-    // The run still cleans up and reports.
-    expect(model.deleteCache).toHaveBeenCalledWith('cachedContents/pro');
+    expect(core.setFailed).toHaveBeenCalledExactlyOnceWith(`Stopped the run at #5 because of a model error that every later item would hit too: ${message}`);
+    expect(stats.recordItem).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed', failedPass: 'fast', failureReason: 'fatal' }));
+    // The run still reports.
     expect(stats.printSummary).toHaveBeenCalledOnce();
-    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('API key not valid'));
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Incorrect API key'));
   });
 
-  it('names the key secret of the provider whose pass rejected the key', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const models = {
-      fast: makeResolvedModel('claude-haiku-5-5', { provider: 'anthropic' }),
-      pro: makeResolvedModel('gpt-6-luna', { provider: 'openai' }),
-    };
-    for (const [pass, secret] of [['fast', 'ANTHROPIC_API_KEY'], ['pro', 'OPENAI_API_KEY']] as const) {
-      vi.mocked(core.setFailed).mockClear();
-      processIssueMock.mockRejectedValueOnce(new ModelError('invalid x-api-key', { kind: 'fatal', cause: 'auth' }));
-      const stats = createStats();
-      stats.getCurrentPass.mockReturnValue(pass);
+  it('fails the job only once in strict mode when a fatal model error stops the run', async () => {
+    processIssueMock.mockRejectedValueOnce(new ModelError('x', 'fatal'));
+    const stats = createStats();
+    stats.getFailed.mockReturnValue(1);
 
-      await runAutoTriage({ cfg: { ...baseConfig, models, issueNumbers: [5] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: stats as any });
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5, 6], strictMode: true },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      models: bothPasses(createModel()),
+      stats: stats as any,
+    });
 
-      expect(core.setFailed).toHaveBeenCalledExactlyOnceWith(`Stopped the run because the model API rejected the API key. Check the ${secret} secret.`);
-    }
-  });
-
-  it('names the cause of each fatal model error and fails the job only once in strict mode', async () => {
-    const reasons = {
-      model: 'Stopped the run because the model API does not know the model, or the model does not support the request. Check model-fast and model-pro.',
-      quota: 'Stopped the run because the model API account is out of credit or over its spend limit. Check its billing.',
-    } as const;
-    for (const [cause, reason] of Object.entries(reasons) as Array<[keyof typeof reasons, string]>) {
-      vi.mocked(core.setFailed).mockClear();
-      processIssueMock.mockRejectedValueOnce(new ModelError('x', { kind: 'fatal', cause }));
-      const stats = createStats();
-      stats.getFailed.mockReturnValue(1);
-
-      await runAutoTriage({
-        cfg: { ...baseConfig, issueNumbers: [5, 6], strictMode: true },
-        db: makeDb(),
-        gh: createGitHub() as any,
-        models: bothPasses(createModel()),
-        stats: stats as any,
-      });
-
-      expect(core.setFailed).toHaveBeenCalledOnce();
-      expect(core.setFailed).toHaveBeenCalledWith(reason);
-    }
+    expect(processIssueMock).toHaveBeenCalledOnce();
+    expect(core.setFailed).toHaveBeenCalledOnce();
   });
 
   it('fails the job in strict mode when any item failed', async () => {
