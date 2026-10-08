@@ -1,0 +1,151 @@
+{
+  "thought and answer parts with usage": {
+    "call": "generateJson",
+    "response": {
+      "status": 200,
+      "statusText": "OK",
+      "contentType": "application/json; charset=UTF-8",
+      "body": "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\": [\n          {\n            \"text\": \"First thought.\\n\\n\\n\",\n            \"thought\": true\n          },\n          {\n            \"text\": \"{\\\"summary\\\":\"\n          },\n          {\n            \"text\": \"Second thought.\",\n            \"thought\": true\n          },\n          {\n            \"text\": \"\\\"ok\\\",\\\"operations\\\":[]}\"\n          },\n          {\n            \"inlineData\": {\n              \"mimeType\": \"image/png\",\n              \"data\": \"\"\n            }\n          }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\",\n      \"index\": 0\n    }\n  ],\n  \"usageMetadata\": {\n    \"promptTokenCount\": 1000,\n    \"cachedContentTokenCount\": 800,\n    \"candidatesTokenCount\": 50,\n    \"thoughtsTokenCount\": 400,\n    \"totalTokenCount\": 1450\n  },\n  \"modelVersion\": \"gemini-3.5-flash-lite\",\n  \"responseId\": \"resp-1\"\n}"
+    },
+    "outcome": {
+      "result": {
+        "data": {
+          "summary": "ok",
+          "operations": []
+        },
+        "thoughts": "First thought.\nSecond thought.",
+        "inputTokens": 1000,
+        "cachedInputTokens": 800,
+        "outputTokens": 50,
+        "thoughtsTokens": 400
+      }
+    }
+  },
+  "answer without usage metadata": {
+    "call": "generateJson",
+    "response": {
+      "status": 200,
+      "statusText": "OK",
+      "contentType": "application/json; charset=UTF-8",
+      "body": "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\": [\n          {\n            \"text\": \"{\\\"summary\\\":\\\"s\\\",\\\"operations\\\":[]}\"\n          }\n        ],\n        \"role\": \"model\"\n      }\n    }\n  ]\n}"
+    },
+    "outcome": {
+      "result": {
+        "data": {
+          "summary": "s",
+          "operations": []
+        },
+        "thoughts": "",
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "thoughtsTokens": 0
+      }
+    }
+  },
+  "only thought parts": {
+    "call": "generateJson",
+    "response": {
+      "status": 200,
+      "statusText": "OK",
+      "contentType": "application/json; charset=UTF-8",
+      "body": "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\": [\n          {\n            \"text\": \"hmm\",\n            \"thought\": true\n          }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\"\n    }\n  ]\n}"
+    },
+    "outcome": {
+      "error": {
+        "message": "Gemini responded with empty text",
+        "status": null
+      }
+    }
+  },
+  "malformed JSON answer": {
+    "call": "generateJson",
+    "response": {
+      "status": 200,
+      "statusText": "OK",
+      "contentType": "application/json; charset=UTF-8",
+      "body": "{\n  \"candidates\": [\n    {\n      \"content\": {\n        \"parts\": [\n          {\n            \"text\": \"{\\\"summary\\\": \"\n          }\n        ],\n        \"role\": \"model\"\n      },\n      \"finishReason\": \"STOP\"\n    }\n  ]\n}"
+    },
+    "outcome": {
+      "error": {
+        "message": "Unable to parse JSON from Gemini response",
+        "status": null
+      }
+    }
+  },
+  "capacity error": {
+    "call": "generateJson",
+    "response": {
+      "status": 503,
+      "statusText": "Service Unavailable",
+      "contentType": "application/json; charset=UTF-8",
+      "body": "{\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",\n    \"status\": \"UNAVAILABLE\"\n  }\n}"
+    },
+    "outcome": {
+      "error": {
+        "message": "{\"error\":{\"code\":503,\"message\":\"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\",\"status\":\"UNAVAILABLE\"}}",
+        "status": null
+      }
+    }
+  },
+  "non-JSON server error": {
+    "call": "generateJson",
+    "response": {
+      "status": 502,
+      "statusText": "Bad Gateway",
+      "contentType": "text/html; charset=UTF-8",
+      "body": "<html><body>Bad Gateway</body></html>"
+    },
+    "outcome": {
+      "error": {
+        "message": "{\"error\":{\"message\":\"<html><body>Bad Gateway</body></html>\",\"code\":502,\"status\":\"Bad Gateway\"}}",
+        "status": null
+      }
+    }
+  },
+  "cache created": {
+    "call": "createCache",
+    "response": {
+      "status": 200,
+      "statusText": "OK",
+      "contentType": "application/json; charset=UTF-8",
+      "body": "{\n  \"name\": \"cachedContents/abc123\",\n  \"model\": \"models/gemini-3.8-flash\",\n  \"displayName\": \"autotriage-pro-owner/repo\",\n  \"usageMetadata\": {\n    \"totalTokenCount\": 4096\n  },\n  \"createTime\": \"2026-10-07T00:00:00Z\",\n  \"expireTime\": \"2026-10-07T01:00:00Z\"\n}"
+    },
+    "outcome": {
+      "result": {
+        "name": "cachedContents/abc123",
+        "tokenCount": 4096
+      }
+    }
+  },
+  "cache created without a name": {
+    "call": "createCache",
+    "response": {
+      "status": 200,
+      "statusText": "OK",
+      "contentType": "application/json; charset=UTF-8",
+      "body": "{}"
+    },
+    "outcome": {
+      "error": {
+        "message": "Failed to create context cache: no name returned",
+        "status": null
+      }
+    }
+  },
+  "cache creation denied": {
+    "call": "createCache",
+    "response": {
+      "status": 403,
+      "statusText": "Forbidden",
+      "contentType": "application/json; charset=UTF-8",
+      "body": "{\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"CachedContent not found (or permission denied)\",\n    \"status\": \"PERMISSION_DENIED\"\n  }\n}"
+    },
+    "outcome": {
+      "error": {
+        "message": "{\"error\":{\"code\":403,\"message\":\"CachedContent not found (or permission denied)\",\"status\":\"PERMISSION_DENIED\"}}",
+        "status": 403
+      }
+    }
+  }
+}
