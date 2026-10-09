@@ -10,11 +10,13 @@ import {
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
 } from './autoDiscover';
 import { ModelError } from './llm/chat';
-import { GitHubClient } from './github';
+import { GitHubClient, Issue } from './github';
 import { IssueProcessorDeps, PassError, processIssue } from './issueProcessor';
 import type { RunStatistics } from './stats';
 import type { Config } from './config';
-import { TriageDb, saveDatabase, saveRunArtifact } from './storage';
+import { TriageDb, hasPromptFile, saveDatabase, saveRunArtifact } from './storage';
+import { classifyFailure, configurationHint, describeFailure } from './failures';
+import { RunReport, annotateItems, writeJobSummary } from './summary';
 import { errorDetail } from './util';
 
 export type AutoTriageDeps = IssueProcessorDeps;
@@ -26,10 +28,25 @@ export interface ListTargetsDeps {
   payload?: any;
 }
 
-// Every run cap is reported the same way: log the remaining backlog and stamp which cap stopped the run.
-function reportCapReached(stats: RunStatistics, mode: 'fast' | 'pro', maxRuns: number, remainingItems: number): void {
-  console.log(`⏳ Max ${mode} runs (${maxRuns}) reached with ${remainingItems} item(s) remaining`);
+// After this many items in a row fail, the cause is most likely an outage, so the run stops.
+const MAX_CONSECUTIVE_FAILURES = 3;
+
+// Every run cap is reported the same way: log the remaining backlog, stamp which cap stopped the run, and list what it didn't reach.
+function reportCapReached(stats: RunStatistics, report: RunReport, mode: 'fast' | 'pro', maxRuns: number, remaining: number[]): void {
+  console.log(`⏳ Max ${mode} runs (${maxRuns}) reached with ${remaining.length} item(s) remaining`);
   stats.setCapReached(mode);
+  report.notReached = { items: remaining, reason: `the run reached max-${mode}-runs (${maxRuns})` };
+}
+
+// A failure fails the job at once, and the job summary repeats it.
+function fail(report: RunReport, message: string): void {
+  report.failures.push(message);
+  core.setFailed(message);
+}
+
+function warn(report: RunReport, message: string): void {
+  report.warnings.push(message);
+  core.warning(message);
 }
 
 
@@ -38,7 +55,37 @@ function hashPrompt(text: string): string {
   return `sha256:${createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16)}`;
 }
 
+/**
+ * Triages the run's targets, then reports on the run in the log, the run-summary.json artifact, warning annotations and the job summary.
+ * The job fails only for a configuration error or a bug. Model failures, deferred items and GitHub's own failures only warn.
+ */
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
+  const { cfg, gh, stats } = deps;
+  const report: RunReport = { policy: hasPromptFile(cfg.promptPath) ? cfg.promptPath : null, failures: [], warnings: [] };
+  try {
+    await triageTargets(deps, report);
+  } catch (err) {
+    // Only a failure outside an item gets here, such as listing the repository's labels or its backlog.
+    const failure = classifyFailure(err);
+    if (failure === 'external') {
+      warn(report, `Triage didn't start: ${describeFailure(err)}`);
+    } else if (failure === 'configuration') {
+      fail(report, `Triage didn't start: ${describeFailure(err)}${configurationHint(err)}`);
+    } else {
+      console.error(errorDetail(err));
+      fail(report, `Triage stopped because of a bug in AutoTriage, and the log has the stack. ${describeFailure(err)}`);
+    }
+  } finally {
+    // Emit run telemetry even when the run aborts, so failed runs remain researchable.
+    stats.incrementGithubApiCalls(gh.getApiCallCount());
+    stats.printSummary();
+    saveRunArtifact('run-summary.json', JSON.stringify(stats.toJSON(), null, 2));
+    annotateItems(stats.getItems(), report.warnings.length);
+    await writeJobSummary(cfg, stats, report);
+  }
+}
+
+async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<void> {
   const { cfg, db, gh, models, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
@@ -47,9 +94,9 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   let triagesPerformed = 0;
   let fastRunsPerformed = 0;
   let consecutiveFailures = 0;
-  let stoppedByFatalError = false;
+  const bugs: string[] = [];
 
-  console.log(`⚙️ Running in ${cfg.dryRun ? 'dry-run' : 'live'} mode (strict: ${cfg.strictMode})`);
+  console.log(`⚙️ Running in ${cfg.dryRun ? 'dry-run' : 'live'} mode`);
   console.log(autoDiscover
     ? `▶️ Discovered ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (extended: ${cfg.extended})`
     : `▶️ Triaging ${targets.length} item(s): ${targets.map((n) => `#${n}`).join(', ')}`);
@@ -82,81 +129,82 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   });
 
 
-  try {
-    for (const [index, issueNumber] of targets.entries()) {
-      const remainingTriages = cfg.maxProRuns - triagesPerformed;
-      const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
-      const remainingItems = targets.length - index;
+  for (const [index, issueNumber] of targets.entries()) {
+    const remainingTriages = cfg.maxProRuns - triagesPerformed;
+    const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
 
-      if (!cfg.skipFastPass && remainingFastRuns <= 0) {
-        reportCapReached(stats, 'fast', cfg.maxFastRuns, remainingItems);
-        break;
-      }
-
-      if (remainingTriages <= 0) {
-        reportCapReached(stats, 'pro', cfg.maxProRuns, remainingItems);
-        break;
-      }
-
-      try {
-        const issue = await gh.getIssue(issueNumber);
-        const record = await processIssue(
-          { cfg, db, gh, models, stats },
-          { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp }
-        );
-        stats.recordItem(record);
-        // A finished item spends the review budget when its review pass ran, and the fast budget when its fast pass ran, which is when it has a fastPlan.
-        if (record.escalatedToPro) triagesPerformed++;
-        if (record.fastPlan) fastRunsPerformed++;
-        consecutiveFailures = 0;
-      } catch (thrown) {
-        // Any per-item failure, model or otherwise (e.g. a transient GitHub API error), is recorded and skipped so one bad item can't abort the remaining backlog.
-        // The consecutive-failure breaker below still stops the run if errors cascade, as in an outage.
-        // A fatal model error (bad key, unknown model, no credit) would fail every later item too, so it stops the run and fails the job at once, even outside strict mode.
-        const failedPass = thrown instanceof PassError ? thrown.pass : undefined;
-        const err = thrown instanceof PassError ? thrown.cause : thrown;
-        const fatal = err instanceof ModelError && err.kind === 'fatal' ? err : undefined;
-        if (err instanceof ModelError && !fatal) {
-          console.warn(`#${issueNumber}: ${err.message}`);
-        } else if (!fatal) {
-          console.warn(`#${issueNumber}: unexpected error: ${errorDetail(err)}`);
-        }
-        stats.recordItem({
-          issueNumber,
-          outcome: 'failed',
-          escalatedToPro: failedPass === 'pro',
-          failedPass,
-          failureReason: err instanceof ModelError ? err.kind : 'other',
-        });
-        if (fatal) {
-          core.setFailed(`Stopped the run at #${issueNumber} because of a model error that every later item would hit too: ${fatal.message}`);
-          stoppedByFatalError = true;
-          break;
-        }
-        consecutiveFailures++;
-        if (consecutiveFailures >= 3) {
-          console.error(`Analysis failed ${consecutiveFailures} consecutive times; stopping further processing.`);
-          break;
-        }
-        continue;
-      }
-
-      saveDatabase(db, cfg.dbPath, cfg.dryRun);
-
-      if (triagesPerformed >= cfg.maxProRuns) {
-        reportCapReached(stats, 'pro', cfg.maxProRuns, targets.length - index - 1);
-        break;
-      }
+    if (!cfg.skipFastPass && remainingFastRuns <= 0) {
+      reportCapReached(stats, report, 'fast', cfg.maxFastRuns, targets.slice(index));
+      break;
     }
-  } finally {
-    // Emit run telemetry even when the run aborts, so failed runs remain researchable.
-    stats.incrementGithubApiCalls(gh.getApiCallCount());
-    stats.printSummary();
-    saveRunArtifact('run-summary.json', JSON.stringify(stats.toJSON(), null, 2));
+
+    if (remainingTriages <= 0) {
+      reportCapReached(stats, report, 'pro', cfg.maxProRuns, targets.slice(index));
+      break;
+    }
+
+    let issue: Issue | undefined;
+    try {
+      issue = await gh.getIssue(issueNumber);
+      const record = await processIssue(
+        { cfg, db, gh, models, stats },
+        { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp }
+      );
+      stats.recordItem(record);
+      // A finished item spends the review budget when its review pass ran, and the fast budget when its fast pass ran, which is when it has a fastPlan.
+      if (record.escalatedToPro) triagesPerformed++;
+      if (record.fastPlan) fastRunsPerformed++;
+      consecutiveFailures = 0;
+    } catch (thrown) {
+      // Any per-item failure is recorded and skipped so one bad item can't abort the remaining backlog.
+      // A configuration error, such as a rejected key or a missing permission, would fail every later item too, so it stops the run and fails the job at once.
+      // The consecutive-failure breaker below still stops the run if errors cascade, as in an outage.
+      const failedPass = thrown instanceof PassError ? thrown.pass : undefined;
+      const err = thrown instanceof PassError ? thrown.cause : thrown;
+      const failure = classifyFailure(err);
+      const detail = describeFailure(err);
+      stats.recordItem({
+        issueNumber,
+        type: issue?.type,
+        title: issue?.title,
+        outcome: 'failed',
+        escalatedToPro: failedPass === 'pro',
+        failedPass,
+        failureReason: err instanceof ModelError ? err.kind : 'other',
+        detail,
+      });
+      if (failure === 'configuration') {
+        fail(report, `Stopped the run at #${issueNumber}, because every later item would fail the same way: ${detail}${configurationHint(err)}`);
+        report.notReached = { items: targets.slice(index + 1), reason: 'the run stopped on a configuration error' };
+        break;
+      }
+      // An expected failure, such as a model or GitHub error, is logged without a stack. A bug's stack says where to look.
+      if (failure === 'bug') {
+        console.warn(`#${issueNumber}: unexpected error: ${errorDetail(err)}`);
+        bugs.push(`#${issueNumber}: ${detail}`);
+      } else {
+        console.warn(`#${issueNumber}: ${detail}`);
+      }
+      consecutiveFailures++;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        const remaining = targets.slice(index + 1);
+        warn(report, `Stopped the run after ${consecutiveFailures} items in a row failed, so ${remaining.length} item(s) weren't attempted.`);
+        report.notReached = { items: remaining, reason: `${consecutiveFailures} items in a row failed` };
+        break;
+      }
+      continue;
+    }
+
+    saveDatabase(db, cfg.dbPath, cfg.dryRun);
+
+    if (triagesPerformed >= cfg.maxProRuns) {
+      reportCapReached(stats, report, 'pro', cfg.maxProRuns, targets.slice(index + 1));
+      break;
+    }
   }
 
-  if (cfg.strictMode && !stoppedByFatalError && stats.getFailed() > 0) {
-    core.setFailed(`Strict mode enabled: ${stats.getFailed()} run(s) had errors.`);
+  if (bugs.length > 0) {
+    fail(report, `${bugs.length} item(s) failed because of a bug in AutoTriage, and the log has the stack for each. ${bugs.join('; ')}`);
   }
 }
 

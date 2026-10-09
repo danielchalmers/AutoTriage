@@ -47,7 +47,7 @@ jobs:
           # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-3. Open a test issue, review the plan in the workflow logs, then set `dry-run: "false"`.
+3. Open a test issue, review the plan in the run's job summary and logs, then set `dry-run: "false"`.
 4. Optionally write your own policy at `.github/AutoTriage.prompt`, starting from the [example prompt](./examples/AutoTriage.prompt).
 
 For event-specific workflows, start from the examples in [`examples/workflows`](./examples/workflows/):
@@ -63,7 +63,7 @@ The examples share one job-level `concurrency` group with `queue: max`, so a bur
 
 For each item — the triggering issue/PR, an explicit `issues` list, or auto-discovered backlog — AutoTriage gathers the body, full timeline, repository labels, and your policy. If `model-fast` is set, a cheap model screens the item first and clear no-ops stop there. The review model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
 
-Overloads and rate limits are waited out. A model error that no retry can fix, such as a rejected API key, an unknown model, or an account out of credit, stops the run and fails the job right away, even without `strict-mode`. A reply the model refuses, or cuts off at its output limit, fails that item.
+Overloads and rate limits are waited out. A model error that no retry can fix, such as a rejected API key, an unknown model, or an account out of credit, stops the run and fails the job right away. A reply the model refuses, or cuts off at its output limit, fails that item.
 
 The log explains each plan with its summary and the policy clause behind each operation, and comments carry the same explanation in a hidden block:
 
@@ -113,9 +113,28 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 | `model-fast` | Fast-pass model. Leave blank to skip. | `""` (skip) |
 | `model-pro` | Review model. Blank uses the default for the API key you set (`gemini-3.5-flash-lite` for `GEMINI_API_KEY`). | `""` (default for your key) |
 | `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
-| `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
 
-A `dry-run`, `extended` or `strict-mode` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged.
+A `dry-run` or `extended` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged.
+
+## Job summary
+
+Once its configuration checks out, every run writes a job summary to its page on GitHub. It shows:
+
+- the mode, each pass's model, the policy file (or the built-in policy) and the prompt hashes;
+- the items the run acted on, or would have in a dry run, with their operations;
+- each failed or deferred item, and any items a run cap or an early stop left out, with the reason;
+- the item counts and each pass's token counts.
+
+Each failed or deferred item also gets a warning annotation. GitHub shows up to 10 warnings per step, so any more are merged into one.
+
+**When the job fails.** A run fails only when something needs fixing:
+
+- a configuration error at startup, such as a missing token or key, or an invalid input value;
+- a model error that every item would hit, such as a rejected API key, an unknown model, or an account out of credit;
+- a GitHub error that means the token or the workflow's permissions are wrong: HTTP 401, or a 403 that isn't a rate limit;
+- an unexpected error, which points to a bug in AutoTriage.
+
+Everything else only warns, so a provider's bad day doesn't turn your runs red. That covers model overloads, rate limits and timeouts, replies that are malformed, refused or cut off, deferred items, GitHub outages, rate limits and network errors, and a run that stops after three items in a row fail.
 
 ## Run summary
 

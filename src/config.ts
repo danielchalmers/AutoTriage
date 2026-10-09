@@ -30,5 +30,4 @@ export interface Config {
   maxFastRuns: number;
   additionalInstructions?: string;
   extended: boolean;
-  strictMode: boolean;
 }

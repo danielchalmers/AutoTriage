@@ -39,6 +39,7 @@ const stats = new RunStatistics();
 stats.setRepository(cfg.owner, cfg.repo);
 stats.setModelNames(cfg.modelFast, cfg.modelPro);
 
+// The runner reports model, GitHub and configuration failures itself, so anything that gets here is a bug.
 runAutoTriage({ cfg, db, gh, models, stats }).catch((err) => {
   core.setFailed(errorDetail(err));
 });

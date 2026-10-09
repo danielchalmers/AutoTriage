@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { loadPrompt } from '../src/storage'
+import { hasPromptFile, loadPrompt } from '../src/storage'
 import { BUILTIN_LABEL_ONLY_PROMPT } from '../src/prompt'
 import { withTempFiles } from './fixtures'
 import * as path from 'path'
@@ -33,5 +33,13 @@ describe('prompt loading', () => {
 
     expect(result).toBe(BUILTIN_LABEL_ONLY_PROMPT)
     expect(warn).toHaveBeenCalledWith(`⚠️ No AutoTriage prompt found (custom path '${missing}'); using built-in label-only prompt.`)
+  })
+
+  it('reports whether a policy file exists, so the job summary can name the policy in use', () => {
+    withTempFiles({ 'prompt.txt': 'Custom test prompt' }, (file) => {
+      expect(hasPromptFile(file('prompt.txt'))).toBe(true)
+    })
+    expect(hasPromptFile(path.join(__dirname, 'does-not-exist.txt'))).toBe(false)
+    expect(hasPromptFile('')).toBe(false)
   })
 })
