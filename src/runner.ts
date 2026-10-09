@@ -12,7 +12,7 @@ import {
 import { ModelError } from './llm/chat';
 import { GitHubClient, Issue } from './github';
 import { IssueProcessorDeps, PassError, processIssue } from './issueProcessor';
-import type { RunStatistics } from './stats';
+import type { ItemRecord, RunStatistics } from './stats';
 import type { Config } from './config';
 import { TriageDb, hasPromptFile, saveDatabase, saveRunArtifact } from './storage';
 import { classifyFailure, configurationHint, describeFailure } from './failures';
@@ -129,31 +129,49 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
   });
 
 
+  // The pass budget that's used up, if any, which leaves no room for another analysis.
+  const spentBudget = (): 'fast' | 'pro' | undefined => {
+    if (!cfg.skipFastPass && fastRunsPerformed >= cfg.maxFastRuns) return 'fast';
+    if (triagesPerformed >= cfg.maxProRuns) return 'pro';
+    return undefined;
+  };
+  const maxRuns = (mode: 'fast' | 'pro') => (mode === 'fast' ? cfg.maxFastRuns : cfg.maxProRuns);
+  // A finished analysis spends the review budget when its review pass ran, and the fast budget when its fast pass ran, which is when it has a fastPlan.
+  const spend = (record: ItemRecord) => {
+    if (record.escalatedToPro) triagesPerformed++;
+    if (record.fastPlan) fastRunsPerformed++;
+  };
+  const itemDeps = { cfg, db, gh, models, stats };
+  const itemOptions = { repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp };
+
   for (const [index, issueNumber] of targets.entries()) {
-    const remainingTriages = cfg.maxProRuns - triagesPerformed;
-    const remainingFastRuns = cfg.maxFastRuns - fastRunsPerformed;
-
-    if (!cfg.skipFastPass && remainingFastRuns <= 0) {
-      reportCapReached(stats, report, 'fast', cfg.maxFastRuns, targets.slice(index));
-      break;
-    }
-
-    if (remainingTriages <= 0) {
-      reportCapReached(stats, report, 'pro', cfg.maxProRuns, targets.slice(index));
+    const spent = spentBudget();
+    if (spent) {
+      reportCapReached(stats, report, spent, maxRuns(spent), targets.slice(index));
       break;
     }
 
     let issue: Issue | undefined;
+    let reanalyzed = false;
     try {
       issue = await gh.getIssue(issueNumber);
-      const record = await processIssue(
-        { cfg, db, gh, models, stats },
-        { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp }
-      );
+      let record = await processIssue(itemDeps, { ...itemOptions, issue });
+      spend(record);
+      // An item that changed during analysis gets one more analysis with its latest state, if the budgets allow it.
+      // It runs from here so that the first analysis's log group is closed, because log groups don't nest.
+      if (record.changedDuringAnalysis) {
+        const spentNow = spentBudget();
+        if (spentNow) {
+          console.log(`⏳ #${issueNumber} isn't analyzed again, because the run reached max-${spentNow}-runs (${maxRuns(spentNow)})`);
+        } else {
+          console.log(`🔁 Analyzing #${issueNumber} again, because it changed while it was being analyzed`);
+          reanalyzed = true;
+          issue = await gh.getIssue(issueNumber);
+          record = await processIssue(itemDeps, { ...itemOptions, issue, reanalysis: true });
+          spend(record);
+        }
+      }
       stats.recordItem(record);
-      // A finished item spends the review budget when its review pass ran, and the fast budget when its fast pass ran, which is when it has a fastPlan.
-      if (record.escalatedToPro) triagesPerformed++;
-      if (record.fastPlan) fastRunsPerformed++;
       consecutiveFailures = 0;
     } catch (thrown) {
       // Any per-item failure is recorded and skipped so one bad item can't abort the remaining backlog.
@@ -169,6 +187,7 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
         title: issue?.title,
         outcome: 'failed',
         escalatedToPro: failedPass === 'pro',
+        ...(reanalyzed ? { reanalyzed } : {}),
         failedPass,
         failureReason: err instanceof ModelError ? err.kind : 'other',
         detail,

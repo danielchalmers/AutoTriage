@@ -41,6 +41,10 @@ export interface ItemRecord {
   outcome: ItemOutcome;
   // True when the review pass ran, with or without a fast pass first.
   escalatedToPro: boolean;
+  // True when the item changed during its first analysis and was analyzed again, so the record describes the second analysis.
+  reanalyzed?: boolean | undefined;
+  // True when the review's plan was deferred because the item changed during analysis, rather than because it couldn't be rechecked.
+  changedDuringAnalysis?: boolean | undefined;
   fastPlan?: PlanSummary | undefined;
   proPlan?: PlanSummary | undefined;
   agreement?: PlanAgreement | undefined;
@@ -321,6 +325,7 @@ export class RunStatistics {
       type: record.type,
       outcome: record.outcome,
       escalatedToPro: record.escalatedToPro,
+      reanalyzed: record.reanalyzed,
       fastPlan: record.fastPlan,
       proPlan: record.proPlan,
       agreement: record.agreement,
