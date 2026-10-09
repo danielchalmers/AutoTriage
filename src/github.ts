@@ -25,15 +25,12 @@ export type Issue = {
 };
 
 export type TimelineEvent = {
-  id?: number;
-  url?: string;
   event: string;
   actor?: string;
   actor_type?: string;
   actor_association?: string;
   created_at?: string;
   updated_at?: string;
-  submitted_at?: string;
   label?: { name?: string | null };
   body?: string;
   path?: string;
@@ -192,20 +189,22 @@ export class GitHubClient {
       per_page: 100,
     });
 
+    // Event ids and URLs tell the model nothing, so they're left out here and stay only in the raw events saved as the timeline artifact.
     const mapped = (events as any[]).map<TimelineEvent | null>((event: any) => {
+      // Reviews name their author in user rather than actor.
+      const actor = event.actor ?? event.user;
       const base: TimelineEvent = {
-        id: event.id,
-        url: event.url,
         event: event.event,
-        actor: event.actor?.login,
-        actor_type: event.actor?.type,
-        actor_association: event.actor?.author_association || event.author_association,
+        actor: actor?.login,
+        actor_type: actor?.type,
+        actor_association: actor?.author_association || event.author_association,
         created_at: event.created_at,
         updated_at: event.updated_at,
       };
       switch (event.event) {
         case 'committed':
-          return { ...base, sha: event.sha, author: event.author?.login, message: event.message };
+          // Commits have no created_at or actor, so they're dated by their committer date and credited to the commit author's name.
+          return { ...base, created_at: event.committer?.date, sha: event.sha, author: event.author?.name, message: event.message };
         case 'commented':
           return { ...base, body: event.body };
         case 'labeled':
@@ -230,7 +229,8 @@ export class GitHubClient {
         case 'merged':
           return { ...base, merged: true };
         case 'reviewed':
-          return { ...base, submitted_at: event.submitted_at, state: event.state, body: event.body };
+          // Reviews have no created_at, so they're dated by when they were submitted.
+          return { ...base, created_at: event.submitted_at, state: event.state, body: event.body };
         case 'mentioned':
         case 'subscribed':
         case 'unsubscribed':
