@@ -91,6 +91,31 @@ function sumTokens(runs: ModelRunStats[]) {
   };
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms.toFixed(0)}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  return `${minutes}m${seconds}s`;
+}
+
+function formatTokens(count: number): string {
+  if (count < 1000) return `${count}`;
+  if (count < 1000000) return `${(count / 1000).toFixed(1)}k`;
+  return `${(count / 1000000).toFixed(1)}M`;
+}
+
+// Some providers, such as Claude's compatibility API, report no reasoning tokens, so the log says so rather than leaving reasoning out.
+function describeTokens(tokens: { inputTokens: number; outputTokens: number; reasoningTokens: number }): string {
+  const reasoning = tokens.reasoningTokens > 0 ? `${formatTokens(tokens.reasoningTokens)} reasoning` : 'reasoning not reported';
+  return `${formatTokens(tokens.inputTokens)} input • ${formatTokens(tokens.outputTokens)} output • ${reasoning}`;
+}
+
+// The log line after a model call, with its duration across any retries.
+export function describeModelRun(run: ModelRunStats): string {
+  return `Answered in ${formatDuration(run.endTime - run.startTime)} • ${describeTokens({ ...run, reasoningTokens: run.reasoningTokens ?? 0 })}`;
+}
+
 // Summarize planned operations into the comparable PlanSummary shape.
 export function summarizePlan(operations: Array<{ kind: string; labels?: string[] }>): PlanSummary {
   const sign = (kind: string) => (kind === 'add_labels' ? '+' : kind === 'remove_labels' ? '-' : null);
@@ -191,20 +216,6 @@ export class RunStatistics {
     return counts;
   }
 
-  private formatDuration(ms: number): string {
-    if (ms < 1000) return `${ms.toFixed(0)}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-    const minutes = Math.floor(ms / 60000);
-    const seconds = Math.floor((ms % 60000) / 1000);
-    return `${minutes}m${seconds}s`;
-  }
-
-  private formatTokens(count: number): string {
-    if (count < 1000) return `${count}`;
-    if (count < 1000000) return `${(count / 1000).toFixed(1)}k`;
-    return `${(count / 1000000).toFixed(1)}M`;
-  }
-
   private formatPercent(value: number): string {
     const percent = Math.max(0, Math.min(100, value * 100));
     const rounded = Math.round(percent);
@@ -233,19 +244,15 @@ export class RunStatistics {
     const modelLabel = model ? ` (${model})` : '';
     console.log(chalk.cyan(`  ${label}${modelLabel}`));
     console.log(
-      `    Total: ${this.formatDuration(stats.total)} • ` +
-      `Avg: ${this.formatDuration(stats.avg)} • ` +
-      `p95: ${this.formatDuration(stats.p95)}`
+      `    Total: ${formatDuration(stats.total)} • ` +
+      `Avg: ${formatDuration(stats.avg)} • ` +
+      `p95: ${formatDuration(stats.p95)}`
     );
-    console.log(
-      `    Tokens: ${this.formatTokens(stats.inputTokens)} input • ` +
-      `${this.formatTokens(stats.outputTokens)} output` +
-      (stats.reasoningTokens > 0 ? ` • ${this.formatTokens(stats.reasoningTokens)} reasoning` : '')
-    );
+    console.log(`    Tokens: ${describeTokens(stats)}`);
 
     if (stats.cachedInputTokens > 0) {
       const reusedPercent = stats.inputTokens > 0 ? ` (${this.formatPercent(stats.cachedInputTokens / stats.inputTokens)})` : '';
-      console.log(`    Cache: ${this.formatTokens(stats.cachedInputTokens)}${reusedPercent} reused`);
+      console.log(`    Cache: ${formatTokens(stats.cachedInputTokens)}${reusedPercent} reused`);
     }
   }
 

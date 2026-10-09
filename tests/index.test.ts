@@ -91,8 +91,8 @@ describe('AutoTriage action entry point', () => {
 
     await importEntryPoint();
 
-    expect(log).toHaveBeenCalledWith('Model (fast): fast-model at api.openai.com.');
-    expect(log).toHaveBeenCalledWith('Model (pro): pro-model at api.openai.com (default for OPENAI_API_KEY).');
+    expect(log).toHaveBeenCalledWith('Model (fast): fast-model at api.openai.com, reasoning: high.');
+    expect(log).toHaveBeenCalledWith('Model (pro): pro-model at api.openai.com (default for OPENAI_API_KEY), reasoning: high.');
   });
 
   it('gives a skipped fast pass the pro client', async () => {

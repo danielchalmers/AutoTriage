@@ -4,7 +4,7 @@ import { AnalysisResult, FastPassPlan, RepoLabel, parseAnalysisResult } from './
 import { buildUserPrompt } from './prompts';
 import { errorMessage, type ChatClient, type JsonRequest } from './llm/chat';
 import { GitHubClient, Issue, TimelineEvent } from './github';
-import { ItemRecord, RunStatistics, comparePlans, summarizePlan } from './stats';
+import { ItemRecord, RunStatistics, comparePlans, describeModelRun, summarizePlan } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, explainPlan, planOperations } from './triage';
 import type { Config, PromptPassMode } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
@@ -347,10 +347,12 @@ export async function generateAnalysis(
   const { issue, model, systemPrompt, userPrompt, repoLabels, schema, isFastModel = false } = options;
   const request: JsonRequest = { model, systemPrompt, userPrompt, schema };
 
-  console.log(chalk.blue(`💭 Thinking with ${model}...`));
+  // It says "asking" rather than "thinking", because some providers report no reasoning.
+  console.log(chalk.blue(`💭 Asking ${model}...`));
   const startTime = Date.now();
   const { data, ...usage } = await deps.model.generateJson(request, parseAnalysisResult);
   const modelRunStats = { startTime, endTime: Date.now(), ...usage, issueNumber: issue.number };
+  console.log(chalk.blue(describeModelRun(modelRunStats)));
   if (isFastModel) {
     stats.trackFastRun(modelRunStats);
   } else {

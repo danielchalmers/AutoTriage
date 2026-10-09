@@ -506,6 +506,7 @@ describe('processIssue', () => {
         expect(fetch.bodies[0].messages[0]).toEqual({ role: 'system', content: 'pro system prompt' });
         expect(fetch.bodies[0].response_format.json_schema.schema.properties.operations.items.anyOf[0].properties.labels.items).toEqual({ type: 'string', enum: ['bug'] });
         expect(log.mock.calls.map(call => String(call[0]))).toContainEqual(expect.stringContaining(explanation));
+        expect(log.mock.calls.map(call => String(call[0]))).toContainEqual(expect.stringMatching(/Answered in \S+ • 3\.0k input • 20 output • 60 reasoning/));
         expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
         expect(gh.createComment).toHaveBeenCalledWith(42, `Thanks for the report.\n\n<!--\n${explanation}\n-->`);
         expect((stats.toJSON() as any).pro).toMatchObject({ runs: 1, inputTokens: 3050, outputTokens: 20, reasoningTokens: 60 });

@@ -65,12 +65,13 @@ For each item — the triggering issue/PR, an explicit `issues` list, or auto-di
 
 Just before applying a plan, AutoTriage checks that the item hasn't changed since it was read. If it has, the item is analyzed once more with its latest state, which counts against `max-fast-runs` and `max-pro-runs`. That plan is applied unless the item changed yet again, in which case the item is deferred and the job summary lists it.
 
-Overloads and rate limits are waited out. A model error that no retry can fix, such as a rejected API key, an unknown model, or an account out of credit, stops the run and fails the job right away. A reply the model refuses, or cuts off at its output limit, fails that item.
+Overloads and rate limits are waited out. Each request to the model gets up to 10 minutes, and a whole call gets 15 minutes counting its retries and waits, after which that item fails with a warning. While a request is waiting, the log notes each minute that passes. A model error that no retry can fix, such as a rejected API key, an unknown model, or an account out of credit, stops the run and fails the job right away. A reply the model refuses, or cuts off at its output limit, fails that item.
 
-The log explains each plan with its summary and the policy clause behind each operation, and comments carry the same explanation in a hidden block:
+The log gives each model call's time and tokens, and explains each plan with its summary and the policy clause behind each operation. Comments carry the same explanation in a hidden block:
 
 ```text
-💭 Thinking with gemini-3.5-flash-lite...
+💭 Asking gemini-3.5-flash-lite...
+Answered in 8.2s • 3.1k input • 85 output • 1.9k reasoning
 Summary: Docs-only PR from a maintainer that updates the cookie consent prompt design.
 Operations:
 - add_labels: Label documentation-only changes docs.
@@ -90,7 +91,7 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 
 - With one key set, both passes use it, and a blank `model-pro` uses its default.
 - With several keys set, a `gemini-*` or `claude-*` model goes to Gemini or Claude when that key is set, and any other model goes to OpenAI or `OPENAI_BASE_URL`. A blank `model-pro` uses the default of the first key in the table.
-- The log names each pass's model and host, such as `Model (pro): gpt-6-luna at api.openai.com (default for OPENAI_API_KEY).`
+- The log names each pass's model, host and reasoning setting, such as `Model (pro): gpt-6-luna at api.openai.com (default for OPENAI_API_KEY), reasoning: high.` For Claude it says `reasoning: provider default (api.anthropic.com ignores reasoning_effort)`, and where a provider reports no reasoning tokens, the log says `reasoning not reported`.
 
 **Any OpenAI-compatible service** (OpenRouter, Azure OpenAI, Groq, Mistral, xAI, DeepSeek, Together, Fireworks, Cerebras, LiteLLM, vLLM, Ollama, ...) works by setting `OPENAI_BASE_URL` to its API base, such as `https://openrouter.ai/api/v1`, and `model-pro` to a model it serves. For Azure OpenAI, use `https://<resource>.openai.azure.com/openai/v1` and your deployment name as the model. The key is optional for a local server such as Ollama on a self-hosted runner. `OPENAI_BASE_URL` must use https (plain http is allowed only for localhost) and can't include a user name or password, and redirects aren't followed.
 
