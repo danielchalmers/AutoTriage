@@ -38,6 +38,8 @@ export interface ProcessIssueOptions {
   systemPromptFast: string;
   systemPromptPro: string;
   runTimestamp: string;
+  // True when the runner analyzes the item again because it changed during its first analysis.
+  reanalysis?: boolean;
 }
 
 export interface GenerateAnalysisOptions {
@@ -64,6 +66,12 @@ interface FastPassResult {
   shouldSkipPro: boolean;
 }
 
+interface Deferral {
+  // True when the item changed during analysis, rather than when it couldn't be rechecked.
+  changed: boolean;
+  detail: string;
+}
+
 // A pass that fails rethrows its error as a PassError, so the runner can record which pass failed.
 export class PassError extends Error {
   constructor(readonly pass: PromptPassMode, readonly cause: unknown) {
@@ -86,9 +94,9 @@ export async function processIssue(
   options: ProcessIssueOptions
 ): Promise<ItemRecord> {
   const { cfg, db, gh, models, stats } = deps;
-  const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp } = options;
+  const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp, reanalysis = false } = options;
 
-  return core.group(`🤖 #${issue.number} ${issue.title}`, async (): Promise<ItemRecord> => {
+  return core.group(`🤖 #${issue.number} ${issue.title}${reanalysis ? ' (re-analysis)' : ''}`, async (): Promise<ItemRecord> => {
     const context = await loadIssueContext(
       { cfg, db, gh },
       { issue, autoDiscover }
@@ -98,7 +106,7 @@ export async function processIssue(
       { issue, repoLabels, systemPromptFast, runTimestamp, context }
     ));
     const fastPlan = fastPass.plan && summarizePlan(fastPass.plan.operations);
-    const item = { issueNumber: issue.number, type: issue.type, title: issue.title, fastPlan };
+    const item = { issueNumber: issue.number, type: issue.type, title: issue.title, ...(reanalysis ? { reanalyzed: true } : {}), fastPlan };
 
     if (fastPass.shouldSkipPro) {
       console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
@@ -124,13 +132,13 @@ export async function processIssue(
     // Applying the plan is part of the review pass, so a failed GitHub write is attributed to it.
     const deferral = await inPass('pro', () => executePlannedOperations(
       { cfg, gh, stats },
-      { issue, operations: proPass.operations }
+      { issue, operations: proPass.operations, reanalysis }
     ));
 
     const proPlan = summarizePlan(proPass.operations);
     const reviewed = { ...item, escalatedToPro: true, proPlan, agreement: fastPlan && comparePlans(fastPlan, proPlan) };
     if (deferral) {
-      return { ...reviewed, outcome: 'deferred', detail: deferral };
+      return { ...reviewed, outcome: 'deferred', detail: deferral.detail, ...(deferral.changed ? { changedDuringAnalysis: true } : {}) };
     }
 
     const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations);
@@ -260,10 +268,11 @@ async function executePlannedOperations(
   options: {
     issue: Issue;
     operations: PlannedOperation[];
+    reanalysis: boolean;
   }
-): Promise<string | undefined> {
+): Promise<Deferral | undefined> {
   const { cfg, gh, stats } = deps;
-  const { issue, operations } = options;
+  const { issue, operations, reanalysis } = options;
 
   if (operations.length === 0) {
     console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
@@ -272,20 +281,29 @@ async function executePlannedOperations(
 
   saveArtifact(issue.number, 'operations.json', JSON.stringify(operations, null, 2));
   if (!cfg.dryRun) {
+    // The deferred plan is logged, because a re-analysis replaces the item's artifacts.
+    const deferring = `Deferring its planned operations: ${operations.map(describeOperation).join(', ')}.`;
     try {
       const currentIssue = await gh.getIssue(issue.number);
-      if (getConsumedUpdatedAt(currentIssue) !== getConsumedUpdatedAt(issue)) {
+      const analyzedUpdatedAt = getConsumedUpdatedAt(issue);
+      const currentUpdatedAt = getConsumedUpdatedAt(currentIssue);
+      if (currentUpdatedAt !== analyzedUpdatedAt) {
         console.warn(
-          `⚠️ #${issue.number} changed while it was being analyzed; deferring planned operations for re-triage.`
+          `⚠️ #${issue.number} changed while it was being analyzed (updated at ${analyzedUpdatedAt}, now ${currentUpdatedAt}). ${deferring}`
         );
-        return 'It changed while it was being analyzed, so the plan wasn\'t applied.';
+        return {
+          changed: true,
+          detail: reanalysis
+            ? 'It changed again while it was being re-analyzed, so the plan wasn\'t applied.'
+            : 'It changed while it was being analyzed, so the plan wasn\'t applied.',
+        };
       }
     } catch (err) {
-      console.warn(
-        `⚠️ Failed to recheck #${issue.number} before applying operations: ${errorMessage(err)}. ` +
-        'Deferring planned operations for re-triage.'
-      );
-      return `It couldn't be rechecked before applying the plan, so the plan wasn't applied: ${errorMessage(err)}`;
+      console.warn(`⚠️ Failed to recheck #${issue.number} before applying operations: ${errorMessage(err)}. ${deferring}`);
+      return {
+        changed: false,
+        detail: `It couldn't be rechecked before applying the plan, so the plan wasn't applied: ${errorMessage(err)}`,
+      };
     }
   }
 

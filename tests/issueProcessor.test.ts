@@ -251,7 +251,7 @@ describe('processIssue', () => {
     });
   });
 
-  it('defers operations and retains the analyzed watermark when the thread changes during analysis', async () => {
+  it('defers operations, logs them and retains the analyzed watermark when the thread changes during analysis', async () => {
     await withArtifactsDir(async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const db: TriageDb = { version: 2, items: {} };
@@ -282,12 +282,15 @@ describe('processIssue', () => {
           title: 'Sample',
           outcome: 'deferred',
           escalatedToPro: true,
+          changedDuringAnalysis: true,
           proPlan: { kinds: ['set_state'], labels: [] },
           detail: "It changed while it was being analyzed, so the plan wasn't applied.",
         });
         expect(gh.updateIssueState).not.toHaveBeenCalled();
         expect(gh.getIssue).toHaveBeenCalledWith(42);
-        expect(warnSpy).toHaveBeenCalledOnce();
+        expect(warnSpy).toHaveBeenCalledExactlyOnceWith(
+          '⚠️ #42 changed while it was being analyzed (updated at 2024-04-10T00:00:00Z, now 2024-04-12T00:00:00Z). Deferring its planned operations: state: not_planned.'
+        );
         expect(db.items['42']).toBeUndefined();
         expect(buildAutoDiscoverQueue([{ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }], db, true)).toEqual([42]);
       } finally {
@@ -333,7 +336,48 @@ describe('processIssue', () => {
           escalatedToPro: true,
           detail: "It couldn't be rechecked before applying the plan, so the plan wasn't applied: recheck failed",
         });
+        // Only an item that changed is analyzed again.
+        expect(result).not.toHaveProperty('changedDuringAnalysis');
+        expect(warnSpy).toHaveBeenCalledExactlyOnceWith(
+          '⚠️ Failed to recheck #42 before applying operations: recheck failed. Deferring its planned operations: labels: +bug.'
+        );
       } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  it('marks a re-analysis in its log group and record, and says when the item changed again', async () => {
+    await withArtifactsDir(async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const renamed = { ...baseIssue, title: 'Renamed', updated_at: '2024-04-12T00:00:00Z' };
+      const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', [addBugLabel('pro policy')], 20)) } as any;
+      const reanalyze = async (current: typeof renamed) => {
+        const gh = createGitHub({ getIssue: vi.fn().mockResolvedValue(current) });
+        const result = await processIssue(
+          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db: { version: 2, items: {} }, gh, models: bothPasses(model), stats: new RunStatistics() },
+          processOptions({ issue: renamed, systemPromptFast: '', reanalysis: true })
+        );
+        return { result, gh };
+      };
+
+      try {
+        const applied = await reanalyze(renamed);
+        expect(applied.result).toMatchObject({ title: 'Renamed', outcome: 'triaged', reanalyzed: true });
+        expect(applied.gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+        expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('::group::🤖 #42 Renamed (re-analysis)'));
+
+        const changedAgain = await reanalyze({ ...renamed, updated_at: '2024-04-13T00:00:00Z' });
+        expect(changedAgain.result).toMatchObject({
+          outcome: 'deferred',
+          reanalyzed: true,
+          changedDuringAnalysis: true,
+          detail: "It changed again while it was being re-analyzed, so the plan wasn't applied.",
+        });
+        expect(changedAgain.gh.addLabels).not.toHaveBeenCalled();
+      } finally {
+        stdoutSpy.mockRestore();
         warnSpy.mockRestore();
       }
     });

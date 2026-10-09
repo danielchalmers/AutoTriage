@@ -46,8 +46,12 @@ function triaged(issueNumber: number, overrides: Partial<ItemRecord> = {}): Item
 function skipped(issueNumber: number): ItemRecord {
   return { issueNumber, type: 'issue', outcome: 'skipped', escalatedToPro: false, fastPlan: { kinds: [], labels: [] }, agreement: 'fast-noop' };
 }
-function deferred(issueNumber: number): ItemRecord {
-  return triaged(issueNumber, { outcome: 'deferred' });
+function deferred(issueNumber: number, overrides: Partial<ItemRecord> = {}): ItemRecord {
+  return triaged(issueNumber, { outcome: 'deferred', ...overrides });
+}
+// Deferred because the item changed during analysis, which earns it one more analysis.
+function changed(issueNumber: number, overrides: Partial<ItemRecord> = {}): ItemRecord {
+  return deferred(issueNumber, { changedDuringAnalysis: true, detail: "It changed while it was being analyzed, so the plan wasn't applied.", ...overrides });
 }
 
 describe('listTargets', () => {
@@ -337,6 +341,89 @@ describe('runAutoTriage', () => {
     expect(warnings()).toEqual([`#5 deferred: ${detail}`]);
     expect(core.setFailed).not.toHaveBeenCalled();
     expect(readJobSummary()).toContain(`<tr><td>${issueLink(5)}</td><td>Deferred</td><td>It changed while it was being analyzed, so the plan wasn&#39;t applied.</td></tr>`);
+  });
+
+  it('analyzes an item that changed during analysis once more with its latest state', async () => {
+    const gh = createGitHub();
+    const renamed = makeIssue(5, '2024-04-06T00:00:00Z', { title: 'Renamed' });
+    gh.getIssue
+      .mockResolvedValueOnce(makeIssue(5, '2024-04-05T00:00:00Z'))
+      .mockResolvedValueOnce(renamed);
+    processIssueMock
+      .mockResolvedValueOnce(changed(5))
+      .mockResolvedValueOnce(triaged(5, { title: 'Renamed', reanalyzed: true }));
+    const stats = createStats();
+
+    await run({ ...baseConfig, issueNumbers: [5] }, { gh, stats });
+
+    expect(processIssueMock).toHaveBeenCalledTimes(2);
+    expect(processIssueMock.mock.calls[0]![1]).not.toHaveProperty('reanalysis');
+    expect(processIssueMock.mock.calls[1]![1]).toMatchObject({ issue: renamed, reanalysis: true });
+    expect(logSpy).toHaveBeenCalledWith('🔁 Analyzing #5 again, because it changed while it was being analyzed');
+    expect(summaryOf(stats).items).toEqual([expect.objectContaining({ number: 5, outcome: 'triaged', reanalyzed: true })]);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 1, triaged: 1, deferred: 0 });
+    expect(core.warning).not.toHaveBeenCalled();
+  });
+
+  it('defers an item that changed again during its re-analysis, without a third analysis', async () => {
+    const detail = "It changed again while it was being re-analyzed, so the plan wasn't applied.";
+    processIssueMock
+      .mockResolvedValueOnce(changed(5))
+      .mockResolvedValueOnce(changed(5, { reanalyzed: true, detail }));
+    const stats = createStats();
+
+    await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
+
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
+    expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'deferred', reanalyzed: true });
+    expect(warnings()).toEqual([`#5 deferred: ${detail}`]);
+    expect(core.setFailed).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['fast', { maxFastRuns: 3 }],
+    ['pro', { maxProRuns: 3 }],
+  ] as const)('counts both analyses of a re-analyzed item against max-%s-runs', async (mode, caps) => {
+    processIssueMock.mockResolvedValueOnce(changed(5));
+    const stats = createStats();
+
+    await run({ ...baseConfig, issueNumbers: [5, 6, 7], ...caps }, { stats });
+
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, capReached: mode });
+    expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-${mode}-runs (3): ${issueLink(7)}.`);
+  });
+
+  it.each([
+    ['fast', { maxFastRuns: 1 }],
+    ['pro', { maxProRuns: 1 }],
+  ] as const)('leaves a changed item deferred when max-%s-runs leaves no room to analyze it again', async (mode, caps) => {
+    processIssueMock.mockResolvedValueOnce(changed(5));
+    const stats = createStats();
+
+    await run({ ...baseConfig, issueNumbers: [5, 6], ...caps }, { stats });
+
+    expect(processIssueMock).toHaveBeenCalledOnce();
+    expect(logSpy).toHaveBeenCalledWith(`⏳ #5 isn't analyzed again, because the run reached max-${mode}-runs (1)`);
+    expect(summaryOf(stats).items).toEqual([expect.objectContaining({ number: 5, outcome: 'deferred' })]);
+    expect(warnings()).toEqual(["#5 deferred: It changed while it was being analyzed, so the plan wasn't applied."]);
+  });
+
+  it('records a failed re-analysis as a failed item, after spending the budget of the first analysis', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    processIssueMock
+      .mockResolvedValueOnce(changed(5))
+      .mockRejectedValueOnce(new PassError('fast', new ModelError('api.openai.com returned HTTP 503: busy', 'capacity')));
+    const stats = createStats();
+
+    await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 2 }, { stats });
+
+    expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'failed', reanalyzed: true, failedPass: 'fast', failureReason: 'capacity' });
+    // The first analysis of #5 spent one review run, so #6 spends the last one.
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1, capReached: 'pro' });
+    expect(warnings()).toEqual(['#5 failed (fast pass): api.openai.com returned HTTP 503: busy']);
+    expect(core.setFailed).not.toHaveBeenCalled();
   });
 
   it('ignores the fast-run cap and writes no fast system prompt when the fast pass is disabled', async () => {
