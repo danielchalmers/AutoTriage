@@ -138,6 +138,10 @@ When changing prompt loading or the built-in fallback:
 - Test built-in label-only fallback behavior.
 - Test missing or invalid prompt behavior when applicable.
 
+`tests/prompts.test.ts` pins the assembled system and user prompts, the response schema and the model request body as files in `tests/__snapshots__/prompts/`.
+A PR that claims to be behavior-neutral leaves these snapshots unchanged.
+Any diff in them is a prompt change: regenerate them with `npm test -- -u`, review the diff as prompt text, and call it out in the PR.
+
 ### Dependency Changes
 
 Before adding a dependency, check whether the existing stack already solves the

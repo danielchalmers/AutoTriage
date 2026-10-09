@@ -1,0 +1,190 @@
+{
+  "model": "claude-haiku-5-5",
+  "messages": [
+    {
+      "role": "system",
+      "content": "System prompt.\n"
+    },
+    {
+      "role": "user",
+      "content": "User prompt.\n\n=== SECTION: RESPONSE FORMAT ===\nThis service may not enforce the response schema, so any earlier statement that the reply is decoded against an enforced schema does not apply.\nReturn exactly one JSON object that matches this JSON Schema, with no markdown, code fences, or other text:\n{\"type\":\"object\",\"properties\":{\"summary\":{\"type\":\"string\"},\"operations\":{\"type\":\"array\",\"items\":{\"anyOf\":[{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\",\"enum\":[\"add_labels\",\"remove_labels\"]},\"labels\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"accessibility\",\"answered\",\"API change\",\"awaiting triage\",\"blazor: hybrid\",\"blazor: server\",\"blazor: wasm\",\"breaking change\",\"browser: chromium\",\"browser: firefox\",\"browser: safari\",\"bug\",\"build\",\"dependency\",\"device: mobile\",\"docs\",\"duplicate\",\"enhancement\",\"epic\",\"extension\",\"fixed\",\"good first issue\",\"hacktoberfest\",\"hacktoberfest-accepted\",\"has workaround\",\"help wanted\",\"invalid\",\"legendary\",\"localization\",\"needs: changes\",\"needs: example\",\"needs: info\",\"needs: tests\",\"needs: visuals\",\"new component\",\"not a bug\",\"not planned\",\"on hold\",\"performance\",\"question\",\"refactor\",\"regression\",\"security\",\"skip changelog\",\"stale\",\"tests\"]}},\"authorization\":{\"type\":\"string\"}},\"required\":[\"kind\",\"labels\",\"authorization\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\",\"enum\":[\"comment\"]},\"body\":{\"type\":\"string\"},\"authorization\":{\"type\":\"string\"}},\"required\":[\"kind\",\"body\",\"authorization\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\",\"enum\":[\"set_state\"]},\"state\":{\"type\":\"string\",\"enum\":[\"open\",\"completed\",\"not_planned\"]},\"authorization\":{\"type\":\"string\"}},\"required\":[\"kind\",\"state\",\"authorization\"],\"additionalProperties\":false},{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\",\"enum\":[\"set_title\"]},\"title\":{\"type\":\"string\"},\"authorization\":{\"type\":\"string\"}},\"required\":[\"kind\",\"title\",\"authorization\"],\"additionalProperties\":false}]}}},\"required\":[\"summary\",\"operations\"],\"additionalProperties\":false}"
+    }
+  ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "response",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "add_labels",
+                        "remove_labels"
+                      ]
+                    },
+                    "labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "accessibility",
+                          "answered",
+                          "API change",
+                          "awaiting triage",
+                          "blazor: hybrid",
+                          "blazor: server",
+                          "blazor: wasm",
+                          "breaking change",
+                          "browser: chromium",
+                          "browser: firefox",
+                          "browser: safari",
+                          "bug",
+                          "build",
+                          "dependency",
+                          "device: mobile",
+                          "docs",
+                          "duplicate",
+                          "enhancement",
+                          "epic",
+                          "extension",
+                          "fixed",
+                          "good first issue",
+                          "hacktoberfest",
+                          "hacktoberfest-accepted",
+                          "has workaround",
+                          "help wanted",
+                          "invalid",
+                          "legendary",
+                          "localization",
+                          "needs: changes",
+                          "needs: example",
+                          "needs: info",
+                          "needs: tests",
+                          "needs: visuals",
+                          "new component",
+                          "not a bug",
+                          "not planned",
+                          "on hold",
+                          "performance",
+                          "question",
+                          "refactor",
+                          "regression",
+                          "security",
+                          "skip changelog",
+                          "stale",
+                          "tests"
+                        ]
+                      }
+                    },
+                    "authorization": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "labels",
+                    "authorization"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "comment"
+                      ]
+                    },
+                    "body": {
+                      "type": "string"
+                    },
+                    "authorization": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "body",
+                    "authorization"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "set_state"
+                      ]
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "completed",
+                        "not_planned"
+                      ]
+                    },
+                    "authorization": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "state",
+                    "authorization"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "set_title"
+                      ]
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "authorization": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "title",
+                    "authorization"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "operations"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "reasoning_effort": "high"
+}
