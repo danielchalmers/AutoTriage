@@ -35,7 +35,6 @@ jobs:
         uses: ./
         with:
           issues: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '3 6' }}
-          prompt-path: examples/AutoTriage.prompt
           dry-run: true
           model-fast: claude-haiku-5-5
           model-pro: claude-sonnet-5-5
@@ -49,6 +48,4 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: triage-artifacts-${{ github.run_number }}
-          path: |
-            triage-db.json
-            artifacts/
+          path: artifacts/

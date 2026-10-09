@@ -6,7 +6,7 @@
 
 AutoTriage is a GitHub Action that triages issues and pull requests against a plain-text policy in your repo: it applies labels, asks for missing details, retitles unclear reports, and handles stale items. It runs in your existing workflow and calls Gemini, Claude, OpenAI, or any OpenAI-compatible service with your key — no bot to host, no third-party service.
 
-[MudBlazor](https://github.com/MudBlazor/MudBlazor) runs AutoTriage on every new issue, PR, and comment — see their [workflow runs](https://github.com/MudBlazor/MudBlazor/actions) and [policy prompt](https://github.com/MudBlazor/MudBlazor/blob/dev/.github/AutoTriage.prompt).
+[MudBlazor](https://github.com/MudBlazor/MudBlazor) runs AutoTriage on every new issue and PR, plus a nightly backlog sweep — see their [workflow runs](https://github.com/MudBlazor/MudBlazor/actions) and [policy prompt](https://github.com/MudBlazor/MudBlazor/blob/dev/.github/AutoTriage.prompt).
 
 ## Quick start
 
@@ -22,15 +22,23 @@ on:
   issues:
     types: [opened]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   triage:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: autotriage
+      queue: max
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: danielchalmers/AutoTriage@v4
         with:
-          issues: ${{ github.event.pull_request.number || github.event.issue.number }}
           dry-run: "true" # change to "false" after reviewing the plan output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,6 +56,8 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 - [`autotriage-prs.yml`](./examples/workflows/autotriage-prs.yml) — run on pull request events.
 - [`autotriage-comments.yml`](./examples/workflows/autotriage-comments.yml) — re-triage when someone replies.
 - [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) — scheduled backlog sweep.
+
+The examples share one job-level `concurrency` group with `queue: max`, so a burst of runs waits its turn instead of being cancelled. Only the backlog sweep saves the triage history cache, because GitHub gives `issues`, `pull_request_target` and `issue_comment` runs read-only cache access. The comments example restores it to see when an item was last triaged.
 
 ## How it works
 
