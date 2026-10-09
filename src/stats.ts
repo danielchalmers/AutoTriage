@@ -18,8 +18,9 @@ export interface ActionDetail {
   details: string;
 }
 
-export type ItemOutcome = 'triaged' | 'skipped' | 'failed';
-export type SkipReason = 'noop-fast' | 'deferred' | 'other';
+// `skipped` means the fast pass planned nothing.
+// `deferred` means the review's plan was held back because the item changed during analysis or couldn't be rechecked.
+export type ItemOutcome = 'triaged' | 'skipped' | 'deferred' | 'failed';
 // Why a failed item failed: the model failure kind, or `other` for an error outside the model call.
 export type FailureReason = FailureKind | 'other';
 
@@ -32,11 +33,12 @@ export interface PlanSummary {
 // How the fast pass's plan relates to the pro pass's plan for one item.
 export type PlanAgreement = 'fast-noop' | 'identical' | 'pro-vetoed' | 'differed';
 
+// What happened to one processed item. The run summary's item counts are all derived from these records.
 export interface ItemRecord {
   issueNumber: number;
   type?: string;
   outcome: ItemOutcome;
-  skipReason?: SkipReason;
+  // True when the review pass ran, with or without a fast pass first.
   escalatedToPro: boolean;
   fastPlan?: PlanSummary | undefined;
   proPlan?: PlanSummary | undefined;
@@ -107,11 +109,7 @@ export class RunStatistics {
   private fastRuns: ModelRunStats[] = [];
   private proRuns: ModelRunStats[] = [];
   private actionsPerformed: ActionDetail[] = [];
-  private triaged = 0;
-  private skipped = 0;
-  private failed = 0;
   private githubApiCalls = 0;
-  private githubApiRetries = 0;
   private owner = '';
   private repo = '';
   private modelFast = '';
@@ -121,7 +119,6 @@ export class RunStatistics {
   private items = new Map<number, ItemRecord>();
   private runConfig: RunConfigSnapshot | null = null;
   private promptHashes: PromptHashes | null = null;
-  private currentPass: 'fast' | 'pro' | null = null;
 
   setRepository(owner: string, repo: string): void {
     this.owner = owner;
@@ -163,42 +160,22 @@ export class RunStatistics {
     this.promptHashes = hashes;
   }
 
-  // Items are processed one at a time, so the pass in flight identifies which model call a thrown error escaped from.
-  // Reset to null between items.
-  beginPass(pass: 'fast' | 'pro' | null): void {
-    this.currentPass = pass;
-  }
-
-  getCurrentPass(): 'fast' | 'pro' | null {
-    return this.currentPass;
-  }
-
   recordItem(record: ItemRecord): void {
     this.items.set(record.issueNumber, record);
   }
 
-  incrementTriaged(): void {
-    this.triaged++;
-  }
-
-  incrementSkipped(): void {
-    this.skipped++;
-  }
-
-  incrementFailed(): void {
-    this.failed++;
-  }
-
   getFailed(): number {
-    return this.failed;
+    return this.countOutcomes().failed;
   }
 
   incrementGithubApiCalls(count: number = 1): void {
     this.githubApiCalls += count;
   }
 
-  incrementGithubApiRetries(count: number = 1): void {
-    this.githubApiRetries += count;
+  private countOutcomes(): Record<ItemOutcome, number> {
+    const counts: Record<ItemOutcome, number> = { triaged: 0, skipped: 0, deferred: 0, failed: 0 };
+    for (const item of this.items.values()) counts[item.outcome]++;
+    return counts;
   }
 
   private formatDuration(ms: number): string {
@@ -262,17 +239,19 @@ export class RunStatistics {
   printSummary(): void {
     console.log('\n' + chalk.bold('📊 Run Statistics:'));
 
-    if (this.githubApiCalls > 0 || this.githubApiRetries > 0) {
-      console.log(`  GitHub API: ${this.githubApiCalls} calls • ${this.githubApiRetries} retries`);
+    if (this.githubApiCalls > 0) {
+      console.log(`  GitHub API: ${this.githubApiCalls} calls`);
     }
 
     this.printModelSummary('Fast', this.modelFast, this.fastRuns);
     this.printModelSummary('Pro', this.modelPro, this.proRuns);
 
+    const { triaged, skipped, deferred, failed } = this.countOutcomes();
     const actionParts: string[] = [];
-    if (this.triaged > 0) actionParts.push(`✅ ${this.triaged} triaged`);
-    if (this.skipped > 0) actionParts.push(`ℹ️ ${this.skipped} skipped`);
-    if (this.failed > 0) actionParts.push(`❌ ${this.failed} failed`);
+    if (triaged > 0) actionParts.push(`✅ ${triaged} triaged`);
+    if (skipped > 0) actionParts.push(`ℹ️ ${skipped} skipped`);
+    if (deferred > 0) actionParts.push(`⏸️ ${deferred} deferred`);
+    if (failed > 0) actionParts.push(`❌ ${failed} failed`);
 
     if (actionParts.length > 0) {
       console.log(`  Total: ${actionParts.join(' ')}`);
@@ -314,13 +293,12 @@ export class RunStatistics {
    * Written as the `run-summary.json` artifact so runs can be aggregated across history for research, rather than scraped from the human-facing log lines.
    */
   toJSON(): Record<string, unknown> {
-    const skipReasons: Record<string, number> = {};
+    const records = [...this.items.values()].sort((a, b) => a.issueNumber - b.issueNumber);
     const planAgreement: Record<string, number> = {};
     let escalatedToPro = 0;
-    for (const item of this.items.values()) {
+    for (const item of records) {
       if (item.escalatedToPro) escalatedToPro++;
       if (item.agreement) countKey(planAgreement, item.agreement);
-      if (item.outcome === 'skipped') countKey(skipReasons, item.skipReason ?? 'other');
     }
 
     const actionsByIssue = groupByIssue(this.actionsPerformed, action => action.type);
@@ -329,37 +307,24 @@ export class RunStatistics {
       countKey(actionsByKind, action.type);
     }
 
-    const issueNumbers = new Set<number>([
-      ...this.items.keys(),
-      ...this.fastRuns.map(r => r.issueNumber).filter((n): n is number => n !== undefined),
-      ...this.proRuns.map(r => r.issueNumber).filter((n): n is number => n !== undefined),
-      ...actionsByIssue.keys(),
-    ]);
-
-    const items = Array.from(issueNumbers)
-      .sort((a, b) => a - b)
-      .map(number => {
-        const record = this.items.get(number);
-        return {
-          number,
-          ...(record?.type ? { type: record.type } : {}),
-          ...(record?.outcome ? { outcome: record.outcome } : {}),
-          ...(record?.skipReason ? { skipReason: record.skipReason } : {}),
-          escalatedToPro: record?.escalatedToPro ?? false,
-          // undefined fields are dropped by JSON serialization.
-          fastPlan: record?.fastPlan,
-          proPlan: record?.proPlan,
-          agreement: record?.agreement,
-          failedPass: record?.failedPass,
-          failureReason: record?.failureReason,
-          fast: this.perItemModel(this.fastRuns, number),
-          pro: this.perItemModel(this.proRuns, number),
-          operations: actionsByIssue.get(number) ?? [],
-        };
-      });
+    // Fields are listed explicitly to keep the artifact's key order stable, and undefined fields are dropped by JSON serialization.
+    const items = records.map(record => ({
+      number: record.issueNumber,
+      type: record.type,
+      outcome: record.outcome,
+      escalatedToPro: record.escalatedToPro,
+      fastPlan: record.fastPlan,
+      proPlan: record.proPlan,
+      agreement: record.agreement,
+      failedPass: record.failedPass,
+      failureReason: record.failureReason,
+      fast: this.perItemModel(this.fastRuns, record.issueNumber),
+      pro: this.perItemModel(this.proRuns, record.issueNumber),
+      operations: actionsByIssue.get(record.issueNumber) ?? [],
+    }));
 
     return {
-      schemaVersion: 4,
+      schemaVersion: 5,
       repo: this.owner && this.repo ? `${this.owner}/${this.repo}` : '',
       models: {
         fast: this.modelFast || null,
@@ -369,17 +334,13 @@ export class RunStatistics {
       promptHash: this.promptHashes,
       github: {
         calls: this.githubApiCalls,
-        retries: this.githubApiRetries,
       },
       funnel: {
         discovered: this.discovered,
-        processed: this.triaged + this.skipped + this.failed,
-        triaged: this.triaged,
-        skipped: this.skipped,
-        failed: this.failed,
+        processed: records.length,
+        ...this.countOutcomes(),
         escalatedToPro,
         capReached: this.capReached,
-        skipReasons,
         planAgreement,
       },
       fast: this.summarizeRuns(this.fastRuns),

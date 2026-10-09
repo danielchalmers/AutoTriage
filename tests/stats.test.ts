@@ -29,20 +29,20 @@ describe('RunStatistics', () => {
     });
 
     it('prints the outcome totals and the actions grouped by issue in issue order', () => {
-      stats.incrementTriaged();
-      stats.incrementTriaged();
-      stats.incrementSkipped();
-      stats.incrementFailed();
+      stats.recordItem({ issueNumber: 3, outcome: 'triaged', escalatedToPro: true });
+      stats.recordItem({ issueNumber: 12, outcome: 'triaged', escalatedToPro: true });
+      stats.recordItem({ issueNumber: 20, outcome: 'skipped', escalatedToPro: false });
+      stats.recordItem({ issueNumber: 21, outcome: 'deferred', escalatedToPro: true });
+      stats.recordItem({ issueNumber: 22, outcome: 'failed', escalatedToPro: false, failureReason: 'other' });
       stats.trackAction({ issueNumber: 12, type: 'comment', details: 'comment' });
       stats.trackAction({ issueNumber: 3, type: 'add_labels', details: 'labels: +bug' });
       stats.trackAction({ issueNumber: 12, type: 'set_state', details: 'state: completed' });
 
       const lines = captureSummaryOutput(() => stats.printSummary());
 
-      expect(lines).toContain('  Total: ✅ 2 triaged ℹ️ 1 skipped ❌ 1 failed');
+      expect(lines).toContain('  Total: ✅ 2 triaged ℹ️ 1 skipped ⏸️ 1 deferred ❌ 1 failed');
       const actionLines = lines.filter(line => line.startsWith('  #'));
       expect(actionLines).toEqual(['  #3: labels: +bug', '  #12: comment, state: completed']);
-      expect(stats.getFailed()).toBe(1);
     });
 
     it('formats run durations', () => {
@@ -76,13 +76,12 @@ describe('RunStatistics', () => {
       expect(cacheLine).toContain('Cache: 8.2k (75.9%) reused');
     });
 
-    it('shows GitHub API calls with retries', () => {
+    it('shows GitHub API calls', () => {
       stats.incrementGithubApiCalls(15);
 
       const lines = captureSummaryOutput(() => stats.printSummary());
-      const apiLine = lines.find(line => line.includes('GitHub API:'));
 
-      expect(apiLine).toContain('GitHub API: 15 calls • 0 retries');
+      expect(lines).toContain('  GitHub API: 15 calls');
     });
 
     it('reports reasoning tokens on the token line when present', () => {
@@ -133,12 +132,10 @@ describe('RunStatistics', () => {
         issueNumber: 1,
         type: 'issue',
         outcome: 'skipped',
-        skipReason: 'noop-fast',
         escalatedToPro: false,
         fastPlan: { kinds: [], labels: [] },
         agreement: 'fast-noop',
       });
-      stats.incrementSkipped();
 
       // Item 2: escalates to pro, triaged, performs an action.
       stats.trackFastRun({
@@ -169,37 +166,39 @@ describe('RunStatistics', () => {
         agreement: 'identical',
       });
       stats.trackAction({ issueNumber: 2, type: 'add_labels', details: '+bug' });
-      stats.incrementTriaged();
 
       // Item 3: escalated but the pro call failed.
       stats.recordItem({ issueNumber: 3, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'capacity' });
-      stats.incrementFailed();
+
+      // Item 4: reviewed without a fast pass, then deferred because it changed during analysis.
+      stats.recordItem({ issueNumber: 4, type: 'issue', outcome: 'deferred', escalatedToPro: true, proPlan: { kinds: ['comment'], labels: [] } });
 
       const json = stats.toJSON() as any;
 
-      expect(json.schemaVersion).toBe(4);
+      expect(json.schemaVersion).toBe(5);
       expect(json.repo).toBe('octo/demo');
       expect(json.models).toEqual({ fast: 'fast-model', pro: 'pro-model' });
       expect(json.config).toMatchObject({ maxFastRuns: 30 });
       expect(json.promptHash).toEqual({ fast: 'sha256:aaaa', pro: 'sha256:bbbb' });
-      expect(json.github).toEqual({ calls: 12, retries: 0 });
-      expect(json.funnel).toMatchObject({
+      expect(json.github).toEqual({ calls: 12 });
+      expect(json.funnel).toEqual({
         discovered: 100,
-        processed: 3,
+        processed: 4,
         triaged: 1,
         skipped: 1,
+        deferred: 1,
         failed: 1,
-        escalatedToPro: 2,
+        escalatedToPro: 3,
         capReached: 'fast',
+        planAgreement: { 'fast-noop': 1, identical: 1 },
       });
-      expect(json.funnel.skipReasons).toEqual({ 'noop-fast': 1 });
-      expect(json.funnel.planAgreement).toEqual({ 'fast-noop': 1, identical: 1 });
       expect(json.fast.reasoningTokens).toBe(7000);
       expect(json.pro.reasoningTokens).toBe(6000);
       expect(json.actions).toEqual({ total: 1, byKind: { add_labels: 1 } });
 
+      expect(json.items.map((i: any) => i.number)).toEqual([1, 2, 3, 4]);
       const item1 = json.items.find((i: any) => i.number === 1);
-      expect(item1).toMatchObject({ type: 'issue', outcome: 'skipped', skipReason: 'noop-fast', escalatedToPro: false });
+      expect(item1).toMatchObject({ type: 'issue', outcome: 'skipped', escalatedToPro: false });
       expect(item1.fast.reasoningTokens).toBe(4000);
       expect(item1.pro).toBeNull();
 
@@ -212,6 +211,19 @@ describe('RunStatistics', () => {
       const item3 = json.items.find((i: any) => i.number === 3);
       expect(item3).toMatchObject({ outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'capacity' });
       expect(JSON.stringify(item2)).not.toContain('failureReason');
+
+      const item4 = json.items.find((i: any) => i.number === 4);
+      expect(JSON.parse(JSON.stringify(item4))).toEqual({
+        number: 4,
+        type: 'issue',
+        outcome: 'deferred',
+        escalatedToPro: true,
+        proPlan: { kinds: ['comment'], labels: [] },
+        fast: null,
+        pro: null,
+        operations: [],
+      });
+      expect(stats.getFailed()).toBe(1);
     });
 
     it('serializes an empty run without throwing', () => {
@@ -219,6 +231,7 @@ describe('RunStatistics', () => {
       const json = stats.toJSON() as any;
       expect(json.funnel.capReached).toBe('none');
       expect(json.items).toEqual([]);
+      expect(json.funnel).toMatchObject({ processed: 0, triaged: 0, skipped: 0, deferred: 0, failed: 0, escalatedToPro: 0 });
       expect(json.config).toBeNull();
       expect(json.promptHash).toBeNull();
     });

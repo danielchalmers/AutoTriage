@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import { ChatClient, ModelError } from '../src/llm/chat';
-import { buildRunContext, processIssue } from '../src/issueProcessor';
+import { PassError, buildRunContext, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
 import type { TriageDb } from '../src/storage';
@@ -125,17 +125,18 @@ describe('processIssue', () => {
         processOptions()
       );
 
-      expect(result).toEqual({ triageUsed: false, fastRunUsed: true });
+      expect(result).toEqual({
+        issueNumber: 42,
+        type: 'issue',
+        outcome: 'skipped',
+        escalatedToPro: false,
+        fastPlan: { kinds: [], labels: [] },
+        agreement: 'fast-noop',
+      });
       expect(model.generateJson).toHaveBeenCalledTimes(1);
       expect(db.items['42']).toMatchObject({
         summary: 'Fast summary',
         lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
-      });
-
-      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
-      expect(item).toMatchObject({
-        agreement: 'fast-noop',
-        fastPlan: { kinds: [], labels: [] },
       });
 
       const files = fs.readdirSync(path.join(tempDir, 'artifacts')).sort();
@@ -168,16 +169,18 @@ describe('processIssue', () => {
         processOptions()
       );
 
-      expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
-      expect(model.generateJson).toHaveBeenCalledTimes(2);
-      expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
-
-      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
-      expect(item).toMatchObject({
-        agreement: 'identical',
+      expect(result).toEqual({
+        issueNumber: 42,
+        type: 'issue',
+        outcome: 'triaged',
+        escalatedToPro: true,
         fastPlan: { kinds: ['add_labels'], labels: ['+bug'] },
         proPlan: { kinds: ['add_labels'], labels: ['+bug'] },
+        agreement: 'identical',
       });
+      expect(model.generateJson).toHaveBeenCalledTimes(2);
+      expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+      expect((stats.toJSON() as any).actions).toEqual({ total: 1, byKind: { add_labels: 1 } });
       expect(gh.getIssue).toHaveBeenCalledWith(42);
       expect(db.items['42']).toMatchObject({
         summary: 'Pro summary',
@@ -212,12 +215,10 @@ describe('processIssue', () => {
         processOptions()
       );
 
-      expect(result).toEqual({ triageUsed: true, fastRunUsed: true });
       expect(gh.getIssue).not.toHaveBeenCalled();
       expect(gh.addLabels).not.toHaveBeenCalled();
       expect(db.items['42']).toMatchObject({ summary: 'Pro summary', lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
-      const item = (stats.toJSON() as any).items.find((i: any) => i.number === 42);
-      expect(item).toMatchObject({ outcome: 'triaged', agreement: 'pro-vetoed', proPlan: { kinds: [], labels: [] } });
+      expect(result).toMatchObject({ outcome: 'triaged', escalatedToPro: true, agreement: 'pro-vetoed', proPlan: { kinds: [], labels: [] } });
     });
   });
 
@@ -272,16 +273,19 @@ describe('processIssue', () => {
           processOptions({ systemPromptFast: '' })
         );
 
-        expect(result).toEqual({ triageUsed: true, fastRunUsed: false });
+        // The review pass ran, so the item counts as escalated even without a fast pass.
+        expect(result).toEqual({
+          issueNumber: 42,
+          type: 'issue',
+          outcome: 'deferred',
+          escalatedToPro: true,
+          proPlan: { kinds: ['set_state'], labels: [] },
+        });
         expect(gh.updateIssueState).not.toHaveBeenCalled();
         expect(gh.getIssue).toHaveBeenCalledWith(42);
         expect(warnSpy).toHaveBeenCalledOnce();
         expect(db.items['42']).toBeUndefined();
         expect(buildAutoDiscoverQueue([{ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }], db, true)).toEqual([42]);
-        expect((stats.toJSON() as any).items).toContainEqual(expect.objectContaining({
-          outcome: 'skipped',
-          skipReason: 'deferred',
-        }));
       } finally {
         warnSpy.mockRestore();
       }
@@ -308,7 +312,7 @@ describe('processIssue', () => {
       } as any;
 
       try {
-        await processIssue(
+        const result = await processIssue(
           { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
           processOptions({ systemPromptFast: '' })
         );
@@ -320,10 +324,7 @@ describe('processIssue', () => {
           summary: 'Previous summary',
         });
         expect(buildAutoDiscoverQueue([baseIssue], db, true)).toEqual([42]);
-        expect((stats.toJSON() as any).items).toContainEqual(expect.objectContaining({
-          outcome: 'skipped',
-          skipReason: 'deferred',
-        }));
+        expect(result).toMatchObject({ outcome: 'deferred', escalatedToPro: true });
       } finally {
         warnSpy.mockRestore();
       }
@@ -370,13 +371,20 @@ describe('processIssue', () => {
         generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', [addBugLabel('pro policy')], 20)),
       } as any;
 
-      await processIssue(
+      const result = await processIssue(
         { cfg: createConfig({ dryRun: true, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
         processOptions({ systemPromptFast: '' })
       );
 
       expect(gh.getIssue).not.toHaveBeenCalled();
       expect(gh.addLabels).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        issueNumber: 42,
+        type: 'issue',
+        outcome: 'triaged',
+        escalatedToPro: true,
+        proPlan: { kinds: ['add_labels'], labels: ['+bug'] },
+      });
     });
   });
 
@@ -407,8 +415,10 @@ describe('processIssue', () => {
         processOptions()
       ).catch((err: unknown) => err);
 
-      expect(error).toBeInstanceOf(ModelError);
-      expect(error).toMatchObject({ kind: 'permanent', message: 'api.openai.com stopped the reply at the output token limit' });
+      expect(error).toBeInstanceOf(PassError);
+      expect(error).toMatchObject({ pass: 'pro', message: 'api.openai.com stopped the reply at the output token limit' });
+      expect((error as PassError).cause).toBeInstanceOf(ModelError);
+      expect((error as PassError).cause).toMatchObject({ kind: 'permanent' });
       expect(fetch).toHaveBeenCalledOnce();
       expect(db.items['42']).toBeUndefined();
     });
@@ -455,23 +465,42 @@ describe('processIssue', () => {
     });
   });
 
-  it('marks the pass in flight so a thrown error can be attributed', async () => {
+  it('rethrows a failed pass with the pass attached', async () => {
     await withArtifactsDir(async () => {
-      const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
-      const gh = createGitHub();
-      const model = {
+      const unavailable = new ModelError('503 UNAVAILABLE', 'capacity');
+      const failFast = { generateJson: vi.fn().mockRejectedValueOnce(unavailable) } as any;
+      const failPro = {
         generateJson: vi
           .fn()
           // Fast pass escalates, then the pro pass dies.
           .mockResolvedValueOnce(modelReply('Fast summary', [addBugLabel('fast policy')], 10))
-          .mockRejectedValueOnce(new Error('503 UNAVAILABLE')),
+          .mockRejectedValueOnce(unavailable),
       } as any;
+      const run = (model: any) => processIssue(
+        { cfg: createConfig(), db: { version: 2, items: {} }, gh: createGitHub(), models: bothPasses(model), stats: new RunStatistics() },
+        processOptions()
+      ).catch((err: unknown) => err);
 
-      await expect(
-        processIssue({ cfg: createConfig(), db, gh, models: bothPasses(model), stats }, processOptions())
-      ).rejects.toThrow('503');
-      expect(stats.getCurrentPass()).toBe('pro');
+      expect(await run(failFast)).toMatchObject({ pass: 'fast', cause: unavailable, message: '503 UNAVAILABLE' });
+      expect(await run(failPro)).toMatchObject({ pass: 'pro', cause: unavailable });
+    });
+  });
+
+  it('attributes a failed GitHub write to the review pass, and leaves a failed timeline read unattributed', async () => {
+    await withArtifactsDir(async () => {
+      const writeError = new Error('HTTP 500');
+      const readError = new Error('HTTP 502');
+      const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', [addBugLabel('pro policy')], 20)) } as any;
+      const run = (gh: ReturnType<typeof createGitHub>) => processIssue(
+        { cfg: createConfig({ dryRun: false, skipFastPass: true }), db: { version: 2, items: {} }, gh, models: bothPasses(model), stats: new RunStatistics() },
+        processOptions({ systemPromptFast: '' })
+      ).catch((err: unknown) => err);
+
+      const writeFailure = await run(createGitHub({ getIssue: vi.fn().mockResolvedValue(baseIssue), addLabels: vi.fn().mockRejectedValue(writeError) }));
+      expect(writeFailure).toBeInstanceOf(PassError);
+      expect(writeFailure).toMatchObject({ pass: 'pro', cause: writeError });
+
+      expect(await run(createGitHub({ listTimelineEvents: vi.fn().mockRejectedValue(readError) }))).toBe(readError);
     });
   });
 });
