@@ -69,7 +69,6 @@ describe('loadDatabase', () => {
   })
 
   it('starts empty from an empty file', async () => {
-    vi.spyOn(console, 'info').mockImplementation(() => {})
     await withTempDir((tempDir) => {
       const dbPath = path.join(tempDir, 'triage-db.json')
       fs.writeFileSync(dbPath, '')
@@ -90,7 +89,6 @@ describe('loadDatabase', () => {
   })
 
   it('drops legacy entries whose lastTriaged is not a date', async () => {
-    vi.spyOn(console, 'info').mockImplementation(() => {})
     await withTempDir((tempDir) => {
       const dbPath = path.join(tempDir, 'triage-db.json')
       fs.writeFileSync(dbPath, JSON.stringify({ '42': { lastTriaged: 'yesterday' }, '43': 'not an object' }))

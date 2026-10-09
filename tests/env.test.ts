@@ -30,7 +30,7 @@ beforeEach(() => {
   vi.stubEnv('OPENAI_API_KEY', '');
   vi.stubEnv('OPENAI_BASE_URL', '');
   vi.stubEnv('GITHUB_REPOSITORY', 'danielchalmers/AutoTriage');
-  // On GitHub Actions the context loads the triggering event's payload at import; clear it so it can't stand in for GITHUB_REPOSITORY.
+  // The fallback test below gives the context a payload, so every test starts without one.
   github.context.payload = {};
   setInputs({});
 });
