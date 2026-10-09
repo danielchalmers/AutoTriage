@@ -168,6 +168,10 @@ and a model API requires `GITHUB_TOKEN` and one of `GEMINI_API_KEY`,
 unit tests must not depend on any of them. Model client tests use an injected
 fetch or a localhost server.
 
+`tests/setup.ts` clears every `GITHUB_*`, `INPUT_*` and `RUNNER_*` variable before each test file loads and again before each test, so a test sets what it needs with `vi.stubEnv` in `beforeEach` or in the test itself.
+Only failing tests print their console output, so spy on `console` only to assert a log line.
+`@actions/core` commands such as `group` and `warning` write straight to stdout, which that setting can't hide, so mock them in tests that reach them.
+
 ## Failure Recovery
 
 - `npm ci` fails: check Node/npm version and lockfile consistency.

@@ -1,6 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
+
+// core.group writes ::group:: commands straight to stdout, which a passing test can't keep quiet, so here it only runs the item.
+vi.mock('@actions/core', async (importActual) => ({
+  ...(await importActual<typeof import('@actions/core')>()),
+  group: vi.fn((_name: string, fn: () => Promise<unknown>) => fn()),
+}));
+
+import * as core from '@actions/core';
 import { buildAnalysisResultSchema } from '../src/analysis';
 import { ChatClient, ModelError } from '../src/llm/chat';
 import { PassError, buildRunContext, processIssue } from '../src/issueProcessor';
@@ -350,8 +358,6 @@ describe('processIssue', () => {
 
   it('marks a re-analysis in its log group and record, and says when the item changed again', async () => {
     await withArtifactsDir(async () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       const renamed = { ...baseIssue, title: 'Renamed', updated_at: '2024-04-12T00:00:00Z' };
       const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', [addBugLabel('pro policy')], 20)) } as any;
       const reanalyze = async (current: typeof renamed) => {
@@ -363,30 +369,24 @@ describe('processIssue', () => {
         return { result, gh };
       };
 
-      try {
-        const applied = await reanalyze(renamed);
-        expect(applied.result).toMatchObject({ title: 'Renamed', outcome: 'triaged', reanalyzed: true });
-        expect(applied.gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
-        expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('::group::🤖 #42 Renamed (re-analysis)'));
+      const applied = await reanalyze(renamed);
+      expect(applied.result).toMatchObject({ title: 'Renamed', outcome: 'triaged', reanalyzed: true });
+      expect(applied.gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+      expect(core.group).toHaveBeenCalledWith('🤖 #42 Renamed (re-analysis)', expect.any(Function));
 
-        const changedAgain = await reanalyze({ ...renamed, updated_at: '2024-04-13T00:00:00Z' });
-        expect(changedAgain.result).toMatchObject({
-          outcome: 'deferred',
-          reanalyzed: true,
-          changedDuringAnalysis: true,
-          detail: "It changed again while it was being re-analyzed, so the plan wasn't applied.",
-        });
-        expect(changedAgain.gh.addLabels).not.toHaveBeenCalled();
-      } finally {
-        stdoutSpy.mockRestore();
-        warnSpy.mockRestore();
-      }
+      const changedAgain = await reanalyze({ ...renamed, updated_at: '2024-04-13T00:00:00Z' });
+      expect(changedAgain.result).toMatchObject({
+        outcome: 'deferred',
+        reanalyzed: true,
+        changedDuringAnalysis: true,
+        detail: "It changed again while it was being re-analyzed, so the plan wasn't applied.",
+      });
+      expect(changedAgain.gh.addLabels).not.toHaveBeenCalled();
     });
   });
 
   it('uses the analyzed watermark when the post-action refresh fails', async () => {
     await withArtifactsDir(async () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
       const gh = createGitHub({
@@ -398,20 +398,16 @@ describe('processIssue', () => {
         generateJson: vi.fn().mockResolvedValue(modelReply('Pro summary', [addBugLabel('pro policy')], 20)),
       } as any;
 
-      try {
-        await processIssue(
-          { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
-          processOptions({ systemPromptFast: '' })
-        );
+      await processIssue(
+        { cfg: createConfig({ dryRun: false, skipFastPass: true }), db, gh, models: bothPasses(model), stats },
+        processOptions({ systemPromptFast: '' })
+      );
 
-        expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
-        expect(db.items['42']).toMatchObject({
-          summary: 'Pro summary',
-          lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
-        });
-      } finally {
-        warnSpy.mockRestore();
-      }
+      expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
+      expect(db.items['42']).toMatchObject({
+        summary: 'Pro summary',
+        lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
+      });
     });
   });
 
@@ -448,7 +444,6 @@ describe('processIssue', () => {
       const stats = new RunStatistics();
       const fetch = chatFetch('{"summary":"s","operations":{}}', '{"summary":7,"operations":[]}');
       const model = new ChatClient(OPENAI, fetch);
-      vi.spyOn(console, 'warn').mockImplementation(() => {});
       vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
 
       await processIssue({ cfg: createConfig(), db, gh: createGitHub(), models: bothPasses(model), stats }, processOptions());

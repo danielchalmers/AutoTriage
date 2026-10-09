@@ -1,15 +1,13 @@
 /// <reference types="vitest" />
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { describeOperation, executeOperations } from '../src/triage';
 import type { GitHubWriteClient, PlannedOperation } from '../src/triage';
 
 describe('executeOperations', () => {
   const issue = { number: 42, title: 'Original title' };
   let gh: GitHubWriteClient;
-  let logSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     gh = {
       addLabels: vi.fn().mockResolvedValue(undefined),
       removeLabel: vi.fn().mockResolvedValue(undefined),
@@ -17,10 +15,6 @@ describe('executeOperations', () => {
       updateTitle: vi.fn().mockResolvedValue(undefined),
       updateIssueState: vi.fn().mockResolvedValue(undefined),
     };
-  });
-
-  afterEach(() => {
-    logSpy.mockRestore();
   });
 
   it('does not call GitHub in dry-run mode', async () => {

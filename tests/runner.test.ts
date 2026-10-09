@@ -149,7 +149,6 @@ describe('runAutoTriage', () => {
   beforeAll(() => {
     summaryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-summary-'));
     summaryFile = path.join(summaryDir, 'step-summary.md');
-    vi.stubEnv('GITHUB_STEP_SUMMARY', summaryFile);
   });
 
   afterAll(() => {
@@ -166,6 +165,7 @@ describe('runAutoTriage', () => {
     // Run artifacts (system prompts, run summary) land in a throwaway directory instead of the repository root.
     artifactsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-runner-'));
     vi.spyOn(process, 'cwd').mockReturnValue(artifactsRoot);
+    vi.stubEnv('GITHUB_STEP_SUMMARY', summaryFile);
     fs.writeFileSync(summaryFile, '');
   });
 
@@ -422,7 +422,6 @@ describe('runAutoTriage', () => {
   });
 
   it('records a failed re-analysis as a failed item, after spending the budget of the first analysis', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
     processIssueMock
       .mockResolvedValueOnce(changed(5))
       .mockRejectedValueOnce(new PassError('fast', new ModelError('api.openai.com returned HTTP 503: busy', 'capacity')));
@@ -475,7 +474,6 @@ describe('runAutoTriage', () => {
   });
 
   it('records the title of an item that failed after it was fetched', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const gh = createGitHub();
     gh.getIssue.mockResolvedValueOnce(makeIssue(5, '2024-04-05T00:00:00Z', { title: 'Crash on save', type: 'pull request' }));
     processIssueMock.mockRejectedValueOnce(new PassError('fast', new ModelError('api.openai.com returned HTTP 503: busy', 'capacity')));
@@ -486,7 +484,6 @@ describe('runAutoTriage', () => {
   });
 
   it('stops after three items in a row fail, with a warning rather than a failed job', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const stats = createStats();
     processIssueMock.mockRejectedValue(new PassError('fast', new ModelError('generativelanguage.googleapis.com returned HTTP 503: UNAVAILABLE', 'capacity')));
 
@@ -561,7 +558,6 @@ describe('runAutoTriage', () => {
     ['an item GitHub no longer has', githubError(410, 'This issue was deleted')],
     ['a network error outside Octokit', Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })],
   ])('records %s as a failed item and goes on without failing the job', async (_name, error) => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
     const stats = createStats();
     processIssueMock.mockRejectedValueOnce(new PassError('pro', error));
 
@@ -597,7 +593,6 @@ describe('runAutoTriage', () => {
     [401, 'Bad credentials', ' Check the token in GITHUB_TOKEN.'],
     [403, 'Resource not accessible by integration', " Check that the token can reach this repository and that the workflow's permissions grant contents: read, issues: write and pull-requests: write."],
   ])('stops the run and fails the job when GitHub answers HTTP %i: %s', async (status, message, hint) => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
     processIssueMock.mockRejectedValueOnce(new PassError('pro', githubError(status, message)));
 
     await run({ ...baseConfig, issueNumbers: [5, 6] });
@@ -687,8 +682,6 @@ describe('runAutoTriage', () => {
   });
 
   it('names the built-in policy in the job summary when the policy file is missing', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-
     await run({ ...baseConfig, promptPath: '.github/missing.prompt', issueNumbers: [5] });
 
     expect(readJobSummary()).toContain('<li>Policy: the built-in label-only policy, because no policy file was found</li>');
