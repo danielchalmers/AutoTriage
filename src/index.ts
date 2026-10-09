@@ -1,13 +1,13 @@
 import * as core from '@actions/core';
 import { describeModels, getConfig } from './env';
 import { loadDatabase } from './storage';
-import { ChatClient } from './llm/chat';
+import { ChatClient, errorMessage } from './llm/chat';
 import type { ModelClients } from './issueProcessor';
 import { GitHubClient } from './github';
 import { RunStatistics } from './stats';
 import { runAutoTriage } from './runner';
 import type { Config } from './config';
-import { errorDetail, errorMessage } from './util';
+import { errorDetail } from './util';
 import chalk from 'chalk';
 
 chalk.level = 3;

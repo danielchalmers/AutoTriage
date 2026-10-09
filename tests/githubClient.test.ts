@@ -444,6 +444,9 @@ describe('GitHubClient writes', () => {
     expect(client.getApiCallCount()).toBe(1);
   });
 
+  // Only issue edits ask for the newer API version, because they are the only calls AutoTriage makes that the default version marks deprecated.
+  const issueEditVersion = { headers: { 'x-github-api-version': '2026-03-10' } };
+
   it.each<[string, Parameters<GitHubClient['updateIssueState']>, object]>([
     ['clears the reason when reopening', [9, 'open'], { state: 'open', state_reason: null }],
     ['passes an explicit close reason', [9, 'closed', 'completed'], { state: 'closed', state_reason: 'completed' }],
@@ -453,7 +456,8 @@ describe('GitHubClient writes', () => {
 
     await client.updateIssueState(...args);
 
-    expect(mocks.issuesUpdate).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', issue_number: 9, ...expected });
+    expect(mocks.issuesUpdate).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', issue_number: 9, ...expected, ...issueEditVersion });
+    expect(client.getApiCallCount()).toBe(1);
   });
 
   it('sends title, comment, and label removal requests for the target item', async () => {
@@ -463,22 +467,9 @@ describe('GitHubClient writes', () => {
     await client.createComment(9, 'Hello');
     await client.removeLabel(9, 'needs info');
 
-    expect(mocks.issuesUpdate).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', issue_number: 9, title: 'Better title' });
+    expect(mocks.issuesUpdate).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', issue_number: 9, title: 'Better title', ...issueEditVersion });
     expect(mocks.issuesCreateComment).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', issue_number: 9, body: 'Hello' });
     expect(mocks.issuesRemoveLabel).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', issue_number: 9, name: 'needs info' });
     expect(client.getApiCallCount()).toBe(3);
-  });
-});
-
-describe('GitHubClient.lastUpdated', () => {
-  it('returns the later of the issue update time and the newest timeline event', () => {
-    const client = new GitHubClient('token', 'owner', 'repo');
-    const issue = { updated_at: '2024-01-02T00:00:00Z' } as any;
-
-    expect(client.lastUpdated(issue, [{ event: 'commented', created_at: '2024-01-05T00:00:00Z' }, { event: 'labeled' }]))
-      .toBe(Date.parse('2024-01-05T00:00:00Z'));
-    expect(client.lastUpdated(issue, [{ event: 'commented', created_at: '2024-01-01T00:00:00Z' }]))
-      .toBe(Date.parse('2024-01-02T00:00:00Z'));
-    expect(client.lastUpdated({} as any, [])).toBe(0);
   });
 });

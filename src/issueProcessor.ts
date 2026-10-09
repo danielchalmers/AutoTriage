@@ -1,23 +1,14 @@
 import * as core from '@actions/core';
 import chalk from 'chalk';
-import {
-  AnalysisResult,
-  FastPassPlan,
-  PromptPassMode,
-  RepoLabel,
-  buildAnalysisResultSchema,
-  buildUserPrompt,
-  parseAnalysisResult,
-} from './analysis';
-import type { ChatClient, JsonRequest } from './llm/chat';
+import { AnalysisResult, FastPassPlan, RepoLabel, parseAnalysisResult } from './analysis';
+import { buildUserPrompt } from './prompts';
+import { errorMessage, type ChatClient, type JsonRequest } from './llm/chat';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { ItemRecord, RunStatistics, comparePlans, summarizePlan } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, explainPlan, planOperations } from './triage';
-import type { Config } from './config';
+import type { Config, PromptPassMode } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
-import { errorMessage, parseTimestamp } from './util';
-
-type LastUpdatedFn = (issue: Issue, timelineEvents: TimelineEvent[]) => number;
+import { parseTimestamp } from './util';
 
 export type ModelClient = Pick<ChatClient, 'generateJson'>;
 // When the fast pass is skipped, its entry is the pro client and is never called.
@@ -34,6 +25,8 @@ export interface IssueProcessorDeps {
 export interface ProcessIssueOptions {
   issue: Issue;
   repoLabels: RepoLabel[];
+  // The response schema, which the runner builds once from the repository's labels.
+  schema: JsonRequest['schema'];
   autoDiscover: boolean;
   systemPromptFast: string;
   systemPromptPro: string;
@@ -48,6 +41,7 @@ export interface GenerateAnalysisOptions {
   systemPrompt: string;
   userPrompt: string;
   repoLabels: RepoLabel[];
+  schema: JsonRequest['schema'];
   isFastModel?: boolean;
 }
 
@@ -94,7 +88,7 @@ export async function processIssue(
   options: ProcessIssueOptions
 ): Promise<ItemRecord> {
   const { cfg, db, gh, models, stats } = deps;
-  const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp, reanalysis = false } = options;
+  const { issue, repoLabels, schema, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp, reanalysis = false } = options;
 
   return core.group(`🤖 #${issue.number} ${issue.title}${reanalysis ? ' (re-analysis)' : ''}`, async (): Promise<ItemRecord> => {
     const context = await loadIssueContext(
@@ -103,7 +97,7 @@ export async function processIssue(
     );
     const fastPass = await inPass('fast', () => runFastPass(
       { cfg, models, stats },
-      { issue, repoLabels, systemPromptFast, runTimestamp, context }
+      { issue, repoLabels, schema, systemPromptFast, runTimestamp, context }
     ));
     const fastPlan = fastPass.plan && summarizePlan(fastPass.plan.operations);
     const item = { issueNumber: issue.number, type: issue.type, title: issue.title, ...(reanalysis ? { reanalyzed: true } : {}), fastPlan };
@@ -122,6 +116,7 @@ export async function processIssue(
         mode: 'pro',
         issue,
         repoLabels,
+        schema,
         systemPrompt: systemPromptPro,
         runTimestamp,
         context,
@@ -188,13 +183,7 @@ async function loadIssueContext(
     timelineFetchLimit,
     issue.type === 'pull request'
   );
-  const runContext = buildRunContext(
-    issue,
-    rawTimelineEvents,
-    dbEntry.lastTriaged,
-    autoDiscover,
-    (trackedIssue, events) => gh.lastUpdated(trackedIssue, events)
-  );
+  const runContext = buildRunContext(issue, rawTimelineEvents, dbEntry.lastTriaged, autoDiscover);
 
   saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
@@ -210,7 +199,7 @@ async function loadIssueContext(
 // The two passes differ only in which model, prompt, limits, and artifact name they use, so they share one body.
 async function runPass(
   deps: Pick<IssueProcessorDeps, 'cfg' | 'models' | 'stats'>,
-  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'runTimestamp'> & {
+  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'schema' | 'runTimestamp'> & {
     mode: PromptPassMode;
     systemPrompt: string;
     context: IssueContext;
@@ -218,7 +207,7 @@ async function runPass(
   }
 ): Promise<PassResult> {
   const { cfg, models, stats } = deps;
-  const { mode, issue, repoLabels, systemPrompt, runTimestamp, context, fastPassPlan } = options;
+  const { mode, issue, repoLabels, schema, systemPrompt, runTimestamp, context, fastPassPlan } = options;
   const isFast = mode === 'fast';
 
   const userPrompt = buildUserPrompt(
@@ -240,6 +229,7 @@ async function runPass(
       systemPrompt,
       userPrompt,
       repoLabels,
+      schema,
       isFastModel: isFast,
     }
   );
@@ -249,7 +239,7 @@ async function runPass(
 
 async function runFastPass(
   deps: Pick<IssueProcessorDeps, 'cfg' | 'models' | 'stats'>,
-  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'systemPromptFast' | 'runTimestamp'> & {
+  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'schema' | 'systemPromptFast' | 'runTimestamp'> & {
     context: IssueContext;
   }
 ): Promise<FastPassResult> {
@@ -322,18 +312,22 @@ async function executePlannedOperations(
   return undefined;
 }
 
+// The later of the item's own update time and its newest dated timeline event.
+function latestActivityMs(issue: Issue, timelineEvents: TimelineEvent[]): number {
+  return timelineEvents.reduce((latest, event) => Math.max(latest, parseTimestamp(event.created_at)), parseTimestamp(issue.updated_at));
+}
+
 export function buildRunContext(
   issue: Issue,
   timelineEvents: TimelineEvent[],
   lastTriagedAt: string | undefined,
-  autoDiscover: boolean,
-  getLastUpdated: LastUpdatedFn
+  autoDiscover: boolean
 ): string {
   if (!lastTriagedAt) {
     return 'This item has no previous triage record, so treat this as the first review.';
   }
 
-  const latestUpdateMs = getLastUpdated(issue, timelineEvents);
+  const latestUpdateMs = latestActivityMs(issue, timelineEvents);
   const triagedMs = parseTimestamp(lastTriagedAt);
   const hasNewActivity = triagedMs > 0 && latestUpdateMs > triagedMs;
   const selectionReason = hasNewActivity
@@ -350,8 +344,8 @@ export async function generateAnalysis(
   options: GenerateAnalysisOptions
 ): Promise<{ data: AnalysisResult; ops: PlannedOperation[] }> {
   const { stats } = deps;
-  const { issue, model, systemPrompt, userPrompt, repoLabels, isFastModel = false } = options;
-  const request: JsonRequest = { model, systemPrompt, userPrompt, schema: buildAnalysisResultSchema(repoLabels) };
+  const { issue, model, systemPrompt, userPrompt, repoLabels, schema, isFastModel = false } = options;
+  const request: JsonRequest = { model, systemPrompt, userPrompt, schema };
 
   console.log(chalk.blue(`💭 Thinking with ${model}...`));
   const startTime = Date.now();
@@ -368,6 +362,6 @@ export async function generateAnalysis(
   console.log(chalk.magenta(explanation));
   saveArtifact(issue.number, `${isFastModel ? 'fast' : 'pro'}-analysis.json`, JSON.stringify(data, null, 2));
 
-  const ops = planOperations(issue, data, issue, repoLabels.map((label) => label.name), explanation);
+  const ops = planOperations(issue, data, repoLabels.map((label) => label.name), explanation);
   return { data, ops };
 }

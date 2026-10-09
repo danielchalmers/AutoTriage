@@ -1,10 +1,8 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { createHash } from 'node:crypto';
-import {
-  buildSystemPrompt,
-  normalizeRepoLabels,
-} from './analysis';
+import { buildAnalysisResultSchema, normalizeRepoLabels } from './analysis';
+import { buildSystemPrompt } from './prompts';
 import {
   buildAutoDiscoverQueue,
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
@@ -142,7 +140,7 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
     if (record.fastPlan) fastRunsPerformed++;
   };
   const itemDeps = { cfg, db, gh, models, stats };
-  const itemOptions = { repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp };
+  const itemOptions = { repoLabels, schema: buildAnalysisResultSchema(repoLabels), autoDiscover, systemPromptFast, systemPromptPro, runTimestamp };
 
   for (const [index, issueNumber] of targets.entries()) {
     const spent = spentBudget();

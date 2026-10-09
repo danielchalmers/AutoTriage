@@ -1,7 +1,8 @@
 import type { Issue, TimelineEvent } from './github';
 import { loadPrompt, loadReadme } from './storage';
-import type { FastPassPlan, PromptPassLimits, PromptPassMode, RepoLabel } from './analysis';
+import type { FastPassPlan, RepoLabel } from './analysis';
 import { normalizeRepoLabels } from './analysis';
+import type { PromptPassLimits, PromptPassMode } from './config';
 
 function clampText(value: string | null | undefined, maxChars: number): string {
   if (!value || maxChars <= 0) return '';

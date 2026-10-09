@@ -3,8 +3,7 @@ import { explainPlan, planOperations } from '../src/triage';
 import type { AnalysisResult } from '../src/analysis';
 
 describe('planOperations', () => {
-  const baseIssue = { number: 1, title: 'Original title', state: 'open' } as const;
-  const baseMetadata = { labels: ['bug', 'help wanted'] };
+  const baseIssue = { number: 1, title: 'Original title', state: 'open', labels: ['bug', 'help wanted'] };
 
   it('produces plain label update data when labels differ', () => {
     const analysis: AnalysisResult = {
@@ -12,7 +11,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'add_labels', labels: ['feature'], authorization: 'policy allows feature labels' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, ['bug', 'feature'])).toEqual([
+    expect(planOperations(baseIssue, analysis, ['bug', 'feature'])).toEqual([
       { kind: 'add_labels', labels: ['feature'], authorization: 'policy allows feature labels' },
     ]);
   });
@@ -23,7 +22,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'add_labels', labels: ['bug', 'ghost'], authorization: 'policy allows bug labels' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, ['bug'])).toEqual([]);
+    expect(planOperations(baseIssue, analysis, ['bug'])).toEqual([]);
   });
 
   it('drops duplicate and no-op label changes while preserving order', () => {
@@ -36,7 +35,7 @@ describe('planOperations', () => {
       ],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, ['bug', 'feature', 'help wanted'])).toEqual([
+    expect(planOperations(baseIssue, analysis, ['bug', 'feature', 'help wanted'])).toEqual([
       { kind: 'add_labels', labels: ['feature'], authorization: 'policy allows feature labels' },
       { kind: 'remove_labels', labels: ['help wanted'], authorization: 'policy allows cleanup' },
       { kind: 'add_labels', labels: ['help wanted'], authorization: 'policy allows restore' },
@@ -49,7 +48,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'add_labels', labels: ['brand-new', 'bug'], authorization: 'policy allows labels' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([
+    expect(planOperations(baseIssue, analysis, [])).toEqual([
       { kind: 'add_labels', labels: ['brand-new'], authorization: 'policy allows labels' },
     ]);
   });
@@ -60,7 +59,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'add_labels', labels: ['', '  ', 7, null, 'feature'], authorization: 'policy allows labels' }],
     } as unknown as AnalysisResult;
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, ['feature'])).toEqual([
+    expect(planOperations(baseIssue, analysis, ['feature'])).toEqual([
       { kind: 'add_labels', labels: ['feature'], authorization: 'policy allows labels' },
     ]);
   });
@@ -74,7 +73,7 @@ describe('planOperations', () => {
       ],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, ['bug', 'feature', 'help wanted'])).toEqual([
+    expect(planOperations(baseIssue, analysis, ['bug', 'feature', 'help wanted'])).toEqual([
       { kind: 'add_labels', labels: ['feature'], authorization: 'policy allows labels' },
       { kind: 'remove_labels', labels: ['help wanted'], authorization: 'policy allows cleanup' },
     ]);
@@ -86,7 +85,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'add_labels', labels: ['Docs', 'UI'], authorization: 'policy allows labels' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, ['docs', 'Docs', 'ui', 'Ui'])).toEqual([
+    expect(planOperations(baseIssue, analysis, ['docs', 'Docs', 'ui', 'Ui'])).toEqual([
       { kind: 'add_labels', labels: ['Docs'], authorization: 'policy allows labels' },
     ]);
   });
@@ -97,7 +96,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'comment', body: 'Hello there', authorization: 'policy requires a response' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [], 'internal reasoning')).toEqual([
+    expect(planOperations(baseIssue, analysis, [], 'internal reasoning')).toEqual([
       {
         kind: 'comment',
         body: 'Hello there',
@@ -113,7 +112,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'comment', body: 'Hello there', authorization: 'policy requires a response' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [], '')).toEqual([
+    expect(planOperations(baseIssue, analysis, [], '')).toEqual([
       { kind: 'comment', body: 'Hello there', authorization: 'policy requires a response' },
     ]);
   });
@@ -124,7 +123,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'comment', body: '   ', authorization: 'policy requires a response' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
+    expect(planOperations(baseIssue, analysis, [])).toEqual([]);
   });
 
   it('adds title data when title changes', () => {
@@ -133,7 +132,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'set_title', title: 'Better title', authorization: 'policy allows title edits' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([
+    expect(planOperations(baseIssue, analysis, [])).toEqual([
       { kind: 'set_title', title: 'Better title', authorization: 'policy allows title edits' },
     ]);
   });
@@ -144,7 +143,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'set_title', title: 'Original title', authorization: 'policy allows title edits' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
+    expect(planOperations(baseIssue, analysis, [])).toEqual([]);
   });
 
   it('adds state data when closing with reason', () => {
@@ -153,7 +152,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'set_state', state: 'completed', authorization: 'policy allows closing completed work' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([
+    expect(planOperations(baseIssue, analysis, [])).toEqual([
       { kind: 'set_state', state: 'completed', authorization: 'policy allows closing completed work' },
     ]);
   });
@@ -165,7 +164,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'set_state', state: 'completed', authorization: 'policy allows closing completed work' }],
     };
 
-    expect(planOperations(issue, analysis, baseMetadata, [])).toEqual([]);
+    expect(planOperations(issue, analysis, [])).toEqual([]);
   });
 
   it('changes the close reason of an issue closed for a different reason', () => {
@@ -175,7 +174,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'set_state', state: 'not_planned', authorization: 'policy allows closing as not planned' }],
     };
 
-    expect(planOperations(issue, analysis, baseMetadata, [])).toEqual([
+    expect(planOperations(issue, analysis, [])).toEqual([
       { kind: 'set_state', state: 'not_planned', authorization: 'policy allows closing as not planned' },
     ]);
   });
@@ -186,7 +185,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'set_state', state: 'open', authorization: 'policy allows reopening when info arrives' }],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
+    expect(planOperations(baseIssue, analysis, [])).toEqual([]);
   });
 
   it('adds reopen data when desired open and currently closed', () => {
@@ -196,7 +195,7 @@ describe('planOperations', () => {
       operations: [{ kind: 'set_state', state: 'open', authorization: 'policy allows reopening when info arrives' }],
     };
 
-    expect(planOperations(issue, analysis, baseMetadata, [])).toEqual([
+    expect(planOperations(issue, analysis, [])).toEqual([
       { kind: 'set_state', state: 'open', authorization: 'policy allows reopening when info arrives' },
     ]);
   });
@@ -210,13 +209,13 @@ describe('planOperations', () => {
       ],
     } as unknown as AnalysisResult;
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
+    expect(planOperations(baseIssue, analysis, [])).toEqual([]);
   });
 
   it('returns no operations for an explicit empty operation plan', () => {
     const analysis: AnalysisResult = { summary: 's', operations: [] };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
+    expect(planOperations(baseIssue, analysis, [])).toEqual([]);
   });
 
   it('skips operations without authorization', () => {
@@ -228,7 +227,7 @@ describe('planOperations', () => {
       ],
     };
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, [])).toEqual([]);
+    expect(planOperations(baseIssue, analysis, [])).toEqual([]);
   });
 
   it('skips malformed operations instead of inferring work', () => {
@@ -237,7 +236,7 @@ describe('planOperations', () => {
       operations: [null, { kind: 'labels', labels: ['feature'], authorization: 'old shape' }],
     } as unknown as AnalysisResult;
 
-    expect(planOperations(baseIssue, analysis, baseMetadata, ['feature'])).toEqual([]);
+    expect(planOperations(baseIssue, analysis, ['feature'])).toEqual([]);
   });
 });
 

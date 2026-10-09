@@ -1,5 +1,3 @@
-export type { PromptPassLimits, PromptPassMode } from './config';
-
 export type AnalysisResult = {
   summary: string;
   operations: ModelOperation[];
@@ -89,5 +87,3 @@ export function buildAnalysisResultSchema(repoLabels: Array<{ name: string }>) {
 
   return analysisResultSchema({ type: 'string', enum: normalizeRepoLabels(repoLabels).map(l => l.name) });
 }
-
-export { buildSystemPrompt, buildUserPrompt } from './prompts';

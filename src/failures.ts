@@ -1,5 +1,4 @@
-import { ModelError } from './llm/chat';
-import { errorMessage } from './util';
+import { ModelError, errorMessage } from './llm/chat';
 
 /**
  * How a failure bears on the job.

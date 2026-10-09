@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
-import { errorMessage } from './util';
+import { errorMessage } from './llm/chat';
 
 export interface TriageDbEntry {
   lastTriaged?: string;   // ISO timestamp of when triage was completed
