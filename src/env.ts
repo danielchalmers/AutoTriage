@@ -156,7 +156,6 @@ export function getConfig(): Config {
   const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = parseOptionalInput('additional-instructions');
   const extended = parseBooleanInput('extended');
-  const strictMode = parseBooleanInput('strict-mode');
 
   return {
     owner,
@@ -178,6 +177,5 @@ export function getConfig(): Config {
     maxFastRuns,
     ...(additionalInstructions ? { additionalInstructions } : {}),
     extended,
-    strictMode,
   };
 }

@@ -36,7 +36,8 @@ export type PlanAgreement = 'fast-noop' | 'identical' | 'pro-vetoed' | 'differed
 // What happened to one processed item. The run summary's item counts are all derived from these records.
 export interface ItemRecord {
   issueNumber: number;
-  type?: string;
+  type?: string | undefined;
+  title?: string | undefined;
   outcome: ItemOutcome;
   // True when the review pass ran, with or without a fast pass first.
   escalatedToPro: boolean;
@@ -45,6 +46,8 @@ export interface ItemRecord {
   agreement?: PlanAgreement | undefined;
   failedPass?: 'fast' | 'pro' | undefined;
   failureReason?: FailureReason | undefined;
+  // One line on why a failed or deferred item didn't finish, for the job summary and the item's warning.
+  detail?: string | undefined;
 }
 
 export interface RunConfigSnapshot {
@@ -164,8 +167,14 @@ export class RunStatistics {
     this.items.set(record.issueNumber, record);
   }
 
-  getFailed(): number {
-    return this.countOutcomes().failed;
+  // The processed items, in issue order.
+  getItems(): ItemRecord[] {
+    return [...this.items.values()].sort((a, b) => a.issueNumber - b.issueNumber);
+  }
+
+  // The log's description of each operation, by item.
+  getActionDetails(): Map<number, string[]> {
+    return groupByIssue(this.actionsPerformed, action => action.details);
   }
 
   incrementGithubApiCalls(count: number = 1): void {
@@ -260,9 +269,7 @@ export class RunStatistics {
     if (this.actionsPerformed.length > 0) {
       console.log('\n' + chalk.bold('🎬 Actions Performed:'));
 
-      const byIssue = groupByIssue(this.actionsPerformed, action => action.details);
-
-      for (const [issueNumber, details] of [...byIssue].sort(([a], [b]) => a - b)) {
+      for (const [issueNumber, details] of [...this.getActionDetails()].sort(([a], [b]) => a - b)) {
         console.log(`  #${issueNumber}: ${details.join(', ')}`);
       }
     }
@@ -291,9 +298,10 @@ export class RunStatistics {
   /**
    * Serialize this run into a machine-readable summary.
    * Written as the `run-summary.json` artifact so runs can be aggregated across history for research, rather than scraped from the human-facing log lines.
+   * The job summary reads its counts from here too.
    */
-  toJSON(): Record<string, unknown> {
-    const records = [...this.items.values()].sort((a, b) => a.issueNumber - b.issueNumber);
+  toJSON() {
+    const records = this.getItems();
     const planAgreement: Record<string, number> = {};
     let escalatedToPro = 0;
     for (const item of records) {

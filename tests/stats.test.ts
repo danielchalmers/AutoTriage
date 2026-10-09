@@ -171,7 +171,16 @@ describe('RunStatistics', () => {
       stats.recordItem({ issueNumber: 3, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'capacity' });
 
       // Item 4: reviewed without a fast pass, then deferred because it changed during analysis.
-      stats.recordItem({ issueNumber: 4, type: 'issue', outcome: 'deferred', escalatedToPro: true, proPlan: { kinds: ['comment'], labels: [] } });
+      // Its title and reason are for the job summary, so the artifact leaves them out.
+      stats.recordItem({
+        issueNumber: 4,
+        type: 'issue',
+        title: 'Crash on save',
+        outcome: 'deferred',
+        escalatedToPro: true,
+        proPlan: { kinds: ['comment'], labels: [] },
+        detail: 'It changed while it was being analyzed.',
+      });
 
       const json = stats.toJSON() as any;
 
@@ -223,7 +232,6 @@ describe('RunStatistics', () => {
         pro: null,
         operations: [],
       });
-      expect(stats.getFailed()).toBe(1);
     });
 
     it('serializes an empty run without throwing', () => {

@@ -125,7 +125,11 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     maxProRuns: 20,
     maxFastRuns: 100,
     extended: false,
-    strictMode: false,
     ...overrides,
   };
+}
+
+// Shaped like the RequestError Octokit throws, which tests/failures.test.ts checks against the real one.
+export function githubError(status: number, message: string, headers: Record<string, string> = {}): Error {
+  return Object.assign(new Error(message), { name: 'HttpError', status, response: { status, headers, data: { message } } });
 }

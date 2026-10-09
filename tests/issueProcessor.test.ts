@@ -128,6 +128,7 @@ describe('processIssue', () => {
       expect(result).toEqual({
         issueNumber: 42,
         type: 'issue',
+        title: 'Sample',
         outcome: 'skipped',
         escalatedToPro: false,
         fastPlan: { kinds: [], labels: [] },
@@ -172,6 +173,7 @@ describe('processIssue', () => {
       expect(result).toEqual({
         issueNumber: 42,
         type: 'issue',
+        title: 'Sample',
         outcome: 'triaged',
         escalatedToPro: true,
         fastPlan: { kinds: ['add_labels'], labels: ['+bug'] },
@@ -277,9 +279,11 @@ describe('processIssue', () => {
         expect(result).toEqual({
           issueNumber: 42,
           type: 'issue',
+          title: 'Sample',
           outcome: 'deferred',
           escalatedToPro: true,
           proPlan: { kinds: ['set_state'], labels: [] },
+          detail: "It changed while it was being analyzed, so the plan wasn't applied.",
         });
         expect(gh.updateIssueState).not.toHaveBeenCalled();
         expect(gh.getIssue).toHaveBeenCalledWith(42);
@@ -324,7 +328,11 @@ describe('processIssue', () => {
           summary: 'Previous summary',
         });
         expect(buildAutoDiscoverQueue([baseIssue], db, true)).toEqual([42]);
-        expect(result).toMatchObject({ outcome: 'deferred', escalatedToPro: true });
+        expect(result).toMatchObject({
+          outcome: 'deferred',
+          escalatedToPro: true,
+          detail: "It couldn't be rechecked before applying the plan, so the plan wasn't applied: recheck failed",
+        });
       } finally {
         warnSpy.mockRestore();
       }
@@ -381,6 +389,7 @@ describe('processIssue', () => {
       expect(result).toEqual({
         issueNumber: 42,
         type: 'issue',
+        title: 'Sample',
         outcome: 'triaged',
         escalatedToPro: true,
         proPlan: { kinds: ['add_labels'], labels: ['+bug'] },

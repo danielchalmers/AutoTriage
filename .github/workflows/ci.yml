@@ -38,7 +38,6 @@ jobs:
           dry-run: true
           model-fast: claude-haiku-5-5
           model-pro: claude-sonnet-5-5
-          strict-mode: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

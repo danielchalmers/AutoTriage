@@ -105,8 +105,8 @@ describe('AutoTriage action entry point', () => {
     expect(deps.models.fast).toBe(deps.models.pro);
   });
 
-  it('fails the action with the stack when the run rejects', async () => {
-    const error = new Error('Bad credentials');
+  it('fails the action with the stack when the run rejects, which only a bug can cause', async () => {
+    const error = new TypeError("Cannot read properties of undefined (reading 'number')");
     mocks.runAutoTriage.mockRejectedValue(error);
 
     await importEntryPoint();

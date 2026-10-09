@@ -47,10 +47,6 @@ inputs:
     description: "Repo-relative path to the triage prompt."
     required: false
     default: ".github/AutoTriage.prompt"
-  strict-mode:
-    description: "Fail the job when any item analysis fails."
-    required: false
-    default: "false"
 
 runs:
   using: "node24"

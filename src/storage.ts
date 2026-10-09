@@ -176,6 +176,11 @@ export function loadReadme(readmePath?: string): string {
   }
 }
 
+// Without a policy file, loadPrompt falls back to the built-in label-only prompt.
+export function hasPromptFile(promptPath?: string): boolean {
+  return !!promptPath && fs.existsSync(resolveFromCwd(promptPath));
+}
+
 export function loadPrompt(promptPath?: string): string {
   const resolvedPath = promptPath ? resolveFromCwd(promptPath) : undefined;
 

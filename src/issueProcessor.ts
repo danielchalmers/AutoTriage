@@ -98,7 +98,7 @@ export async function processIssue(
       { issue, repoLabels, systemPromptFast, runTimestamp, context }
     ));
     const fastPlan = fastPass.plan && summarizePlan(fastPass.plan.operations);
-    const item = { issueNumber: issue.number, type: issue.type, fastPlan };
+    const item = { issueNumber: issue.number, type: issue.type, title: issue.title, fastPlan };
 
     if (fastPass.shouldSkipPro) {
       console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
@@ -122,15 +122,15 @@ export async function processIssue(
     ));
 
     // Applying the plan is part of the review pass, so a failed GitHub write is attributed to it.
-    const executionResult = await inPass('pro', () => executePlannedOperations(
+    const deferral = await inPass('pro', () => executePlannedOperations(
       { cfg, gh, stats },
       { issue, operations: proPass.operations }
     ));
 
     const proPlan = summarizePlan(proPass.operations);
     const reviewed = { ...item, escalatedToPro: true, proPlan, agreement: fastPlan && comparePlans(fastPlan, proPlan) };
-    if (executionResult === 'deferred') {
-      return { ...reviewed, outcome: 'deferred' };
+    if (deferral) {
+      return { ...reviewed, outcome: 'deferred', detail: deferral };
     }
 
     const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations);
@@ -254,19 +254,20 @@ async function runFastPass(
   return { plan, shouldSkipPro: plan.operations.length === 0 };
 }
 
+// Applies the plan, or returns why it was deferred instead.
 async function executePlannedOperations(
   deps: Pick<IssueProcessorDeps, 'cfg' | 'gh' | 'stats'>,
   options: {
     issue: Issue;
     operations: PlannedOperation[];
   }
-): Promise<'executed' | 'deferred'> {
+): Promise<string | undefined> {
   const { cfg, gh, stats } = deps;
   const { issue, operations } = options;
 
   if (operations.length === 0) {
     console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
-    return 'executed';
+    return undefined;
   }
 
   saveArtifact(issue.number, 'operations.json', JSON.stringify(operations, null, 2));
@@ -277,14 +278,14 @@ async function executePlannedOperations(
         console.warn(
           `⚠️ #${issue.number} changed while it was being analyzed; deferring planned operations for re-triage.`
         );
-        return 'deferred';
+        return 'It changed while it was being analyzed, so the plan wasn\'t applied.';
       }
     } catch (err) {
       console.warn(
         `⚠️ Failed to recheck #${issue.number} before applying operations: ${errorMessage(err)}. ` +
         'Deferring planned operations for re-triage.'
       );
-      return 'deferred';
+      return `It couldn't be rechecked before applying the plan, so the plan wasn't applied: ${errorMessage(err)}`;
     }
   }
 
@@ -300,7 +301,7 @@ async function executePlannedOperations(
       });
     },
   });
-  return 'executed';
+  return undefined;
 }
 
 export function buildRunContext(

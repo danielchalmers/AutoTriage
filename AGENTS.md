@@ -31,6 +31,9 @@ Preserve these invariants:
   beyond localhost.
 - Public action behavior must stay aligned across `action.yml`, `README.md`,
   tests, and generated `dist/`.
+- A run fails the job only for a configuration error or a bug in AutoTriage.
+  Model failures, deferred items and GitHub's own failures, such as outages and
+  rate limits, only warn through annotations and the job summary.
 
 ## Context Map
 
@@ -39,6 +42,8 @@ Start with the smallest useful context:
 - `src/index.ts` - action entry point.
 - `src/config.ts` and `src/env.ts` - action inputs and environment handling.
 - `src/runner.ts` and `src/issueProcessor.ts` - orchestration and per-item work.
+- `src/failures.ts` - decides whether a failure fails the job or only warns.
+- `src/summary.ts` - the job summary and the warning annotations.
 - `src/github.ts` - GitHub API boundary.
 - `src/llm/` - the model API boundary, with no SDK.
   `endpoint.ts` picks the Chat Completions endpoint and key for a model input.
