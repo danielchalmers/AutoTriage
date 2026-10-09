@@ -216,14 +216,14 @@ describe('GitHubClient.listTimelineEvents', () => {
 
   it('keeps the fields that matter for each event type and drops notification noise', async () => {
     mocks.paginate.mockResolvedValueOnce([
-      { event: 'committed', sha: 'abc123', author: { login: 'dev' }, message: 'Fix it', created_at: at(1) },
+      { event: 'committed', sha: 'abc123', author: { name: 'Dev', date: at(1) }, committer: { name: 'Dev', date: at(1) }, message: 'Fix it' },
       { event: 'renamed', actor, rename: { from: 'Old', to: 'New' }, created_at: at(2) },
       { event: 'assigned', actor, assignee: { login: 'dev' }, assigner: { login: 'lead' }, created_at: at(3) },
       { event: 'milestoned', actor, milestone: { title: 'v2' }, created_at: at(4) },
       { event: 'review_requested', actor, requested_team: { name: 'core' }, created_at: at(5) },
       { event: 'closed', actor, state_reason: 'not_planned', created_at: at(6) },
       { event: 'reopened', actor, created_at: at(7) },
-      { event: 'reviewed', actor, state: 'approved', body: 'LGTM', submitted_at: at(8), created_at: at(8) },
+      { event: 'reviewed', user: actor, state: 'approved', body: 'LGTM', submitted_at: at(8) },
       { event: 'merged', actor, created_at: at(9) },
       { event: 'mentioned', actor, created_at: at(10) },
       { event: 'subscribed', actor, created_at: at(10) },
@@ -236,14 +236,14 @@ describe('GitHubClient.listTimelineEvents', () => {
 
     expect(raw).toHaveLength(13);
     expect(filtered).toEqual([
-      expect.objectContaining({ event: 'committed', sha: 'abc123', author: 'dev', message: 'Fix it' }),
+      expect.objectContaining({ event: 'committed', sha: 'abc123', author: 'Dev', message: 'Fix it' }),
       expect.objectContaining({ event: 'renamed', from: 'Old', to: 'New' }),
       expect.objectContaining({ event: 'assigned', assignee: 'dev', assigner: 'lead' }),
       expect.objectContaining({ event: 'milestoned', milestone: 'v2' }),
       expect.objectContaining({ event: 'review_requested', requested_reviewer: 'core' }),
       expect.objectContaining({ event: 'closed', state: 'closed', state_reason: 'not_planned' }),
       expect.objectContaining({ event: 'reopened', state: 'open' }),
-      expect.objectContaining({ event: 'reviewed', state: 'approved', body: 'LGTM', submitted_at: at(8) }),
+      expect.objectContaining({ event: 'reviewed', actor: 'octocat', state: 'approved', body: 'LGTM' }),
       expect.objectContaining({ event: 'merged', merged: true }),
       expect.objectContaining({ event: 'pinned', actor: 'octocat' }),
     ]);
@@ -261,6 +261,94 @@ describe('GitHubClient.listTimelineEvents', () => {
     const { filtered } = await client.listTimelineEvents(42, 3);
 
     expect(filtered.map(event => event.body)).toEqual(['second', 'third', 'undated']);
+  });
+
+  it('dates commits and reviews so they sort among comments instead of crowding them out', async () => {
+    const maintainer = { login: 'maintainer', id: 2, type: 'User', url: 'https://api.github.com/users/maintainer' };
+    const contributor = { login: 'pat', id: 3, type: 'User', url: 'https://api.github.com/users/pat' };
+    // Shaped like GitHub's timeline payloads: commits and reviews have no created_at, and a review names its author in user.
+    const commit = (sha: string, authored: string, committed: string, message: string) => ({
+      sha,
+      node_id: `C_${sha}`,
+      url: `https://api.github.com/repos/owner/repo/git/commits/${sha}`,
+      html_url: `https://github.com/owner/repo/commit/${sha}`,
+      author: { name: 'Pat Contributor', email: 'pat@example.com', date: authored },
+      committer: { name: 'Pat Contributor', email: 'pat@example.com', date: committed },
+      tree: { sha: `tree-${sha}`, url: `https://api.github.com/repos/owner/repo/git/trees/tree-${sha}` },
+      message,
+      parents: [],
+      verification: { verified: false, reason: 'unsigned', signature: null, payload: null, verified_at: null },
+      event: 'committed',
+    });
+    const comment = (id: number, user: typeof maintainer, association: string, created: string, body: string) => ({
+      url: `https://api.github.com/repos/owner/repo/issues/comments/${id}`,
+      html_url: `https://github.com/owner/repo/pull/42#issuecomment-${id}`,
+      issue_url: 'https://api.github.com/repos/owner/repo/issues/42',
+      id,
+      node_id: `IC_${id}`,
+      user,
+      created_at: created,
+      updated_at: created,
+      body,
+      author_association: association,
+      reactions: { total_count: 0 },
+      performed_via_github_app: null,
+      event: 'commented',
+      actor: user,
+    });
+    const review = {
+      id: 7001,
+      node_id: 'PRR_7001',
+      user: maintainer,
+      body: 'Thanks!',
+      commit_id: 'c3',
+      state: 'approved',
+      html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-7001',
+      pull_request_url: 'https://api.github.com/repos/owner/repo/pulls/42',
+      _links: { html: { href: 'https://github.com/owner/repo/pull/42#pullrequestreview-7001' } },
+      submitted_at: at(6),
+      updated_at: at(6),
+      author_association: 'MEMBER',
+      event: 'reviewed',
+    };
+    const payloads = [
+      commit('a1', at(1), at(2), 'Fix the dropdown'),
+      // Rebased after the comment below, so only its committer date is newer than that comment.
+      commit('b2', at(1), at(4), 'Add a test'),
+      comment(6001, maintainer, 'MEMBER', at(3), 'Could you add a test?'),
+      commit('c3', at(5), at(5), 'Fix lint'),
+      review,
+      comment(6002, contributor, 'CONTRIBUTOR', at(7), 'Rebased on main.'),
+    ];
+    mocks.paginate.mockResolvedValueOnce(payloads);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const { raw, filtered } = await client.listTimelineEvents(42, 4);
+
+    expect(raw).toEqual(payloads);
+    expect(filtered).toEqual([
+      { event: 'committed', created_at: at(4), sha: 'b2', author: 'Pat Contributor', message: 'Add a test' },
+      { event: 'committed', created_at: at(5), sha: 'c3', author: 'Pat Contributor', message: 'Fix lint' },
+      {
+        event: 'reviewed',
+        actor: 'maintainer',
+        actor_type: 'User',
+        actor_association: 'MEMBER',
+        created_at: at(6),
+        updated_at: at(6),
+        state: 'approved',
+        body: 'Thanks!',
+      },
+      {
+        event: 'commented',
+        actor: 'pat',
+        actor_type: 'User',
+        actor_association: 'CONTRIBUTOR',
+        created_at: at(7),
+        updated_at: at(7),
+        body: 'Rebased on main.',
+      },
+    ]);
   });
 
   it('includes review comments for pull requests and sorts chronologically', async () => {
