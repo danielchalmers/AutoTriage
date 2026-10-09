@@ -1,19 +1,20 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { loadDatabase, loadReadme, saveArtifact, saveDatabase, updateDbEntry } from '../src/storage'
+import { loadDatabase, loadReadme, saveArtifact, saveDatabase, saveRunArtifact, updateDbEntry } from '../src/storage'
 import { withArtifactsDir, withTempDir } from './fixtures'
 import * as fs from 'fs'
 import * as path from 'path'
 import type { TriageDb } from '../src/storage'
 
 describe('saveArtifact', () => {
-  it('stores prompt-system.md as a single shared artifact file', async () => {
+  it('stores run-level artifacts under their bare names', async () => {
     await withArtifactsDir((tempDir) => {
-      saveArtifact(1, 'prompt-system.md', 'first')
-      saveArtifact(2, 'prompt-system.md', 'second')
+      saveRunArtifact('prompt-system.md', 'first')
+      saveRunArtifact('prompt-system.md', 'second')
+      saveRunArtifact('run-summary.json', '{}')
 
       const artifactsDir = path.join(tempDir, 'artifacts')
       const files = fs.readdirSync(artifactsDir).sort()
-      expect(files).toEqual(['prompt-system.md'])
+      expect(files).toEqual(['prompt-system.md', 'run-summary.json'])
       expect(fs.readFileSync(path.join(artifactsDir, 'prompt-system.md'), 'utf8')).toBe('second')
     })
   })

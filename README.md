@@ -119,12 +119,13 @@ A `dry-run`, `extended` or `strict-mode` value other than true or false, or an `
 
 ## Run summary
 
-Each run writes a machine-readable `run-summary.json` to the `artifacts/` directory (alongside the per-issue prompts and analyses). It mirrors the `📊 Run Statistics` log in structured form so runs can be aggregated across history rather than scraped from logs. It includes:
+Each run writes a machine-readable `run-summary.json` to the `artifacts/` directory, alongside the system prompts (`prompt-system.md`, plus `prompt-system-fast.md` when the fast pass runs) and the per-issue prompts and analyses. It mirrors the `📊 Run Statistics` log in structured form so runs can be aggregated across history rather than scraped from logs. Its `schemaVersion` is 5. It includes:
 
 - `models` — the model ID each pass sent. A skipped fast pass is `null`.
 - `config` / `promptHash` — the run's effective settings and truncated hashes of the assembled system prompts, so runs can be segmented by configuration and policy version.
-- `funnel` — items discovered, processed, triaged, skipped, escalated to the pro pass, which run cap was hit, skip reasons, and `planAgreement` (how often the pro pass confirmed, vetoed, or amended the fast pass's plan).
+- `github` — the number of GitHub API calls the run made.
+- `funnel` — items discovered and processed; how many processed items were `triaged`, `skipped` (the fast pass planned nothing), `deferred` (the item changed during analysis or couldn't be rechecked, so its plan wasn't applied) or `failed`; how many reached the review pass (`escalatedToPro`, with or without a fast pass first); which run cap was hit; and `planAgreement` (how often the pro pass confirmed, vetoed, or amended the fast pass's plan). The four outcome counts add up to `processed`.
 - `fast` / `pro` — per-pass duration percentiles and token usage, including `cachedInputTokens` and `reasoningTokens` (the reasoning tokens a provider reports, which output tokens exclude here).
-- `items` — per-item rows with outcome, pass timing/tokens, the operations performed, what each pass planned (`fastPlan` / `proPlan` / `agreement`), and for failures, which pass failed (`failedPass`) and why (`failureReason`: `capacity`, `retryable`, `permanent` or `fatal` for a model error, or `other` for an error outside the model call).
+- `items` — per-item rows with outcome, whether the review pass ran (`escalatedToPro`), pass timing/tokens, the operations performed, what each pass planned (`fastPlan` / `proPlan` / `agreement`), and for failures, which pass failed (`failedPass`, where applying the review's plan counts as the review pass) and why (`failureReason`: `capacity`, `retryable`, `permanent` or `fatal` for a model error, or `other` for an error outside the model call).
 
 Upload it by including `artifacts/` in your workflow's `upload-artifact` step.

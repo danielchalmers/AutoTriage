@@ -11,10 +11,10 @@ import {
 } from './autoDiscover';
 import { ModelError } from './llm/chat';
 import { GitHubClient } from './github';
-import { IssueProcessorDeps, processIssue } from './issueProcessor';
+import { IssueProcessorDeps, PassError, processIssue } from './issueProcessor';
 import type { RunStatistics } from './stats';
 import type { Config } from './config';
-import { TriageDb, saveArtifact, saveDatabase } from './storage';
+import { TriageDb, saveDatabase, saveRunArtifact } from './storage';
 import { errorDetail } from './util';
 
 export type AutoTriageDeps = IssueProcessorDeps;
@@ -66,8 +66,8 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     'pro',
     cfg.limits.pro
   );
-  saveArtifact(0, 'prompt-system-fast.md', systemPromptFast);
-  saveArtifact(0, 'prompt-system.md', systemPromptPro);
+  if (!cfg.skipFastPass) saveRunArtifact('prompt-system-fast.md', systemPromptFast);
+  saveRunArtifact('prompt-system.md', systemPromptPro);
 
   stats.setRunConfig({
     dryRun: cfg.dryRun,
@@ -99,37 +99,33 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
       }
 
       try {
-        stats.beginPass(null);
         const issue = await gh.getIssue(issueNumber);
-        const { triageUsed, fastRunUsed } = await processIssue(
+        const record = await processIssue(
           { cfg, db, gh, models, stats },
           { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp }
         );
-        if (triageUsed) {
-          triagesPerformed++;
-          stats.incrementTriaged();
-        } else {
-          stats.incrementSkipped();
-        }
-        if (fastRunUsed) fastRunsPerformed++;
+        stats.recordItem(record);
+        // A finished item spends the review budget when its review pass ran, and the fast budget when its fast pass ran, which is when it has a fastPlan.
+        if (record.escalatedToPro) triagesPerformed++;
+        if (record.fastPlan) fastRunsPerformed++;
         consecutiveFailures = 0;
-      } catch (err) {
+      } catch (thrown) {
         // Any per-item failure, model or otherwise (e.g. a transient GitHub API error), is recorded and skipped so one bad item can't abort the remaining backlog.
         // The consecutive-failure breaker below still stops the run if errors cascade, as in an outage.
         // A fatal model error (bad key, unknown model, no credit) would fail every later item too, so it stops the run and fails the job at once, even outside strict mode.
+        const failedPass = thrown instanceof PassError ? thrown.pass : undefined;
+        const err = thrown instanceof PassError ? thrown.cause : thrown;
         const fatal = err instanceof ModelError && err.kind === 'fatal' ? err : undefined;
         if (err instanceof ModelError && !fatal) {
           console.warn(`#${issueNumber}: ${err.message}`);
         } else if (!fatal) {
           console.warn(`#${issueNumber}: unexpected error: ${errorDetail(err)}`);
         }
-        stats.incrementFailed();
-        const failedPass = stats.getCurrentPass();
         stats.recordItem({
           issueNumber,
           outcome: 'failed',
           escalatedToPro: failedPass === 'pro',
-          failedPass: failedPass ?? undefined,
+          failedPass,
           failureReason: err instanceof ModelError ? err.kind : 'other',
         });
         if (fatal) {
@@ -156,7 +152,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     // Emit run telemetry even when the run aborts, so failed runs remain researchable.
     stats.incrementGithubApiCalls(gh.getApiCallCount());
     stats.printSummary();
-    saveArtifact(0, 'run-summary.json', JSON.stringify(stats.toJSON(), null, 2));
+    saveRunArtifact('run-summary.json', JSON.stringify(stats.toJSON(), null, 2));
   }
 
   if (cfg.strictMode && !stoppedByFatalError && stats.getFailed() > 0) {

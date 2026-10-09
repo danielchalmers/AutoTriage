@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const processIssueMock = vi.hoisted(() =>
-  vi.fn().mockResolvedValue({ triageUsed: true, fastRunUsed: true })
-);
+const processIssueMock = vi.hoisted(() => vi.fn());
 const githubContextMock = vi.hoisted(() => ({
   payload: {},
 }));
@@ -30,10 +28,24 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { ModelError } from '../src/llm/chat';
+import { PassError } from '../src/issueProcessor';
 import { listTargets, runAutoTriage } from '../src/runner';
+import { ItemRecord, RunStatistics } from '../src/stats';
 import { bothPasses, makeClosedIssue, makeConfig, makeDb, makeIssue, withTempDir } from './fixtures';
 
 const baseConfig = makeConfig();
+
+// The records processIssue returns, for an item whose fast pass ran.
+const fastPlan = { kinds: ['add_labels'], labels: ['+bug'] };
+function triaged(issueNumber: number, overrides: Partial<ItemRecord> = {}): ItemRecord {
+  return { issueNumber, type: 'issue', outcome: 'triaged', escalatedToPro: true, fastPlan, proPlan: fastPlan, agreement: 'identical', ...overrides };
+}
+function skipped(issueNumber: number): ItemRecord {
+  return { issueNumber, type: 'issue', outcome: 'skipped', escalatedToPro: false, fastPlan: { kinds: [], labels: [] }, agreement: 'fast-noop' };
+}
+function deferred(issueNumber: number): ItemRecord {
+  return triaged(issueNumber, { outcome: 'deferred' });
+}
 
 describe('listTargets', () => {
   it('uses explicit issue inputs before any other source', async () => {
@@ -127,7 +139,7 @@ describe('runAutoTriage', () => {
     vi.clearAllMocks();
     githubContextMock.payload = {};
     processIssueMock.mockReset();
-    processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: true });
+    processIssueMock.mockImplementation(async (_deps, { issue }) => triaged(issue.number));
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     // Run artifacts (system prompts, run summary) land in a throwaway directory instead of the repository root.
     artifactsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-runner-'));
@@ -140,22 +152,11 @@ describe('runAutoTriage', () => {
   });
 
   function createStats() {
-    return {
-      incrementTriaged: vi.fn(),
-      incrementSkipped: vi.fn(),
-      incrementFailed: vi.fn(),
-      incrementGithubApiCalls: vi.fn(),
-      printSummary: vi.fn(),
-      getFailed: vi.fn().mockReturnValue(0),
-      setDiscovered: vi.fn(),
-      setCapReached: vi.fn(),
-      setRunConfig: vi.fn(),
-      setPromptHashes: vi.fn(),
-      recordItem: vi.fn(),
-      beginPass: vi.fn(),
-      getCurrentPass: vi.fn().mockReturnValue(null),
-      toJSON: vi.fn().mockReturnValue({}),
-    };
+    return new RunStatistics();
+  }
+
+  function summaryOf(stats: RunStatistics) {
+    return stats.toJSON() as any;
   }
 
   function createModel() {
@@ -167,27 +168,27 @@ describe('runAutoTriage', () => {
       listRepoLabels: vi.fn().mockResolvedValue([]),
       listOpenIssues: vi.fn().mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z')]),
       listRecentlyClosedIssues: vi.fn().mockResolvedValue([]),
-      getIssue: vi.fn().mockResolvedValue(makeIssue(5, '2024-04-05T00:00:00Z')),
+      getIssue: vi.fn(async (issueNumber: number) => makeIssue(issueNumber, '2024-04-05T00:00:00Z')),
       getApiCallCount: vi.fn().mockReturnValue(0),
     };
   }
 
   it('tells each item whether it came from backlog auto-discovery', async () => {
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() as any });
-    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() as any });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
+    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
 
     expect(processIssueMock.mock.calls.map(([, options]) => options.autoDiscover)).toEqual([true, false]);
   });
 
   it('logs an explicit target list once', async () => {
-    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5, 6] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() as any });
+    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5, 6] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
 
     const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
     expect(targetLines).toEqual(['▶️ Triaging 2 item(s): #5, #6']);
   });
 
   it('logs the size of an auto-discovered backlog instead of every number', async () => {
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() as any });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
 
     const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
     expect(targetLines).toEqual([`▶️ Discovered 1 item(s) from ${baseConfig.owner}/${baseConfig.repo} (extended: false)`]);
@@ -205,7 +206,7 @@ describe('runAutoTriage', () => {
         db: makeDb({ '5': { lastTriaged: '2024-04-01T00:00:00Z' } }),
         gh: gh as any,
         models: bothPasses(model),
-        stats: stats as any,
+        stats,
       });
 
       expect(JSON.parse(fs.readFileSync(dbPath, 'utf8'))).toEqual({
@@ -230,11 +231,11 @@ describe('runAutoTriage', () => {
       db: makeDb(),
       gh: gh as any,
       models: bothPasses(model),
-      stats: stats as any,
+      stats,
     });
 
     expect(logSpy).toHaveBeenCalledWith('⏳ Max fast runs (1) reached with 2 item(s) remaining');
-    expect(stats.setCapReached).toHaveBeenCalledWith('fast');
+    expect(summaryOf(stats).funnel.capReached).toBe('fast');
     expect(processIssueMock).toHaveBeenCalledOnce();
   });
 
@@ -243,9 +244,7 @@ describe('runAutoTriage', () => {
     const gh = createGitHub();
     const model = createModel();
     const stats = createStats();
-    processIssueMock
-      .mockRejectedValueOnce(new Error('socket hang up'))
-      .mockResolvedValueOnce({ triageUsed: true, fastRunUsed: true });
+    processIssueMock.mockRejectedValueOnce(new Error('socket hang up'));
 
     try {
       await runAutoTriage({
@@ -253,13 +252,15 @@ describe('runAutoTriage', () => {
         db: makeDb(),
         gh: gh as any,
         models: bothPasses(model),
-        stats: stats as any,
+        stats,
       });
 
       expect(processIssueMock).toHaveBeenCalledTimes(2);
-      expect(stats.incrementFailed).toHaveBeenCalledOnce();
-      expect(stats.recordItem).toHaveBeenCalledWith({ issueNumber: 5, outcome: 'failed', escalatedToPro: false, failureReason: 'other' });
-      expect(stats.incrementTriaged).toHaveBeenCalledOnce();
+      expect(summaryOf(stats).items).toEqual([
+        expect.objectContaining({ number: 5, outcome: 'failed', escalatedToPro: false, failedPass: undefined, failureReason: 'other' }),
+        expect.objectContaining({ number: 6, outcome: 'triaged' }),
+      ]);
+      expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1 });
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('#5: unexpected error: '));
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('socket hang up'));
     } finally {
@@ -281,11 +282,11 @@ describe('runAutoTriage', () => {
         db: makeDb(),
         gh: gh as any,
         models: bothPasses(model),
-        stats: stats as any,
+        stats,
       });
 
       expect(processIssueMock).toHaveBeenCalledTimes(3);
-      expect(stats.incrementFailed).toHaveBeenCalledTimes(3);
+      expect(summaryOf(stats).funnel).toMatchObject({ processed: 3, failed: 3 });
       expect(errorSpy).toHaveBeenCalledWith('Analysis failed 3 consecutive times; stopping further processing.');
     } finally {
       warnSpy.mockRestore();
@@ -303,19 +304,18 @@ describe('runAutoTriage', () => {
       db: makeDb(),
       gh: gh as any,
       models: bothPasses(model),
-      stats: stats as any,
+      stats,
     });
 
     expect(logSpy).toHaveBeenCalledWith('⏳ Max pro runs (1) reached with 2 item(s) remaining');
-    expect(stats.setCapReached).toHaveBeenCalledWith('pro');
+    expect(summaryOf(stats).funnel.capReached).toBe('pro');
     expect(processIssueMock).toHaveBeenCalledOnce();
   });
 
   it('does not spend the pro budget on items the fast pass skipped', async () => {
     processIssueMock
-      .mockResolvedValueOnce({ triageUsed: false, fastRunUsed: true })
-      .mockResolvedValueOnce({ triageUsed: false, fastRunUsed: true })
-      .mockResolvedValueOnce({ triageUsed: true, fastRunUsed: true });
+      .mockResolvedValueOnce(skipped(5))
+      .mockResolvedValueOnce(skipped(6));
     const stats = createStats();
 
     await runAutoTriage({
@@ -323,16 +323,32 @@ describe('runAutoTriage', () => {
       db: makeDb(),
       gh: createGitHub() as any,
       models: bothPasses(createModel()),
-      stats: stats as any,
+      stats,
     });
 
     expect(processIssueMock).toHaveBeenCalledTimes(3);
-    expect(stats.incrementSkipped).toHaveBeenCalledTimes(2);
-    expect(stats.incrementTriaged).toHaveBeenCalledOnce();
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 3, triaged: 1, skipped: 2, escalatedToPro: 1 });
   });
 
-  it('ignores the fast-run cap when the fast pass is disabled', async () => {
-    processIssueMock.mockResolvedValue({ triageUsed: true, fastRunUsed: false });
+  it('counts a deferred item apart from triaged ones while spending the pro budget on it', async () => {
+    processIssueMock.mockResolvedValueOnce(deferred(5));
+    const stats = createStats();
+
+    await runAutoTriage({
+      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 2 },
+      db: makeDb(),
+      gh: createGitHub() as any,
+      models: bothPasses(createModel()),
+      stats,
+    });
+
+    expect(processIssueMock).toHaveBeenCalledTimes(2);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, deferred: 1, escalatedToPro: 2, capReached: 'pro' });
+    expect(logSpy).toHaveBeenCalledWith('  Total: ✅ 1 triaged ⏸️ 1 deferred');
+  });
+
+  it('ignores the fast-run cap and writes no fast system prompt when the fast pass is disabled', async () => {
+    processIssueMock.mockImplementation(async (_deps, { issue }) => triaged(issue.number, { fastPlan: undefined, agreement: undefined }));
     const gh = createGitHub();
     gh.listOpenIssues.mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z'), makeIssue(6, '2024-04-06T00:00:00Z')]);
 
@@ -341,31 +357,30 @@ describe('runAutoTriage', () => {
       db: makeDb(),
       gh: gh as any,
       models: bothPasses(createModel()),
-      stats: createStats() as any,
+      stats: createStats(),
     });
 
     expect(processIssueMock).toHaveBeenCalledTimes(2);
     expect(processIssueMock.mock.calls[0]![1].systemPromptFast).toBe('');
+    expect(fs.readdirSync(path.join(artifactsRoot, 'artifacts')).sort()).toEqual(['prompt-system.md', 'run-summary.json']);
   });
 
   it('resets the consecutive-failure breaker after a success', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const failure = new Error('socket hang up');
-    const success = { triageUsed: true, fastRunUsed: true };
     processIssueMock
       .mockRejectedValueOnce(failure)
       .mockRejectedValueOnce(failure)
-      .mockResolvedValueOnce(success)
+      .mockResolvedValueOnce(triaged(3))
       .mockRejectedValueOnce(failure)
-      .mockRejectedValueOnce(failure)
-      .mockResolvedValueOnce(success);
+      .mockRejectedValueOnce(failure);
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [1, 2, 3, 4, 5, 6] },
       db: makeDb(),
       gh: createGitHub() as any,
       models: bothPasses(createModel()),
-      stats: createStats() as any,
+      stats: createStats(),
     });
 
     expect(processIssueMock).toHaveBeenCalledTimes(6);
@@ -374,35 +389,40 @@ describe('runAutoTriage', () => {
 
   it('logs model errors without a stack and attributes the failure to the pass in flight', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    processIssueMock.mockRejectedValueOnce(new ModelError('Unable to parse JSON from the api.openai.com response'));
+    processIssueMock.mockRejectedValueOnce(new PassError('pro', new ModelError('Unable to parse JSON from the api.openai.com response')));
     const stats = createStats();
-    stats.getCurrentPass.mockReturnValue('pro');
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [5] },
       db: makeDb(),
       gh: createGitHub() as any,
       models: bothPasses(createModel()),
-      stats: stats as any,
+      stats,
     });
 
     expect(warnSpy).toHaveBeenCalledWith('#5: Unable to parse JSON from the api.openai.com response');
-    expect(stats.recordItem).toHaveBeenCalledWith({ issueNumber: 5, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'retryable' });
+    expect(summaryOf(stats).items).toEqual([
+      expect.objectContaining({ number: 5, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'retryable' }),
+    ]);
   });
 
   it('logs a model call that ran out of retries without a stack', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    processIssueMock.mockRejectedValueOnce(new ModelError('fetch failed (ECONNRESET)'));
+    processIssueMock.mockRejectedValueOnce(new PassError('fast', new ModelError('fetch failed (ECONNRESET)', 'capacity')));
+    const stats = createStats();
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [5] },
       db: makeDb(),
       gh: createGitHub() as any,
       models: bothPasses(createModel()),
-      stats: createStats() as any,
+      stats,
     });
 
     expect(warnSpy).toHaveBeenCalledWith('#5: fetch failed (ECONNRESET)');
+    expect(summaryOf(stats).items).toEqual([
+      expect.objectContaining({ number: 5, outcome: 'failed', escalatedToPro: false, failedPass: 'fast', failureReason: 'capacity' }),
+    ]);
   });
 
   it('stops the run and fails the job on a fatal model error, even outside strict mode', async () => {
@@ -410,31 +430,30 @@ describe('runAutoTriage', () => {
     const gh = createGitHub();
     gh.listOpenIssues.mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z'), makeIssue(6, '2024-04-06T00:00:00Z')]);
     const stats = createStats();
-    stats.getCurrentPass.mockReturnValue('fast');
+    const printSummary = vi.spyOn(stats, 'printSummary');
     const message = 'api.openai.com returned HTTP 401: {"error":{"message":"Incorrect API key provided"}} Check OPENAI_API_KEY.';
-    processIssueMock.mockRejectedValueOnce(new ModelError(message, 'fatal'));
+    processIssueMock.mockRejectedValueOnce(new PassError('fast', new ModelError(message, 'fatal')));
 
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, models: bothPasses(createModel()), stats: stats as any });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, models: bothPasses(createModel()), stats });
 
     expect(processIssueMock).toHaveBeenCalledOnce();
     expect(core.setFailed).toHaveBeenCalledExactlyOnceWith(`Stopped the run at #5 because of a model error that every later item would hit too: ${message}`);
-    expect(stats.recordItem).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed', failedPass: 'fast', failureReason: 'fatal' }));
+    expect(summaryOf(stats).items).toEqual([expect.objectContaining({ outcome: 'failed', failedPass: 'fast', failureReason: 'fatal' })]);
     // The run still reports.
-    expect(stats.printSummary).toHaveBeenCalledOnce();
+    expect(printSummary).toHaveBeenCalledOnce();
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Incorrect API key'));
   });
 
   it('fails the job only once in strict mode when a fatal model error stops the run', async () => {
-    processIssueMock.mockRejectedValueOnce(new ModelError('x', 'fatal'));
+    processIssueMock.mockRejectedValueOnce(new PassError('pro', new ModelError('x', 'fatal')));
     const stats = createStats();
-    stats.getFailed.mockReturnValue(1);
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [5, 6], strictMode: true },
       db: makeDb(),
       gh: createGitHub() as any,
       models: bothPasses(createModel()),
-      stats: stats as any,
+      stats,
     });
 
     expect(processIssueMock).toHaveBeenCalledOnce();
@@ -445,14 +464,13 @@ describe('runAutoTriage', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     processIssueMock.mockRejectedValueOnce(new Error('socket hang up'));
     const stats = createStats();
-    stats.getFailed.mockReturnValue(1);
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [5], strictMode: true },
       db: makeDb(),
       gh: createGitHub() as any,
       models: bothPasses(createModel()),
-      stats: stats as any,
+      stats,
     });
 
     expect(core.setFailed).toHaveBeenCalledWith('Strict mode enabled: 1 run(s) had errors.');
@@ -462,14 +480,13 @@ describe('runAutoTriage', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     processIssueMock.mockRejectedValueOnce(new Error('socket hang up'));
     const stats = createStats();
-    stats.getFailed.mockReturnValue(1);
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [5] },
       db: makeDb(),
       gh: createGitHub() as any,
       models: bothPasses(createModel()),
-      stats: stats as any,
+      stats,
     });
 
     expect(core.setFailed).not.toHaveBeenCalled();
@@ -477,19 +494,20 @@ describe('runAutoTriage', () => {
 
   it('writes the system prompts and run summary artifacts', async () => {
     const stats = createStats();
-    stats.toJSON.mockReturnValue({ schemaVersion: 2 });
 
     await runAutoTriage({
       cfg: { ...baseConfig, issueNumbers: [5] },
       db: makeDb(),
       gh: createGitHub() as any,
       models: bothPasses(createModel()),
-      stats: stats as any,
+      stats,
     });
 
     const artifacts = path.join(artifactsRoot, 'artifacts');
-    expect(fs.readdirSync(artifacts).sort()).toEqual(['0-run-summary.json', 'prompt-system-fast.md', 'prompt-system.md']);
-    expect(JSON.parse(fs.readFileSync(path.join(artifacts, '0-run-summary.json'), 'utf8'))).toEqual({ schemaVersion: 2 });
+    expect(fs.readdirSync(artifacts).sort()).toEqual(['prompt-system-fast.md', 'prompt-system.md', 'run-summary.json']);
+    const summary = JSON.parse(fs.readFileSync(path.join(artifacts, 'run-summary.json'), 'utf8'));
+    expect(summary).toMatchObject({ schemaVersion: 5, funnel: { processed: 1, triaged: 1 }, items: [{ number: 5, outcome: 'triaged' }] });
+    expect(summary.promptHash).toEqual({ fast: expect.stringMatching(/^sha256:[0-9a-f]{16}$/), pro: expect.stringMatching(/^sha256:[0-9a-f]{16}$/) });
     expect(fs.readFileSync(path.join(artifacts, 'prompt-system.md'), 'utf8')).toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY ===');
   });
 });

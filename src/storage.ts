@@ -137,20 +137,24 @@ function isRecord(value: unknown): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+// Per-item artifacts are prefixed with the item number.
 export function saveArtifact(issueNumber: number, name: string, contents: string): void {
+  writeArtifact(`${issueNumber}-${name}`, contents);
+}
+
+// Run-level artifacts, such as the system prompts and run-summary.json, keep their bare names.
+export function saveRunArtifact(name: string, contents: string): void {
+  writeArtifact(name, contents);
+}
+
+function writeArtifact(fileName: string, contents: string): void {
   try {
     const artifactsDir = path.join(process.cwd(), 'artifacts');
-    const fileName =
-      name === 'prompt-system.md' || name === 'prompt-system-fast.md'
-        ? name
-        : `${issueNumber}-${name}`;
-    const filePath = path.join(artifactsDir, fileName);
-
     fs.mkdirSync(artifactsDir, { recursive: true });
-    fs.writeFileSync(filePath, contents, 'utf8');
+    fs.writeFileSync(path.join(artifactsDir, fileName), contents, 'utf8');
   } catch (err) {
     const message = errorMessage(err);
-    console.error(`⚠️ Failed to save artifact ${name} for #${issueNumber}: ${message}`);
+    console.error(`⚠️ Failed to save artifact ${fileName}: ${message}`);
   }
 }
 

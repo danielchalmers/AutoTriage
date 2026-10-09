@@ -11,7 +11,7 @@ import {
 } from './analysis';
 import type { ChatClient, JsonRequest } from './llm/chat';
 import { GitHubClient, Issue, TimelineEvent } from './github';
-import { RunStatistics, comparePlans, summarizePlan } from './stats';
+import { ItemRecord, RunStatistics, comparePlans, summarizePlan } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, explainPlan, planOperations } from './triage';
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
@@ -60,49 +60,55 @@ interface PassResult {
 }
 
 interface FastPassResult {
-  used: boolean;
   plan?: PassResult;
   shouldSkipPro: boolean;
 }
 
+// A pass that fails rethrows its error as a PassError, so the runner can record which pass failed.
+export class PassError extends Error {
+  constructor(readonly pass: PromptPassMode, readonly cause: unknown) {
+    super(errorMessage(cause));
+    this.name = 'PassError';
+  }
+}
+
+async function inPass<T>(pass: PromptPassMode, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    throw new PassError(pass, err);
+  }
+}
+
+// Triages one item and returns its record for the run summary.
 export async function processIssue(
   deps: IssueProcessorDeps,
   options: ProcessIssueOptions
-): Promise<{ triageUsed: boolean; fastRunUsed: boolean }> {
+): Promise<ItemRecord> {
   const { cfg, db, gh, models, stats } = deps;
   const { issue, repoLabels, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp } = options;
 
-  return core.group(`🤖 #${issue.number} ${issue.title}`, async () => {
+  return core.group(`🤖 #${issue.number} ${issue.title}`, async (): Promise<ItemRecord> => {
     const context = await loadIssueContext(
       { cfg, db, gh },
       { issue, autoDiscover }
     );
-    const fastPass = await runFastPass(
+    const fastPass = await inPass('fast', () => runFastPass(
       { cfg, models, stats },
       { issue, repoLabels, systemPromptFast, runTimestamp, context }
-    );
-    const fastPlan = fastPass.used && fastPass.plan
-      ? summarizePlan(fastPass.plan.operations)
-      : undefined;
+    ));
+    const fastPlan = fastPass.plan && summarizePlan(fastPass.plan.operations);
+    const item = { issueNumber: issue.number, type: issue.type, fastPlan };
 
     if (fastPass.shouldSkipPro) {
       console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
       updateDbEntry(db, issue.number, fastPass.plan?.analysis.summary || issue.title, {
         lastSeenUpdatedAt: getConsumedUpdatedAt(issue),
       });
-      stats.recordItem({
-        issueNumber: issue.number,
-        type: issue.type,
-        outcome: 'skipped',
-        skipReason: 'noop-fast',
-        escalatedToPro: false,
-        fastPlan,
-        agreement: fastPlan && 'fast-noop',
-      });
-      return { triageUsed: false, fastRunUsed: fastPass.used };
+      return { ...item, outcome: 'skipped', escalatedToPro: false, agreement: fastPlan && 'fast-noop' };
     }
 
-    const proPass = await runPass(
+    const proPass = await inPass('pro', () => runPass(
       { cfg, models, stats },
       {
         mode: 'pro',
@@ -113,42 +119,25 @@ export async function processIssue(
         context,
         ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
       }
-    );
+    ));
 
-    const executionResult = await executePlannedOperations(
+    // Applying the plan is part of the review pass, so a failed GitHub write is attributed to it.
+    const executionResult = await inPass('pro', () => executePlannedOperations(
       { cfg, gh, stats },
       { issue, operations: proPass.operations }
-    );
+    ));
 
     const proPlan = summarizePlan(proPass.operations);
+    const reviewed = { ...item, escalatedToPro: true, proPlan, agreement: fastPlan && comparePlans(fastPlan, proPlan) };
     if (executionResult === 'deferred') {
-      stats.recordItem({
-        issueNumber: issue.number,
-        type: issue.type,
-        outcome: 'skipped',
-        skipReason: 'deferred',
-        escalatedToPro: fastPass.used,
-        fastPlan,
-        proPlan,
-        agreement: fastPlan && comparePlans(fastPlan, proPlan),
-      });
-      return { triageUsed: true, fastRunUsed: fastPass.used };
+      return { ...reviewed, outcome: 'deferred' };
     }
 
     const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations);
     updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title, {
       lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
     });
-    stats.recordItem({
-      issueNumber: issue.number,
-      type: issue.type,
-      outcome: 'triaged',
-      escalatedToPro: fastPass.used,
-      fastPlan,
-      proPlan,
-      agreement: fastPlan && comparePlans(fastPlan, proPlan),
-    });
-    return { triageUsed: true, fastRunUsed: fastPass.used };
+    return { ...reviewed, outcome: 'triaged' };
   });
 }
 
@@ -258,11 +247,11 @@ async function runFastPass(
 ): Promise<FastPassResult> {
   if (deps.cfg.skipFastPass) {
     console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
-    return { used: false, shouldSkipPro: false };
+    return { shouldSkipPro: false };
   }
 
   const plan = await runPass(deps, { ...options, mode: 'fast', systemPrompt: options.systemPromptFast });
-  return { used: true, plan, shouldSkipPro: plan.operations.length === 0 };
+  return { plan, shouldSkipPro: plan.operations.length === 0 };
 }
 
 async function executePlannedOperations(
@@ -346,7 +335,6 @@ export async function generateAnalysis(
   const request: JsonRequest = { model, systemPrompt, userPrompt, schema: buildAnalysisResultSchema(repoLabels) };
 
   console.log(chalk.blue(`💭 Thinking with ${model}...`));
-  stats.beginPass(isFastModel ? 'fast' : 'pro');
   const startTime = Date.now();
   const { data, ...usage } = await deps.model.generateJson(request, parseAnalysisResult);
   const modelRunStats = { startTime, endTime: Date.now(), ...usage, issueNumber: issue.number };
