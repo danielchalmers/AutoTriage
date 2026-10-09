@@ -284,8 +284,8 @@ describe('getConfig model inputs', () => {
     setInputs({ 'model-fast': 'llama3:8b' });
 
     expect(describeModels(getConfig().models)).toEqual([
-      'Model (fast): llama3:8b at localhost:11434.',
-      'Model (pro): gemini-3.5-flash-lite at generativelanguage.googleapis.com (default for GEMINI_API_KEY).',
+      'Model (fast): llama3:8b at localhost:11434, reasoning: high if localhost:11434 honors reasoning_effort.',
+      'Model (pro): gemini-3.5-flash-lite at generativelanguage.googleapis.com (default for GEMINI_API_KEY), reasoning: high.',
     ]);
   });
 

@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { RunStatistics, comparePlans, summarizePlan } from '../src/stats';
+import { RunStatistics, comparePlans, describeModelRun, summarizePlan } from '../src/stats';
 
 describe('RunStatistics', () => {
   let stats: RunStatistics;
@@ -72,7 +72,7 @@ describe('RunStatistics', () => {
       const tokenLine = lines.find(line => line.includes('Tokens:'));
       const cacheLine = lines.find(line => line.includes('Cache:'));
 
-      expect(tokenLine).toContain('Tokens: 10.8k input • 257 output');
+      expect(tokenLine).toBe('    Tokens: 10.8k input • 257 output • reasoning not reported');
       expect(cacheLine).toContain('Cache: 8.2k (75.9%) reused');
     });
 
@@ -99,6 +99,13 @@ describe('RunStatistics', () => {
       const tokenLine = lines.find(line => line.includes('Tokens:'));
 
       expect(tokenLine).toContain('120 output • 5.4k reasoning');
+    });
+  });
+
+  describe('describeModelRun', () => {
+    it("gives one call's duration and tokens, and says when no reasoning was reported", () => {
+      expect(describeModelRun({ startTime: 1000, endTime: 9200, inputTokens: 3050, outputTokens: 85, reasoningTokens: 1890 })).toBe('Answered in 8.2s • 3.0k input • 85 output • 1.9k reasoning');
+      expect(describeModelRun({ startTime: 0, endTime: 754000, inputTokens: 900, outputTokens: 40 })).toBe('Answered in 12m34s • 900 input • 40 output • reasoning not reported');
     });
   });
 

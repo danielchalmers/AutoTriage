@@ -47,7 +47,7 @@ Start with the smallest useful context:
 - `src/github.ts` - GitHub API boundary.
 - `src/llm/` - the model API boundary, with no SDK.
   `endpoint.ts` picks the Chat Completions endpoint and key for a model input.
-  `chat.ts` is the one client every provider goes through, with its retries, error classification, and undici fetch.
+  `chat.ts` is the one client every provider goes through, with its retries, per-call deadline, error classification, and undici fetch.
   danielchalmers/Nuntia copies `src/llm/` and `tests/llm/` verbatim, so change them here first and copy them over in a paired PR.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` and `src/prompt.ts` - prompt loading and prompt assembly.

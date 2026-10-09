@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import type { Config, PromptPassLimits } from './config';
+import { describeReasoning } from './llm/chat';
 import { describeEndpoint, resolveModel, type Endpoint, type ModelEnv, type ProviderId } from './llm/endpoint';
 
 const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
@@ -96,7 +97,7 @@ function resolveModels(env: ModelEnv): Config['models'] {
 
 export function describeModels(models: Config['models']): string[] {
   const passes = [['fast', models.fast], ['pro', models.pro]] as const;
-  return passes.flatMap(([pass, endpoint]) => endpoint ? [`Model (${pass}): ${describeEndpoint(endpoint)}.`] : []);
+  return passes.flatMap(([pass, endpoint]) => endpoint ? [`Model (${pass}): ${describeEndpoint(endpoint)}, ${describeReasoning(endpoint.host)}.`] : []);
 }
 
 function applyMultiplier(base: number, multiplier: number): number {
