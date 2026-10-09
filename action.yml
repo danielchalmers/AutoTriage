@@ -17,7 +17,7 @@ inputs:
     description: "Path to the triage history JSON file."
     required: false
   dry-run:
-    description: "Log planned actions without applying changes."
+    description: "Log planned actions without applying changes. Must be true or false."
     required: false
     default: "false"
   extended:
@@ -25,7 +25,7 @@ inputs:
     required: false
     default: "false"
   issues:
-    description: "Space or comma separated issue or PR numbers."
+    description: "Issue or PR numbers separated by spaces or commas, such as \"12, #34\"."
     required: false
   max-fast-runs:
     description: "Maximum fast-model analyses per run."

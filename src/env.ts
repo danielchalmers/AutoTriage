@@ -20,10 +20,14 @@ function normalizeInput(input?: string): string | undefined {
   return normalized ? normalized : undefined;
 }
 
+// Only the YAML 1.2 boolean spellings count, so a value like 'yes' fails the run instead of quietly meaning false.
+// A blank value keeps the default, because a workflow expression can evaluate to ''.
 function parseBooleanInput(name: string, defaultValue = false): boolean {
   const normalized = normalizeInput(core.getInput(name));
   if (!normalized) return defaultValue;
-  return normalized.toLowerCase() === 'true';
+  if (['true', 'True', 'TRUE'].includes(normalized)) return true;
+  if (['false', 'False', 'FALSE'].includes(normalized)) return false;
+  throw new Error(`The ${name} input must be true or false, not '${normalized}'.`);
 }
 
 function parsePositiveInteger(input?: string): number | undefined {
@@ -39,13 +43,18 @@ function parsePositiveIntegerInput(name: string, defaultValue: number): number {
   return parsePositiveInteger(core.getInput(name)) ?? defaultValue;
 }
 
-function parsePositiveIntegerList(input?: string): number[] | undefined {
-  if (!input) return undefined;
-  const numbers = input
-    .split(/[\s,]+/)
-    .map((part) => parsePositiveInteger(part))
-    .filter((value): value is number => value !== undefined);
-  return numbers.length > 0 ? numbers : undefined;
+// Any token that isn't an issue or PR number fails the run, so a typo can never turn an explicit list into a backlog sweep.
+function parseIssueNumbersInput(name: string): number[] | undefined {
+  const normalized = normalizeInput(core.getInput(name));
+  if (!normalized) return undefined;
+
+  const tokens = normalized.split(/[\s,]+/).filter(Boolean);
+  const invalid = tokens.filter((token) => parsePositiveInteger(token.replace(/^#/, '')) === undefined);
+  if (tokens.length === 0 || invalid.length > 0) {
+    const named = (invalid.length > 0 ? invalid : [normalized]).map((token) => `'${token}'`).join(', ');
+    throw new Error(`The ${name} input takes issue or PR numbers separated by spaces or commas, such as "12, #34", but got ${named}.`);
+  }
+  return [...new Set(tokens.map((token) => Number(token.replace(/^#/, ''))))];
 }
 
 function parseBudgetScaleInput(name: string, defaultValue: number): number {
@@ -122,7 +131,7 @@ function resolveWorkflowRepository(): { owner: string; repo: string } {
 
 /**
  * Resolve runtime config.
- * Throws early with actionable messages if GITHUB_TOKEN is missing, no model API key is set, or repo context is absent.
+ * Throws early with actionable messages if GITHUB_TOKEN is missing, no model API key is set, repo context is absent, or a boolean or issues input has an invalid value.
  */
 export function getConfig(): Config {
   const { owner, repo } = resolveWorkflowRepository();
@@ -143,7 +152,7 @@ export function getConfig(): Config {
   };
   const maxProRuns = parsePositiveIntegerInput('max-pro-runs', DEFAULT_MAX_PRO_RUNS);
   const maxFastRuns = parsePositiveIntegerInput('max-fast-runs', DEFAULT_MAX_FAST_RUNS);
-  const issueNumbers = parsePositiveIntegerList(core.getInput('issues'));
+  const issueNumbers = parseIssueNumbersInput('issues');
   const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = parseOptionalInput('additional-instructions');
   const extended = parseBooleanInput('extended');
