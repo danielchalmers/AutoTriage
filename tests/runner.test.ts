@@ -179,6 +179,20 @@ describe('runAutoTriage', () => {
     expect(processIssueMock.mock.calls.map(([, options]) => options.autoDiscover)).toEqual([true, false]);
   });
 
+  it('logs an explicit target list once', async () => {
+    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5, 6] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() as any });
+
+    const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
+    expect(targetLines).toEqual(['▶️ Triaging 2 item(s): #5, #6']);
+  });
+
+  it('logs the size of an auto-discovered backlog instead of every number', async () => {
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() as any });
+
+    const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
+    expect(targetLines).toEqual([`▶️ Discovered 1 item(s) from ${baseConfig.owner}/${baseConfig.repo} (extended: false)`]);
+  });
+
   it('saves the database after processing the item that reaches max-pro-runs', async () => {
     await withTempDir(async (tempDir) => {
       const dbPath = path.join(tempDir, 'triage-db.json');

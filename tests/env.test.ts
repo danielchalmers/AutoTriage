@@ -117,35 +117,82 @@ describe('getConfig boolean inputs', () => {
     expect(cfg.strictMode).toBe(false);
   });
 
-  it('parses trimmed true values', () => {
-    setInputs({
-      'dry-run': ' TRUE ',
-      extended: 'TrUe',
-      'strict-mode': ' true ',
-    });
+  it('keeps the default for a blank value, as a workflow expression can produce', () => {
+    setInputs({ 'dry-run': '   ' });
+
+    expect(getConfig().dryRun).toBe(false);
+  });
+
+  it.each(['true', 'True', 'TRUE', ' true '])('parses %j as true', (value) => {
+    setInputs({ 'dry-run': value, extended: value, 'strict-mode': value });
     const cfg = getConfig();
 
     expect(cfg.dryRun).toBe(true);
     expect(cfg.extended).toBe(true);
     expect(cfg.strictMode).toBe(true);
   });
+
+  it.each(['false', 'False', 'FALSE'])('parses %j as false', (value) => {
+    setInputs({ 'dry-run': value, extended: value, 'strict-mode': value });
+    const cfg = getConfig();
+
+    expect(cfg.dryRun).toBe(false);
+    expect(cfg.extended).toBe(false);
+    expect(cfg.strictMode).toBe(false);
+  });
+
+  it.each(['yes', 'no', 'on', '1', 'TrUe'])('fails on dry-run %j instead of running live', (value) => {
+    setInputs({ 'dry-run': value });
+
+    expect(() => getConfig()).toThrow(`The dry-run input must be true or false, not '${value}'.`);
+  });
+
+  it.each(['extended', 'strict-mode'])('fails on an invalid %s value', (name) => {
+    setInputs({ [name]: 'yes' });
+
+    expect(() => getConfig()).toThrow(`The ${name} input must be true or false, not 'yes'.`);
+  });
 });
 
 describe('getConfig integer and list inputs', () => {
-  it('keeps only positive integer issue numbers', () => {
-    setInputs({ issues: '12, 0, -4, nope, 8.5 34' });
+  it('parses issue numbers separated by spaces or commas, with or without #', () => {
+    setInputs({ issues: ' 12, #34  56,#78\n90 ' });
     const cfg = getConfig();
 
-    expect(cfg.issueNumbers).toEqual([12, 34]);
+    expect(cfg.issueNumbers).toEqual([12, 34, 56, 78, 90]);
     expect(cfg.issueNumber).toBeUndefined();
   });
 
-  it('sets issueNumber when exactly one valid issue remains', () => {
-    setInputs({ issues: '0 invalid 27' });
+  it('sets issueNumber for a single issue', () => {
+    setInputs({ issues: '#27' });
     const cfg = getConfig();
 
     expect(cfg.issueNumbers).toEqual([27]);
     expect(cfg.issueNumber).toBe(27);
+  });
+
+  it('triages a repeated issue number once', () => {
+    setInputs({ issues: '12 #12, 34' });
+
+    expect(getConfig().issueNumbers).toEqual([12, 34]);
+  });
+
+  it('fails on tokens that are not issue numbers, naming each one, instead of sweeping the backlog', () => {
+    setInputs({ issues: '12, 0, -4, nope, 8.5 #, 34' });
+
+    expect(() => getConfig()).toThrow(`The issues input takes issue or PR numbers separated by spaces or commas, such as "12, #34", but got '0', '-4', 'nope', '8.5', '#'.`);
+  });
+
+  it('fails on a value with only separators', () => {
+    setInputs({ issues: ' , ' });
+
+    expect(() => getConfig()).toThrow("but got ','.");
+  });
+
+  it('fails on a number too large to be exact', () => {
+    setInputs({ issues: '9007199254740993' });
+
+    expect(() => getConfig()).toThrow("but got '9007199254740993'.");
   });
 
   it('falls back to defaults for invalid positive integer inputs', () => {

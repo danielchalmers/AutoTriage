@@ -105,15 +105,17 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 | `additional-instructions` | Extra prompt instructions for this run. | — |
 | `budget-scale` | Multiplier for prompt context limits. | `1` |
 | `db-path` | Path to the triage history JSON file. | — |
-| `dry-run` | Log planned actions without applying changes. | `"false"` |
+| `dry-run` | Log planned actions without applying changes. Must be `true` or `false`. | `"false"` |
 | `extended` | Broaden backlog auto-discovery. | `"false"` |
-| `issues` | Space or comma separated issue or PR numbers. | event target or backlog |
+| `issues` | Issue or PR numbers separated by spaces or commas, such as `12, #34`. | event target or backlog |
 | `max-fast-runs` | Maximum fast-model analyses per run. | `100` |
 | `max-pro-runs` | Maximum review-model analyses per run. | `20` |
 | `model-fast` | Fast-pass model. Leave blank to skip. | `""` (skip) |
 | `model-pro` | Review model. Blank uses the default for the API key you set (`gemini-3.5-flash-lite` for `GEMINI_API_KEY`). | `""` (default for your key) |
 | `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
 | `strict-mode` | Fail the job when any item analysis fails. | `"false"` |
+
+A `dry-run`, `extended` or `strict-mode` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged.
 
 ## Run summary
 
