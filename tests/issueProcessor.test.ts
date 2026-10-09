@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
+import { buildAnalysisResultSchema } from '../src/analysis';
 import { ChatClient, ModelError } from '../src/llm/chat';
 import { PassError, buildRunContext, processIssue } from '../src/issueProcessor';
 import type { Config } from '../src/config';
@@ -17,31 +18,31 @@ const timelineEvents: TimelineEvent[] = [
 ];
 
 describe('buildRunContext', () => {
-  it('treats items without a previous triage record as a first review', () => {
-    const getLastUpdated = vi.fn();
+  const NEW_ACTIVITY = 'it has new activity since then and needs to be re-checked';
 
-    expect(buildRunContext(baseIssue, timelineEvents, undefined, false, getLastUpdated)).toBe(
+  it('treats items without a previous triage record as a first review', () => {
+    expect(buildRunContext(baseIssue, timelineEvents, undefined, false)).toBe(
       'This item has no previous triage record, so treat this as the first review.'
     );
-    expect(getLastUpdated).not.toHaveBeenCalled();
   });
 
-  it('mentions new activity when the item changed after the last triage', () => {
-    const getLastUpdated = vi.fn().mockReturnValue(Date.parse('2024-04-11T00:00:00Z'));
+  it('mentions new activity when a timeline event is newer than the last triage', () => {
+    expect(buildRunContext(baseIssue, timelineEvents, '2024-04-10T00:00:00Z', true)).toContain(NEW_ACTIVITY);
+  });
 
-    expect(
-      buildRunContext(baseIssue, timelineEvents, '2024-04-10T00:00:00Z', true, getLastUpdated)
-    ).toContain('it has new activity since then and needs to be re-checked');
+  it("counts the item's own update time, and ignores undated timeline events", () => {
+    const events: TimelineEvent[] = [...timelineEvents, { event: 'committed' }];
+
+    expect(buildRunContext({ ...baseIssue, updated_at: '2024-04-13T00:00:00Z' }, events, '2024-04-12T00:00:00Z', true)).toContain(NEW_ACTIVITY);
+    expect(buildRunContext(baseIssue, events, '2024-04-12T00:00:00Z', true)).not.toContain(NEW_ACTIVITY);
   });
 
   it('explains whether a re-triage came from auto-discovery or explicit workflow selection', () => {
-    const getLastUpdated = vi.fn().mockReturnValue(Date.parse('2024-04-09T00:00:00Z'));
-
     expect(
-      buildRunContext(baseIssue, timelineEvents, '2024-04-10T00:00:00Z', true, getLastUpdated)
+      buildRunContext(baseIssue, timelineEvents, '2024-04-12T00:00:00Z', true)
     ).toContain('it is being revisited during another automated triage sweep');
     expect(
-      buildRunContext(baseIssue, timelineEvents, '2024-04-10T00:00:00Z', false, getLastUpdated)
+      buildRunContext(baseIssue, timelineEvents, '2024-04-12T00:00:00Z', false)
     ).toContain('the workflow explicitly asked for another review');
   });
 });
@@ -62,7 +63,6 @@ function createConfig(overrides: Partial<Config> = {}): Config {
 function createGitHub(overrides: Record<string, unknown> = {}) {
   return {
     listTimelineEvents: vi.fn().mockResolvedValue({ raw: timelineEvents, filtered: timelineEvents }),
-    lastUpdated: vi.fn().mockReturnValue(Date.parse('2024-04-11T00:00:00Z')),
     addLabels: vi.fn().mockResolvedValue(undefined),
     removeLabel: vi.fn().mockResolvedValue(undefined),
     createComment: vi.fn().mockResolvedValue(undefined),
@@ -76,6 +76,7 @@ function processOptions(overrides: Record<string, unknown> = {}) {
   return {
     issue: baseIssue,
     repoLabels: [{ name: 'bug' }],
+    schema: buildAnalysisResultSchema([{ name: 'bug' }]),
     autoDiscover: false,
     systemPromptFast: 'fast system prompt',
     systemPromptPro: 'pro system prompt',

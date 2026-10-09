@@ -1,5 +1,8 @@
 import * as github from '@actions/github';
-import { parseTimestamp } from './util';
+
+// A request without a version header gets API version 2022-11-28, which marks issue edits as deprecated and due for removal on 2028-03-10 because version 2026-03-10 drops their singular assignee field.
+// Octokit logs that notice as a warning on every title or state edit, and AutoTriage never sends assignee, so its edits ask for the newer version.
+const ISSUE_EDIT_API_VERSION = '2026-03-10';
 
 export type Issue = {
   title: string;
@@ -272,8 +275,7 @@ export class GitHubClient {
   }
 
   async updateTitle(issue_number: number, title: string): Promise<void> {
-    this.incrementApiCalls();
-    await this.octokit.rest.issues.update({ owner: this.owner, repo: this.repo, issue_number, title });
+    await this.updateIssue(issue_number, { title });
   }
 
   async updateIssueState(
@@ -281,26 +283,20 @@ export class GitHubClient {
     state: 'open' | 'closed',
     reason?: 'completed' | 'not_planned'
   ): Promise<void> {
+    await this.updateIssue(issue_number, { state, state_reason: state === 'closed' ? (reason ?? 'not_planned') : null });
+  }
+
+  private async updateIssue(
+    issue_number: number,
+    fields: { title: string } | { state: 'open' | 'closed'; state_reason: 'completed' | 'not_planned' | null }
+  ): Promise<void> {
     this.incrementApiCalls();
     await this.octokit.rest.issues.update({
       owner: this.owner,
       repo: this.repo,
       issue_number,
-      state,
-      state_reason: state === 'closed' ? (reason ?? 'not_planned') : null,
+      ...fields,
+      headers: { 'x-github-api-version': ISSUE_EDIT_API_VERSION },
     });
-  }
-
-  lastUpdated(
-    issue: Issue,
-    timelineEvents: Array<TimelineEvent>
-  ): number {
-    const issueUpdatedMs = parseTimestamp(issue.updated_at);
-    const latestEventMs = (timelineEvents || []).reduce((max, ev) => {
-      const ts = parseTimestamp(ev?.created_at);
-      return ts > max ? ts : max;
-    }, 0);
-
-    return issueUpdatedMs > latestEventMs ? issueUpdatedMs : latestEventMs;
   }
 }

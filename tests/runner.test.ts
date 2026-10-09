@@ -29,6 +29,7 @@ import * as core from '@actions/core';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { buildAnalysisResultSchema } from '../src/analysis';
 import type { Config } from '../src/config';
 import { ModelError } from '../src/llm/chat';
 import { PassError } from '../src/issueProcessor';
@@ -214,6 +215,17 @@ describe('runAutoTriage', () => {
     await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
 
     expect(processIssueMock.mock.calls.map(([, options]) => options.autoDiscover)).toEqual([true, false]);
+  });
+
+  it('builds the response schema once from the repository labels and hands the same one to every item', async () => {
+    const gh = createGitHub();
+    gh.listRepoLabels.mockResolvedValue([{ name: 'question' }, { name: 'bug' }]);
+
+    await run({ ...baseConfig, issueNumbers: [5, 6] }, { gh });
+
+    const [first, second] = processIssueMock.mock.calls.map(([, options]) => options.schema);
+    expect(second).toBe(first);
+    expect(first).toEqual(buildAnalysisResultSchema([{ name: 'bug' }, { name: 'question' }]));
   });
 
   it('logs an explicit target list once', async () => {

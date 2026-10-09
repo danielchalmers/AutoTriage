@@ -30,7 +30,7 @@ export interface GitHubWriteClient {
   ): Promise<void>;
 }
 
-type StatefulIssue = Pick<Issue, 'number' | 'title' | 'state'> & {
+type StatefulIssue = Pick<Issue, 'number' | 'title' | 'state' | 'labels'> & {
   state_reason?: string | null;
 };
 
@@ -144,13 +144,12 @@ export function explainPlan(analysis: AnalysisResult): string {
 export function planOperations(
   issue: StatefulIssue,
   analysis: AnalysisResult,
-  metadata: { labels?: string[] },
   repoLabels?: string[],
   explanation?: string
 ): PlannedOperation[] {
   const ops: PlannedOperation[] = [];
   const modelOps: unknown[] = Array.isArray(analysis.operations) ? analysis.operations : [];
-  const currentLabels = new Set(Array.isArray(metadata.labels) ? metadata.labels : []);
+  const currentLabels = new Set(issue.labels);
 
   for (const op of modelOps) {
     if (!hasAuthorization(op)) continue;

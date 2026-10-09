@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSystemPrompt } from '../src/analysis'
+import { buildSystemPrompt } from '../src/prompts'
 import { withTempFiles } from './fixtures'
 
 describe('additional instructions', () => {

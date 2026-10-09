@@ -3,7 +3,7 @@ import * as github from '@actions/github';
 import type { Config } from './config';
 import { describeEndpoint } from './llm/endpoint';
 import type { ItemRecord, RunStatistics } from './stats';
-import { errorMessage } from './util';
+import { errorMessage } from './llm/chat';
 
 // GitHub shows at most 10 warning annotations per step and drops the rest.
 const WARNING_LIMIT = 10;

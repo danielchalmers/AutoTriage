@@ -52,7 +52,8 @@ Start with the smallest useful context:
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` and `src/prompt.ts` - prompt loading and prompt assembly.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.
-- `src/util.ts` - shared error-message and timestamp helpers.
+- `src/util.ts` - shared error-detail and timestamp helpers.
+  `errorMessage` is imported straight from `src/llm/chat.ts`.
 - `tests/` - Vitest coverage and examples of expected behavior.
 - `action.yml` - public GitHub Action metadata.
 - `examples/AutoTriage.prompt` - example starting-point prompt to copy into a repo (not bundled).
