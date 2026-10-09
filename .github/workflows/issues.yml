@@ -9,28 +9,18 @@ permissions:
   issues: write
   pull-requests: write
 
-concurrency:
-  group: autotriage-shared-db
-  cancel-in-progress: false
-
 jobs:
   triage_issue:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: autotriage
+      queue: max
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/cache@v6
-        with:
-          path: triage-db.json
-          key: triage-db-${{ github.run_id }}
-          restore-keys: triage-db-
-
       - name: Triage issue
         uses: ./
-        with:
-          issues: ${{ github.event.issue.number }}
-          prompt-path: examples/AutoTriage.prompt
-          db-path: triage-db.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -40,6 +30,4 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: triage-artifacts-${{ github.run_number }}
-          path: |
-            triage-db.json
-            artifacts/
+          path: artifacts/

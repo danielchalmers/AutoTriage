@@ -51,6 +51,10 @@ Start with the smallest useful context:
 - `tests/` - Vitest coverage and examples of expected behavior.
 - `action.yml` - public GitHub Action metadata.
 - `examples/AutoTriage.prompt` - example starting-point prompt to copy into a repo (not bundled).
+- `.github/AutoTriage.prompt` - this repo's own policy: the example prompt plus the MOCK fixture rules that this repo's workflows and CI rely on.
+  `tests/examples.test.ts` fails when the two drift apart, so carry every example edit over to it.
+- `examples/workflows/` - example workflows.
+  They and this repo's triage workflows queue in one job-level `queue: max` group, only the backlog sweep saves the DB cache, and `tests/examples.test.ts` checks both sets.
 - `.github/workflows/` - CI expectations.
 - `dist/` - generated action bundle.
 

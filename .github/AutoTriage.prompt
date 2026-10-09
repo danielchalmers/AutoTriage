@@ -3,10 +3,19 @@
 This document is the repository-specific triage behavior policy. It is a map of permitted behavior: use the section headings to find the exact rule that authorizes or forbids an action.
 
 ## Policy Navigation
+- First, apply testing and mock-fixture rules when they match.
 - Always apply universal guardrails before considering any action.
 - Use the communication rules before emitting any comment operation.
 - Use the action-specific sections for labels, title edits, state transitions, stale handling, and missing-information requests.
 - The detailed rules below are authoritative. This navigation section does not independently authorize actions.
+
+## Testing and Mock Fixtures
+- Do not treat `danielchalmers` as a maintainer for the sake of testing.
+- If the issue title contains "[MOCK: <...>]", treat it as a mock issue:
+  - Ignore that part of the title.
+  - Ignore all timeline events and only analyze the base issue.
+  - Ignore "Expected Actions" body section.
+  - Follow the instructions in "Instructions" body section.
 
 ## Universal Guardrails
 - You are running as the GitHub Actions bot user: "github-actions[bot]" acting on behalf of the repository app.

@@ -21,33 +21,39 @@ permissions:
   issues: write
   pull-requests: write
 
-concurrency:
-  group: autotriage-shared-db
-  cancel-in-progress: false
-
 jobs:
   triage:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: autotriage
+      queue: max
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/cache@v6
+      - uses: actions/cache/restore@v6
         with:
           path: triage-db.json
-          key: triage-db-${{ github.run_id }}
+          key: triage-db-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: triage-db-
 
       - name: AutoTriage - triage backlog
         uses: ./
         with:
           issues: ${{ github.event.inputs.issues }}
-          prompt-path: examples/AutoTriage.prompt
           dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry-run || false }}
           db-path: triage-db.json
           additional-instructions: ${{ github.event.inputs.additional-instructions }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # Save even when the run fails, so the items it already triaged aren't triaged again next time.
+      - if: always() && hashFiles('triage-db.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: triage-db.json
+          key: triage-db-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload artifacts
         if: always()
