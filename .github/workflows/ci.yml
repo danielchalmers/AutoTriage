@@ -37,7 +37,7 @@ jobs:
           issues: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '3 6' }}
           dry-run: true
           model-fast: claude-haiku-5-5
-          model-pro: claude-sonnet-5-5
+          model-pro: claude-haiku-5-5 # Repeated with model-fast to exercise two-tier routing at lower cost.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
