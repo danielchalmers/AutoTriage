@@ -62,10 +62,12 @@ This document is the repository-specific triage behavior policy. It is a map of 
 - Edit titles only when misleading or unclear; keep short and accurate. Use a `set_title` operation to propose changes.
 
 ## Inactivity Rules
-- Skip this section if assigned to, or created by, a maintainer.
-- While an open issue/PR has no timeline activity for 30+ days, apply the `stale` label.
-- If there is still no activity after 30 additional days after hitting the first inactivity threshold, use a `set_state` operation with `state: not_planned`.
-- Any activity by a human user, excluding label changes, will reset the timer and the `stale` label should be removed.
+- Skip this section for closed items, and for items assigned to, or created by, a maintainer. A maintainer commenting on an item, or changing its labels, does not exempt it.
+- Activity means any timeline event by a human, except label changes, renames, and removed assignees or reviewers, whoever made them. Bot actions never count.
+- Check every item this section applies to, even when nothing else about it needs action: find the date of its latest activity, and of its `stale` label if it has one, then count the days to the current UTC timestamp.
+- If the item has `stale` and there has been activity since the `stale` label was added, remove `stale`.
+- If the item doesn't have `stale` and has had no activity for 30+ days, add the `stale` label.
+- If the item already has `stale`, has had no activity since it was added, and 30+ days have passed since it was added, use a `set_state` operation with `state: not_planned`.
 
 Post this comment verbatim when marking as stale:
 ```
