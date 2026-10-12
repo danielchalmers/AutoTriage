@@ -149,7 +149,7 @@ export class GitHubClient {
     return (labels as any[])
       .map((l: any) => {
         const name: string | undefined = typeof l?.name === 'string' ? l.name : undefined;
-        if (!name) return null;
+        if (!name || l.archived_at) return null;
         return {
           name,
           description: typeof l?.description === 'string' && l.description.trim().length > 0 ? l.description : null,

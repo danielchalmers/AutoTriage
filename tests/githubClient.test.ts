@@ -191,6 +191,21 @@ describe('GitHubClient listing', () => {
     expect(mocks.issuesListForRepo).toHaveBeenCalledWith(expect.objectContaining({ state: 'closed', per_page: perPage, page: 1 }));
   });
 
+  it('leaves out archived labels', async () => {
+    mocks.paginate.mockResolvedValue([
+      { name: 'bug', description: 'Something is broken', archived_at: null },
+      { name: 'hacktoberfest', description: 'Hacktoberfest', archived_at: '2026-08-28T14:44:09Z' },
+      { name: 'question' },
+    ]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.listRepoLabels()).toEqual([
+      { name: 'bug', description: 'Something is broken' },
+      { name: 'question', description: null },
+    ]);
+  });
+
   it('keeps named repository labels and normalizes blank descriptions to null', async () => {
     mocks.paginate.mockResolvedValue([
       { name: 'bug', description: 'Something is broken' },
