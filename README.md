@@ -90,7 +90,7 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 | `OPENAI_BASE_URL` (`OPENAI_API_KEY` optional) | none, so set `model-pro` | any OpenAI-compatible service |
 
 - With one key set, both passes use it, and a blank `model-pro` uses its default.
-- With several keys set, a `gemini-*` or `claude-*` model goes to Gemini or Claude when that key is set, and any other model goes to OpenAI or `OPENAI_BASE_URL`. A blank `model-pro` uses the default of the first key in the table.
+- With several keys set, a `gemini-*` or `claude-*` model goes to Gemini or Claude when that key is set, and any other model goes to OpenAI or `OPENAI_BASE_URL`. A blank `model-pro` with several keys set fails the run, so no key wins silently: set `model-pro`, or map only one key.
 - The log names each pass's model, host and reasoning setting, such as `Model (pro): gpt-6-luna at api.openai.com (default for OPENAI_API_KEY), reasoning: high.` For Claude it says `reasoning: provider default (api.anthropic.com ignores reasoning_effort)`, and where a provider reports no reasoning tokens, the log says `reasoning not reported`.
 
 **Any OpenAI-compatible service** (OpenRouter, Azure OpenAI, Groq, Mistral, xAI, DeepSeek, Together, Fireworks, Cerebras, LiteLLM, vLLM, Ollama, ...) works by setting `OPENAI_BASE_URL` to its API base, such as `https://openrouter.ai/api/v1`, and `model-pro` to a model it serves. For Azure OpenAI, use `https://<resource>.openai.azure.com/openai/v1` and your deployment name as the model. The key is optional for a local server such as Ollama on a self-hosted runner. `OPENAI_BASE_URL` must use https (plain http is allowed only for localhost) and can't include a user name or password, and redirects aren't followed.
