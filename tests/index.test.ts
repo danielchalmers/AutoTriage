@@ -36,10 +36,7 @@ const cfg = makeConfig({
   repo: 'demo',
   token: 'gh-token',
   dbPath: 'triage-db.json',
-  models: {
-    fast: makeEndpoint('fast-model'),
-    pro: makeEndpoint('pro-model', { isDefault: true }),
-  },
+  model: makeEndpoint('test-model', { isDefault: true }),
 });
 const db = makeDb({ '1': { summary: 'known' } });
 
@@ -70,39 +67,28 @@ afterEach(() => {
 });
 
 describe('AutoTriage action entry point', () => {
-  it('builds a client for each pass from config and runs triage with them', async () => {
+  it('builds one model client from config and runs triage with it', async () => {
     await importEntryPoint();
 
     expect(mocks.loadDatabase).toHaveBeenCalledWith('triage-db.json');
     expect(mocks.githubArgs).toEqual([['gh-token', 'octo', 'demo']]);
-    expect(mocks.chatArgs).toEqual([[cfg.models.pro], [cfg.models.fast]]);
+    expect(mocks.chatArgs).toEqual([[cfg.model]]);
     expect(mocks.runAutoTriage).toHaveBeenCalledOnce();
 
     const deps = mocks.runAutoTriage.mock.calls[0]![0];
     expect(deps.cfg).toBe(cfg);
     expect(deps.db).toBe(db);
-    expect(deps.models.fast).not.toBe(deps.models.pro);
-    expect(deps.stats.toJSON()).toMatchObject({ repo: 'octo/demo', models: { fast: 'fast-model', pro: 'pro-model' } });
+    expect(deps.model).toBeDefined();
+    expect(deps.stats.toJSON()).toMatchObject({ repo: 'octo/demo', model: 'test-model' });
     expect(mocks.setFailed).not.toHaveBeenCalled();
   });
 
-  it('logs the model and host for each pass', async () => {
+  it('logs the model and host', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await importEntryPoint();
 
-    expect(log).toHaveBeenCalledWith('Model (fast): fast-model at api.openai.com, reasoning: high.');
-    expect(log).toHaveBeenCalledWith('Model (pro): pro-model at api.openai.com (default for OPENAI_API_KEY), reasoning: high.');
-  });
-
-  it('gives a skipped fast pass the pro client', async () => {
-    mocks.getConfig.mockReturnValue({ ...cfg, skipFastPass: true, modelFast: '', models: { fast: null, pro: cfg.models.pro } });
-
-    await importEntryPoint();
-
-    const deps = mocks.runAutoTriage.mock.calls[0]![0];
-    expect(mocks.chatArgs).toEqual([[cfg.models.pro]]);
-    expect(deps.models.fast).toBe(deps.models.pro);
+    expect(log).toHaveBeenCalledWith('Model: test-model at api.openai.com (default for OPENAI_API_KEY), reasoning: high.');
   });
 
   it('fails the action with the stack when the run rejects, which only a bug can cause', async () => {

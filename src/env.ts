@@ -1,20 +1,19 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import type { Config, PromptPassLimits } from './config';
+import type { Config, PromptLimits } from './config';
 import { describeReasoning } from './llm/chat';
 import { describeEndpoint, resolveModel, type Endpoint, type ModelEnv, type ProviderId } from './llm/endpoint';
 
 export const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
-// The review model each key gets when model-pro is blank.
+// The model each key gets when the model input is blank.
 const DEFAULT_MODELS: Record<ProviderId, string> = {
   gemini: 'gemini-3.5-flash-lite',
   anthropic: 'claude-haiku-5-5',
   openai: 'gpt-6-luna',
 };
 const DEFAULT_BUDGET_SCALE = 1;
-const DEFAULT_MAX_PRO_RUNS = 20;
-const DEFAULT_MAX_FAST_RUNS = 100;
+const DEFAULT_MAX_RUNS = 50;
 
 function normalizeInput(input?: string): string | undefined {
   const normalized = input?.trim();
@@ -87,24 +86,15 @@ function readModelEnv(): ModelEnv {
   return env;
 }
 
-// A blank model-fast skips the screening pass, and a blank model-pro uses the default for the first key set.
-function resolveModels(env: ModelEnv): Config['models'] {
-  const pro = resolveModel('model-pro', core.getInput('model-pro'), env, DEFAULT_MODELS);
-  const fastInput = parseOptionalInput('model-fast');
-  const fast: Endpoint | null = fastInput ? resolveModel('model-fast', fastInput, env, DEFAULT_MODELS) : null;
-  return { fast, pro };
-}
-
-export function describeModels(models: Config['models']): string[] {
-  const passes = [['fast', models.fast], ['pro', models.pro]] as const;
-  return passes.flatMap(([pass, endpoint]) => endpoint ? [`Model (${pass}): ${describeEndpoint(endpoint)}, ${describeReasoning(endpoint.host)}.`] : []);
+export function describeModel(endpoint: Endpoint): string {
+  return `Model: ${describeEndpoint(endpoint)}, ${describeReasoning(endpoint.host)}.`;
 }
 
 function applyMultiplier(base: number, multiplier: number): number {
   return Math.max(0, Math.floor(base * multiplier));
 }
 
-function scaleLimits(base: PromptPassLimits, multiplier: number): PromptPassLimits {
+function scaleLimits(base: PromptLimits, multiplier: number): PromptLimits {
   return {
     readmeChars: applyMultiplier(base.readmeChars, multiplier),
     issueBodyChars: applyMultiplier(base.issueBodyChars, multiplier),
@@ -139,20 +129,15 @@ export function getConfig(): Config {
   const token = process.env.GITHUB_TOKEN || '';
 
   if (!token) throw new Error('GITHUB_TOKEN missing (add: secrets.GITHUB_TOKEN).');
-  const models = resolveModels(readModelEnv());
+  const model = resolveModel('model', core.getInput('model'), readModelEnv(), DEFAULT_MODELS);
 
   const dryRun = parseBooleanInput('dry-run');
   const promptPath = parseInputOrDefault('prompt-path', DEFAULT_PROMPT_PATH);
   const readmePath = DEFAULT_README_PATH;
   const dbPath = parseOptionalInput('db-path');
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
-  // The fast pass reads a trimmed slice of the same context the pro pass gets; budget-scale moves both together.
-  const limits = {
-    fast: scaleLimits({ readmeChars: 0, issueBodyChars: 4000, timelineEvents: 12, timelineTextChars: 600 }, multiplier),
-    pro: scaleLimits({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 }, multiplier),
-  };
-  const maxProRuns = parsePositiveIntegerInput('max-pro-runs', DEFAULT_MAX_PRO_RUNS);
-  const maxFastRuns = parsePositiveIntegerInput('max-fast-runs', DEFAULT_MAX_FAST_RUNS);
+  const limits = scaleLimits({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 }, multiplier);
+  const maxRuns = parsePositiveIntegerInput('max-runs', DEFAULT_MAX_RUNS);
   const issueNumbers = parseIssueNumbersInput('issues');
   const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = parseOptionalInput('additional-instructions');
@@ -163,19 +148,14 @@ export function getConfig(): Config {
     repo,
     token,
     dryRun,
-    skipFastPass: models.fast === null,
-
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
     promptPath,
     readmePath,
     ...(dbPath ? { dbPath } : {}),
-    modelFast: models.fast?.model ?? '',
-    modelPro: models.pro.model,
-    models,
+    model,
     limits,
-    maxProRuns,
-    maxFastRuns,
+    maxRuns,
     ...(additionalInstructions ? { additionalInstructions } : {}),
     extended,
   };
