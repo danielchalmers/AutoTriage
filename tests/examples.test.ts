@@ -28,10 +28,7 @@ const quickStart = /```yaml\n([\s\S]*?)```/.exec(readme.slice(readme.indexOf('##
 
 const workflowFiles = [
   ...fs.readdirSync(path.join(root, 'examples', 'workflows')).map(file => `examples/workflows/${file}`),
-  '.github/workflows/issues.yml',
-  '.github/workflows/prs.yml',
-  '.github/workflows/comments.yml',
-  '.github/workflows/backlog.yml',
+  '.github/workflows/autotriage.yml',
 ];
 
 const triageWorkflows: Array<[string, string]> = [
@@ -65,6 +62,18 @@ describe.each(triageWorkflows)('%s', (_name, workflow) => {
     expect(workflow).not.toContain('prompt-path');
     expect(workflow).not.toMatch(/issues: \$\{\{ github\.event\.(issue|pull_request)\./);
   });
+});
+
+it('shows the event example as the quick start', () => {
+  expect(quickStart).toBe(read('examples/workflows/autotriage.yml'));
+});
+
+it('triages pull requests from anyone except drafts, and other events only from people', () => {
+  for (const file of ['examples/workflows/autotriage.yml', '.github/workflows/autotriage.yml']) {
+    expect(read(file)).toContain(
+      "(github.event_name == 'pull_request_target' && !github.event.pull_request.draft) ||\n      (github.event_name != 'pull_request_target' && github.event.sender.type != 'Bot')"
+    );
+  }
 });
 
 it('keeps the quick start in dry-run until the user has reviewed a plan', () => {
