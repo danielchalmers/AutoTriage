@@ -1,0 +1,68 @@
+name: AutoTriage
+
+on:
+  issues:
+    types: [opened]
+  # Pull requests arrive through autotriage-pr.yml.
+  workflow_run:
+    workflows: [AutoTriage PR]
+    types: [completed]
+  # A daily sweep of up to 30 items, off the busy top of the hour.
+  schedule:
+    - cron: '23 8 * * *'
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: 'Issue or PR numbers (blank sweeps the backlog)'
+      dry-run:
+        description: 'Dry run (true = no writes)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  triage:
+    # A signal run that was cancelled or is waiting for approval has nothing to triage yet.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    # A sweep usually takes minutes. The limit stops a stuck run before it holds the queue for long, since three failed items in a row already end a run.
+    timeout-minutes: 120
+    concurrency:
+      group: autotriage
+      queue: max
+    steps:
+      - uses: actions/cache/restore@v6
+        with:
+          path: triage-db.json
+          key: triage-db-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: triage-db-
+
+      - uses: danielchalmers/AutoTriage@v5
+        with:
+          # Only a manual run has these inputs, so every other run is live.
+          issues: ${{ inputs.issues }}
+          dry-run: ${{ inputs.dry-run }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GEMINI_API_KEY or OPENAI_API_KEY work too. Map only one key.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # Issue runs and workflow_run runs from forks get read-only cache access, so only scheduled and manual runs save it.
+      # A failed run saves too, so the items it already triaged aren't triaged again next time.
+      - if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && hashFiles('triage-db.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: triage-db.json
+          key: triage-db-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: triage-artifacts-${{ github.run_number }}
+          path: |
+            triage-db.json
+            artifacts/

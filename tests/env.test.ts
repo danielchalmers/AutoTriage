@@ -306,10 +306,20 @@ describe('action.yml input contract', () => {
     expect(Object.keys(REMOVED_INPUTS).filter((name) => actionInputs.has(name))).toEqual([]);
   });
 
+  // A README section runs from its level-two heading to the next one, or to the end of the file.
+  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+  const readmeSection = (heading: string) => new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm').exec(readme)?.[1] ?? '';
+
   it('documents exactly the declared inputs in the README input table', () => {
-    const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-    const documented = [...readme.matchAll(/^\| `([a-z-]+)` \|/gm)].map(match => match[1]);
+    // Only the Inputs section counts, because the label and migration tables also start rows with a code span.
+    const documented = [...readmeSection('Inputs').matchAll(/^\| `([a-z-]+)` \|/gm)].map(match => match[1]);
 
     expect(documented.sort()).toEqual([...actionInputs.keys()].sort());
+  });
+
+  it('tells v4 users what to do with every removed input in the README migration table', () => {
+    const migrated = [...readmeSection('Migrating from v4').matchAll(/^\| ([^|]+) \|/gm)].flatMap(match => [...match[1]!.matchAll(/`([a-z-]+)`/g)].map(name => name[1]));
+
+    expect(Object.keys(REMOVED_INPUTS).filter((name) => !migrated.includes(name))).toEqual([]);
   });
 });

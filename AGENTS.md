@@ -70,10 +70,13 @@ Start with the smallest useful context:
 - `examples/AutoTriage.prompt` - example starting-point prompt to copy into a repo (not bundled).
 - `.github/AutoTriage.prompt` - this repo's own policy: the example prompt plus the MOCK fixture rules that this repo's workflows and CI rely on.
   `tests/examples.test.ts` fails when the two drift apart, so carry every example edit over to it.
-- `examples/workflows/` - example workflows.
-  They and this repo's triage workflows queue in one job-level `queue: max` group, only the backlog sweep saves the DB cache, and `tests/examples.test.ts` checks both sets.
-- `.github/workflows/` - CI expectations.
-  This repo's workflows run the action with `uses: ./`, so unlike the examples they keep their checkout step.
+- `examples/workflows/` - the two example workflows, which the README quick start shows verbatim.
+  `autotriage.yml` triages new issues, pull requests through `workflow_run`, a daily sweep and manual runs, queues in one job-level `queue: max` group, and saves the DB cache only on scheduled and manual runs.
+  `autotriage-pr.yml` is the `pull_request` signal, with no permissions, secrets or guards, and its name is what the main file's `workflow_run` trigger listens for.
+  `tests/examples.test.ts` checks both, this repo's own pair and the README's copies.
+- `.github/workflows/` - this repo's own automation and CI expectations.
+  `autotriage.yml` and `autotriage-pr.yml` are the example pair, except that the main file runs the action with `uses: ./` after a checkout and keeps its schedule commented out.
+  `nuntia.yml` writes release notes with Nuntia when a release is published.
   `ci.yml` runs `npm run verify` on every pull request, whatever its base branch, and on every push to main, then dry-runs the action on the pull request.
   A newer push to a pull request cancels that pull request's older CI run.
 - `dist/` - generated action bundle.
@@ -151,7 +154,7 @@ CI runs the same script before its dry run of the action.
 When changing inputs, defaults, permissions, or runtime behavior:
 
 - Update `action.yml`.
-- When removing an input, add it to `REMOVED_INPUTS` in `src/env.ts` with a one-line hint, and update every workflow and example that passes it in the same change, or this repo's own runs fail.
+- When removing an input, add it to `REMOVED_INPUTS` in `src/env.ts` with a one-line hint, and update every workflow and example that passes it in the same change, or this repo's own runs fail. Also add a row to the README's Migrating from v4 table, which `tests/env.test.ts` checks against `REMOVED_INPUTS`.
 - Update `README.md` when user-facing behavior changes.
 - Add or update tests for parsing, defaults, and failure behavior.
 - Run `npm run build` and inspect generated `dist/` changes.

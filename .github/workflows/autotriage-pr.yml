@@ -1,0 +1,16 @@
+name: AutoTriage PR
+
+# Fork PRs get no secrets, so this run only signals autotriage.yml through workflow_run, and autotriage.yml finds the PR and triages it.
+# autotriage.yml listens for this workflow by its name, so keep the two in step.
+# There are no guards, so PRs from bots such as Dependabot get a kind label too.
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Signalling the AutoTriage workflow to triage this pull request."
