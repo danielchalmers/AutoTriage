@@ -41,6 +41,7 @@ Start with the smallest useful context:
 
 - `src/index.ts` - action entry point.
 - `src/config.ts` and `src/env.ts` - action inputs and environment handling.
+  `REMOVED_INPUTS` in `env.ts` lists every input AutoTriage no longer takes, with a migration hint, and passing one fails the run as a configuration error.
 - `src/runner.ts` and `src/issueProcessor.ts` - orchestration and per-item work.
 - `src/event.ts` - what the triggering event asks the run to triage, including the pull request behind a `workflow_run` event.
   Only `schedule`, `workflow_dispatch` and local runs sweep the backlog.
@@ -141,6 +142,7 @@ CI runs the same script before its dry run of the action.
 When changing inputs, defaults, permissions, or runtime behavior:
 
 - Update `action.yml`.
+- When removing an input, add it to `REMOVED_INPUTS` in `src/env.ts` with a one-line hint, and update every workflow and example that passes it in the same change, or this repo's own runs fail.
 - Update `README.md` when user-facing behavior changes.
 - Add or update tests for parsing, defaults, and failure behavior.
 - Run `npm run build` and inspect generated `dist/` changes.

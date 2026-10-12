@@ -7,7 +7,6 @@ import type { TriggerEvent } from '../src/event';
 import { TriageDb } from '../src/storage';
 import type { Config } from '../src/config';
 import type { Endpoint } from '../src/llm/endpoint';
-import type { ModelClients } from '../src/issueProcessor';
 
 export const baseIssue: Omit<Issue, 'number' | 'updated_at' | 'created_at'> = {
   title: 'Sample',
@@ -100,11 +99,6 @@ export function makeEndpoint(model: string, overrides: Partial<Endpoint> = {}): 
   };
 }
 
-// The same client for both passes.
-export function bothPasses(model: unknown): ModelClients {
-  return { fast: model, pro: model } as ModelClients;
-}
-
 // Mirrors the production defaults so a new Config field only has to be added here.
 export function makeConfig(overrides: Partial<Config> = {}): Config {
   return {
@@ -115,16 +109,9 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     // Absolute, so tests that point process.cwd() at a temp directory still load the example prompt.
     promptPath: path.join(__dirname, '..', 'examples', 'AutoTriage.prompt'),
     readmePath: 'README.md',
-    skipFastPass: false,
-    modelFast: 'fast-model',
-    modelPro: 'pro-model',
-    models: { fast: makeEndpoint('fast-model'), pro: makeEndpoint('pro-model') },
-    limits: {
-      fast: { readmeChars: 0, issueBodyChars: 4000, timelineEvents: 12, timelineTextChars: 600 },
-      pro: { readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 },
-    },
+    model: makeEndpoint('test-model'),
+    limits: { readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 },
     maxProRuns: 20,
-    maxFastRuns: 100,
     extended: false,
     ...overrides,
   };

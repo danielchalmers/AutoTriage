@@ -1,12 +1,12 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import type { Config, PromptPassLimits } from './config';
+import type { Config, PromptLimits } from './config';
 import { describeReasoning } from './llm/chat';
 import { describeEndpoint, resolveModel, type Endpoint, type ModelEnv, type ProviderId } from './llm/endpoint';
 
 const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
-// The review model each key gets when model-pro is blank.
+// The model each key gets when the model input is blank.
 const DEFAULT_MODELS: Record<ProviderId, string> = {
   gemini: 'gemini-3.5-flash-lite',
   anthropic: 'claude-haiku-5-5',
@@ -14,7 +14,17 @@ const DEFAULT_MODELS: Record<ProviderId, string> = {
 };
 const DEFAULT_BUDGET_SCALE = 1;
 const DEFAULT_MAX_PRO_RUNS = 20;
-const DEFAULT_MAX_FAST_RUNS = 100;
+
+/**
+ * Inputs that earlier versions took, each with what to do instead.
+ * GitHub passes every with: key to the action, declared or not, and only warns about undeclared ones, so without this check a removed input would be silently ignored.
+ */
+export const REMOVED_INPUTS: Readonly<Record<string, string>> = {
+  'model-fast': 'delete it; v5 reviews every item with model',
+  'model-pro': 'rename it to model',
+  'max-fast-runs': 'delete it',
+  'strict-mode': 'delete it; runs fail only for configuration errors and bugs',
+};
 
 function normalizeInput(input?: string): string | undefined {
   const normalized = input?.trim();
@@ -74,6 +84,14 @@ function parseOptionalInput(name: string): string | undefined {
   return normalizeInput(core.getInput(name));
 }
 
+// GitHub exports each with: key as INPUT_<NAME> with its hyphens kept, such as INPUT_MODEL-PRO.
+// Presence is what counts, so a leftover blank line such as `model-fast: ""` fails the run too.
+function checkRemovedInputs(): void {
+  const passed = Object.entries(REMOVED_INPUTS).filter(([name]) => process.env[`INPUT_${name.toUpperCase()}`] !== undefined);
+  if (passed.length === 0) return;
+  throw new Error(`Remove or rename the inputs that AutoTriage no longer takes: ${passed.map(([name, hint]) => `${name} (${hint})`).join(', ')}.`);
+}
+
 function readModelEnv(): ModelEnv {
   const env: ModelEnv = {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
@@ -87,24 +105,16 @@ function readModelEnv(): ModelEnv {
   return env;
 }
 
-// A blank model-fast skips the screening pass, and a blank model-pro uses the default for the first key set.
-function resolveModels(env: ModelEnv): Config['models'] {
-  const pro = resolveModel('model-pro', core.getInput('model-pro'), env, DEFAULT_MODELS);
-  const fastInput = parseOptionalInput('model-fast');
-  const fast: Endpoint | null = fastInput ? resolveModel('model-fast', fastInput, env, DEFAULT_MODELS) : null;
-  return { fast, pro };
-}
-
-export function describeModels(models: Config['models']): string[] {
-  const passes = [['fast', models.fast], ['pro', models.pro]] as const;
-  return passes.flatMap(([pass, endpoint]) => endpoint ? [`Model (${pass}): ${describeEndpoint(endpoint)}, ${describeReasoning(endpoint.host)}.`] : []);
+// The startup log line, which names the host because it decides where the key and the issue text go.
+export function describeModel(endpoint: Endpoint): string {
+  return `Model: ${describeEndpoint(endpoint)}, ${describeReasoning(endpoint.host)}.`;
 }
 
 function applyMultiplier(base: number, multiplier: number): number {
   return Math.max(0, Math.floor(base * multiplier));
 }
 
-function scaleLimits(base: PromptPassLimits, multiplier: number): PromptPassLimits {
+function scaleLimits(base: PromptLimits, multiplier: number): PromptLimits {
   return {
     readmeChars: applyMultiplier(base.readmeChars, multiplier),
     issueBodyChars: applyMultiplier(base.issueBodyChars, multiplier),
@@ -132,27 +142,24 @@ function resolveWorkflowRepository(): { owner: string; repo: string } {
 
 /**
  * Resolve runtime config.
- * Throws early with actionable messages if GITHUB_TOKEN is missing, no model API key is set, repo context is absent, or a boolean or issues input has an invalid value.
+ * Throws early with actionable messages if a removed input is passed, GITHUB_TOKEN is missing, no model API key is set or the model input is ambiguous, repo context is absent, or a boolean or issues input has an invalid value.
  */
 export function getConfig(): Config {
+  checkRemovedInputs();
   const { owner, repo } = resolveWorkflowRepository();
   const token = process.env.GITHUB_TOKEN || '';
 
   if (!token) throw new Error('GITHUB_TOKEN missing (add: secrets.GITHUB_TOKEN).');
-  const models = resolveModels(readModelEnv());
+  // A blank model uses the default for the only key set.
+  const model = resolveModel('model', core.getInput('model'), readModelEnv(), DEFAULT_MODELS);
 
   const dryRun = parseBooleanInput('dry-run');
   const promptPath = parseInputOrDefault('prompt-path', DEFAULT_PROMPT_PATH);
   const readmePath = DEFAULT_README_PATH;
   const dbPath = parseOptionalInput('db-path');
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
-  // The fast pass reads a trimmed slice of the same context the pro pass gets; budget-scale moves both together.
-  const limits = {
-    fast: scaleLimits({ readmeChars: 0, issueBodyChars: 4000, timelineEvents: 12, timelineTextChars: 600 }, multiplier),
-    pro: scaleLimits({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 }, multiplier),
-  };
+  const limits = scaleLimits({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 }, multiplier);
   const maxProRuns = parsePositiveIntegerInput('max-pro-runs', DEFAULT_MAX_PRO_RUNS);
-  const maxFastRuns = parsePositiveIntegerInput('max-fast-runs', DEFAULT_MAX_FAST_RUNS);
   const issueNumbers = parseIssueNumbersInput('issues');
   const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = parseOptionalInput('additional-instructions');
@@ -163,19 +170,14 @@ export function getConfig(): Config {
     repo,
     token,
     dryRun,
-    skipFastPass: models.fast === null,
-
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
     promptPath,
     readmePath,
     ...(dbPath ? { dbPath } : {}),
-    modelFast: models.fast?.model ?? '',
-    modelPro: models.pro.model,
-    models,
+    model,
     limits,
     maxProRuns,
-    maxFastRuns,
     ...(additionalInstructions ? { additionalInstructions } : {}),
     extended,
   };

@@ -40,8 +40,7 @@ function unfinished(items: ItemRecord[]): ItemRecord[] {
 }
 
 function describeOutcome(item: ItemRecord): string {
-  if (item.outcome === 'deferred') return 'Deferred';
-  return item.failedPass ? `Failed (${item.failedPass === 'fast' ? 'fast' : 'review'} pass)` : 'Failed';
+  return item.outcome === 'deferred' ? 'Deferred' : 'Failed';
 }
 
 function reasonFor(item: ItemRecord): string {
@@ -70,7 +69,7 @@ export function annotateItems(items: ItemRecord[], runWarnings: number): void {
  * Everything taken from the repository or a provider, such as titles and error text, is escaped.
  */
 export async function writeJobSummary(
-  cfg: Pick<Config, 'owner' | 'repo' | 'dryRun' | 'models'>,
+  cfg: Pick<Config, 'owner' | 'repo' | 'dryRun' | 'model'>,
   stats: RunStatistics,
   report: RunReport
 ): Promise<void> {
@@ -90,13 +89,10 @@ export async function writeJobSummary(
 
   summary.addList([
     `Mode: ${cfg.dryRun ? 'dry run, so nothing was changed' : 'live'}`,
-    `Fast pass: ${cfg.models.fast ? code(describeEndpoint(cfg.models.fast)) : 'skipped'}`,
-    `Review pass: ${code(describeEndpoint(cfg.models.pro))}`,
+    `Model: ${code(describeEndpoint(cfg.model))}`,
     `Policy: ${report.policy ? code(report.policy) : 'the built-in label-only policy, because no policy file was found'}`,
     ...(report.workflowRun ? [`Workflow run: ${escapeHtml(report.workflowRun)}`] : []),
-    ...(run.promptHash
-      ? [`Prompt hashes: ${run.promptHash.fast ? `fast ${code(run.promptHash.fast)}, ` : ''}review ${code(run.promptHash.pro)}`]
-      : []),
+    ...(run.promptHash ? [`Prompt hash: ${code(run.promptHash)}`] : []),
   ]);
   for (const message of report.failures) paragraph(`❌ ${escapeHtml(message)}`);
   for (const message of report.warnings) paragraph(`⚠️ ${escapeHtml(message)}`);
@@ -127,15 +123,15 @@ export async function writeJobSummary(
     }
   }
 
-  const { discovered, processed, triaged, skipped, deferred, failed, escalatedToPro } = run.funnel;
+  const { discovered, processed, triaged, deferred, failed } = run.funnel;
   summary.addHeading('Counts', 3);
-  paragraph(`Discovered ${discovered} and processed ${processed}: ${triaged} triaged, ${skipped} skipped by the fast pass, ${deferred} deferred and ${failed} failed. ${escalatedToPro} reached the review pass.`);
-  const passes = ([['Fast', run.fast], ['Review', run.pro]] as const).filter(([, usage]) => usage.runs > 0);
-  if (passes.length > 0) {
+  paragraph(`Discovered ${discovered} and processed ${processed}: ${triaged} triaged, ${deferred} deferred and ${failed} failed.`);
+  const { usage } = run;
+  if (usage.calls > 0) {
     const count = (n: number) => n.toLocaleString('en-US');
     summary.addTable([
-      header('Pass', 'Model calls', 'Input tokens', 'Cached input', 'Output tokens', 'Reasoning tokens'),
-      ...passes.map(([pass, usage]) => [pass, count(usage.runs), count(usage.inputTokens), count(usage.cachedInputTokens), count(usage.outputTokens), count(usage.reasoningTokens)]),
+      header('Model calls', 'Input tokens', 'Cached input', 'Output tokens', 'Reasoning tokens'),
+      [count(usage.calls), count(usage.inputTokens), count(usage.cachedInputTokens), count(usage.outputTokens), count(usage.reasoningTokens)],
     ]);
   }
 

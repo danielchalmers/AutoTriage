@@ -15,7 +15,7 @@ vi.mock('@actions/core', () => ({
 // @actions/github is deliberately not mocked: its context.repo reads GITHUB_REPOSITORY on each access (falling back to the event payload), so these tests exercise the real resolution and error behavior.
 
 import * as github from '@actions/github';
-import { describeModels, getConfig } from '../src/env';
+import { REMOVED_INPUTS, describeModel, getConfig } from '../src/env';
 
 function setInputs(values: Record<string, string>) {
   mocks.getInput.mockImplementation((name: string) => values[name] ?? '');
@@ -59,6 +59,26 @@ describe('getConfig required context', () => {
     expect(() => getConfig()).toThrow(/GITHUB_TOKEN missing/);
   });
 
+});
+
+describe('getConfig removed inputs', () => {
+  // GitHub exports every with: key as INPUT_<NAME> with its hyphens kept, even an undeclared one with a blank value.
+  it('fails on a removed input even when its value is blank, saying what to do instead', () => {
+    vi.stubEnv('INPUT_MODEL-PRO', '');
+
+    expect(() => getConfig()).toThrow('Remove or rename the inputs that AutoTriage no longer takes: model-pro (rename it to model).');
+  });
+
+  it('names every removed input it finds, before checking anything else', () => {
+    vi.stubEnv('GITHUB_TOKEN', '');
+    vi.stubEnv('INPUT_STRICT-MODE', 'true');
+    vi.stubEnv('INPUT_MODEL-FAST', 'gemini-3.5-flash-lite');
+    vi.stubEnv('INPUT_MAX-FAST-RUNS', '30');
+
+    expect(() => getConfig()).toThrow(
+      'Remove or rename the inputs that AutoTriage no longer takes: model-fast (delete it; v5 reviews every item with model), max-fast-runs (delete it), strict-mode (delete it; runs fail only for configuration errors and bugs).'
+    );
+  });
 });
 
 describe('getConfig repository context', () => {
@@ -192,125 +212,85 @@ describe('getConfig integer and list inputs', () => {
     expect(() => getConfig()).toThrow("but got '9007199254740993'.");
   });
 
-  it('falls back to defaults for invalid positive integer inputs', () => {
-    setInputs({
-      'max-pro-runs': '0',
-      'max-fast-runs': '1.5',
-    });
+  it.each(['0', '1.5'])('falls back to the default for max-pro-runs %j', (value) => {
+    setInputs({ 'max-pro-runs': value });
 
-    const cfg = getConfig();
-
-    expect(cfg.maxProRuns).toBe(20);
-    expect(cfg.maxFastRuns).toBe(100);
+    expect(getConfig().maxProRuns).toBe(20);
   });
 
-  it('uses provided positive integer run limits', () => {
-    setInputs({
-      'max-pro-runs': '7',
-      'max-fast-runs': '11',
-    });
+  it('uses a provided positive max-pro-runs', () => {
+    setInputs({ 'max-pro-runs': '7' });
 
-    const cfg = getConfig();
-
-    expect(cfg.maxProRuns).toBe(7);
-    expect(cfg.maxFastRuns).toBe(11);
+    expect(getConfig().maxProRuns).toBe(7);
   });
 });
 
-describe('getConfig model inputs', () => {
-  it('treats blank model-fast input as skip-fast-pass', () => {
-    setInputs({ 'model-fast': '   ' });
-
-    const cfg = getConfig();
-
-    expect(cfg.skipFastPass).toBe(true);
-    expect(cfg.modelFast).toBe('');
-  });
-
-  it('trims a provided model-fast input', () => {
-    setInputs({ 'model-fast': ' fast-model ' });
-
-    const cfg = getConfig();
-
-    expect(cfg.skipFastPass).toBe(false);
-    expect(cfg.modelFast).toBe('fast-model');
-  });
-
-  it('defaults the pro model to flash-lite', () => {
-    const cfg = getConfig();
-
-    expect(cfg.modelPro).toBe('gemini-3.5-flash-lite');
-    expect(cfg.models).toEqual({
-      fast: null,
-      pro: expect.objectContaining({ provider: 'gemini', model: 'gemini-3.5-flash-lite', apiKey: 'gemini-key', isDefault: true }),
-    });
+describe('getConfig model input', () => {
+  it('defaults to flash-lite for a Gemini key', () => {
+    expect(getConfig().model).toEqual(
+      expect.objectContaining({ provider: 'gemini', model: 'gemini-3.5-flash-lite', apiKey: 'gemini-key', isDefault: true })
+    );
   });
 
   it.each([
     ['ANTHROPIC_API_KEY', 'anthropic', 'claude-haiku-5-5'],
     ['OPENAI_API_KEY', 'openai', 'gpt-6-luna'],
-  ])('defaults the pro model to the default for %s when it is the only key', (key, provider, model) => {
+  ])('defaults to the default for %s when it is the only key', (key, provider, model) => {
     vi.stubEnv('GEMINI_API_KEY', '');
     vi.stubEnv(key, 'other-key');
 
-    const cfg = getConfig();
-
-    expect(cfg.modelPro).toBe(model);
-    expect(cfg.models.pro).toMatchObject({ provider, model, apiKey: 'other-key' });
+    expect(getConfig().model).toMatchObject({ provider, model, apiKey: 'other-key', isDefault: true });
   });
 
-  it('resolves each pass on its own', () => {
+  it('trims a provided model and routes it by name', () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key');
-    setInputs({ 'model-fast': ' claude-haiku-5-5 ', 'model-pro': 'gemini-3.8-flash' });
+    setInputs({ model: ' claude-sonnet-5-5 ' });
 
-    const cfg = getConfig();
-
-    expect(cfg).toMatchObject({ skipFastPass: false, modelFast: 'claude-haiku-5-5', modelPro: 'gemini-3.8-flash' });
-    expect(cfg.models.fast).toMatchObject({ provider: 'anthropic', apiKey: 'anthropic-key' });
-    expect(cfg.models.pro).toMatchObject({ provider: 'gemini', apiKey: 'gemini-key' });
+    expect(getConfig().model).toMatchObject({ provider: 'anthropic', model: 'claude-sonnet-5-5', apiKey: 'anthropic-key', isDefault: false });
   });
 
+  it('fails when the model is blank and several keys are set, instead of letting one win', () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key');
+
+    expect(() => getConfig()).toThrow('Several API keys are set (GEMINI_API_KEY, ANTHROPIC_API_KEY). Set model, or map only one key.');
+  });
 
   it('masks every model API key that is set', () => {
     vi.stubEnv('OPENAI_API_KEY', ' openai-key ');
+    setInputs({ model: 'gemini-3.8-flash' });
 
     getConfig();
 
     expect(mocks.setSecret.mock.calls).toEqual([['gemini-key'], ['openai-key']]);
   });
 
-  it('describes the model and host for each pass', () => {
-    vi.stubEnv('OPENAI_BASE_URL', 'http://localhost:11434/v1');
-    setInputs({ 'model-fast': 'llama3:8b' });
+  it('describes the model, the host and the reasoning setting', () => {
+    expect(describeModel(getConfig().model)).toBe(
+      'Model: gemini-3.5-flash-lite at generativelanguage.googleapis.com (default for GEMINI_API_KEY), reasoning: high.'
+    );
 
-    expect(describeModels(getConfig().models)).toEqual([
-      'Model (fast): llama3:8b at localhost:11434, reasoning: high if localhost:11434 honors reasoning_effort.',
-      'Model (pro): gemini-3.5-flash-lite at generativelanguage.googleapis.com (default for GEMINI_API_KEY), reasoning: high.',
-    ]);
+    vi.stubEnv('OPENAI_BASE_URL', 'http://localhost:11434/v1');
+    setInputs({ model: 'llama3:8b' });
+    expect(describeModel(getConfig().model)).toBe('Model: llama3:8b at localhost:11434, reasoning: high if localhost:11434 honors reasoning_effort.');
   });
 
   it('scales every limit by budget-scale and allows 0 to disable context', () => {
     setInputs({ 'budget-scale': '0' });
 
-    expect(getConfig().limits).toEqual({
-      fast: { readmeChars: 0, issueBodyChars: 0, timelineEvents: 0, timelineTextChars: 0 },
-      pro: { readmeChars: 0, issueBodyChars: 0, timelineEvents: 0, timelineTextChars: 0 },
-    });
+    expect(getConfig().limits).toEqual({ readmeChars: 0, issueBodyChars: 0, timelineEvents: 0, timelineTextChars: 0 });
   });
 
   it('uses a valid budget scale and falls back for invalid values', () => {
+    expect(getConfig().limits).toEqual({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 });
+
     setInputs({ 'budget-scale': '1.5' });
-    const scaled = getConfig();
-    expect(scaled.limits.fast.timelineEvents).toBe(18);
-    expect(scaled.limits.pro.timelineEvents).toBe(60);
+    expect(getConfig().limits.timelineEvents).toBe(60);
 
     setInputs({ 'budget-scale': '-2' });
-    const fallback = getConfig();
-    expect(fallback.limits.fast.timelineEvents).toBe(12);
-    expect(fallback.limits.pro.timelineEvents).toBe(40);
+    expect(getConfig().limits.timelineEvents).toBe(40);
 
     setInputs({ 'budget-scale': 'lots' });
-    expect(getConfig().limits.pro.timelineEvents).toBe(40);
+    expect(getConfig().limits.timelineEvents).toBe(40);
   });
 
   it('always uses README.md for README context', () => {
@@ -358,6 +338,10 @@ describe('action.yml input contract', () => {
     setInputs(defaults);
 
     expect(getConfig()).toEqual(fromBlank);
+  });
+
+  it('declares none of the removed inputs', () => {
+    expect(Object.keys(REMOVED_INPUTS).filter((name) => actionInputs.has(name))).toEqual([]);
   });
 
   it('documents exactly the declared inputs in the README input table', () => {

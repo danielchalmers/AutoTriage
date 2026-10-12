@@ -27,20 +27,12 @@ inputs:
   issues:
     description: "Issue or PR numbers separated by spaces or commas, such as \"12, #34\"."
     required: false
-  max-fast-runs:
-    description: "Maximum fast-model analyses per run."
-    required: false
-    default: "100"
   max-pro-runs:
-    description: "Maximum review-model analyses per run."
+    description: "Maximum model analyses per run."
     required: false
     default: "20"
-  model-fast:
-    description: "Fast-pass model. Leave blank to skip."
-    required: false
-    default: ""
-  model-pro:
-    description: "Review model. Blank uses the default for the API key you set (gemini-3.5-flash-lite for GEMINI_API_KEY)."
+  model:
+    description: "Model to use. Blank uses the default for the API key you map."
     required: false
     default: ""
   prompt-path:

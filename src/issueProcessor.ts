@@ -1,24 +1,22 @@
 import * as core from '@actions/core';
 import chalk from 'chalk';
-import { AnalysisResult, FastPassPlan, RepoLabel, parseAnalysisResult } from './analysis';
+import { AnalysisResult, RepoLabel, parseAnalysisResult } from './analysis';
 import { buildUserPrompt } from './prompts';
 import { errorMessage, type ChatClient, type JsonRequest } from './llm/chat';
 import { GitHubClient, Issue, TimelineEvent } from './github';
-import { ItemRecord, RunStatistics, comparePlans, describeModelRun, summarizePlan } from './stats';
+import { ItemRecord, RunStatistics, describeModelRun, summarizePlan } from './stats';
 import { PlannedOperation, describeOperation, executeOperations, explainPlan, planOperations } from './triage';
-import type { Config, PromptPassMode } from './config';
+import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
 import { parseTimestamp } from './util';
 
 export type ModelClient = Pick<ChatClient, 'generateJson'>;
-// When the fast pass is skipped, its entry is the pro client and is never called.
-export type ModelClients = Record<PromptPassMode, ModelClient>;
 
 export interface IssueProcessorDeps {
   cfg: Config;
   db: TriageDb;
   gh: GitHubClient;
-  models: ModelClients;
+  model: ModelClient;
   stats: RunStatistics;
 }
 
@@ -28,8 +26,7 @@ export interface ProcessIssueOptions {
   // The response schema, which the runner builds once from the repository's labels.
   schema: JsonRequest['schema'];
   autoDiscover: boolean;
-  systemPromptFast: string;
-  systemPromptPro: string;
+  systemPrompt: string;
   runTimestamp: string;
   // True when the runner analyzes the item again because it changed during its first analysis.
   reanalysis?: boolean;
@@ -42,22 +39,16 @@ export interface GenerateAnalysisOptions {
   userPrompt: string;
   repoLabels: RepoLabel[];
   schema: JsonRequest['schema'];
-  isFastModel?: boolean;
 }
 
 interface IssueContext {
-  timelineEvents: Record<PromptPassMode, TimelineEvent[]>;
+  timelineEvents: TimelineEvent[];
   runContext: string;
 }
 
-interface PassResult {
+interface Analysis {
   analysis: AnalysisResult;
   operations: PlannedOperation[];
-}
-
-interface FastPassResult {
-  plan?: PassResult;
-  shouldSkipPro: boolean;
 }
 
 interface Deferral {
@@ -66,81 +57,38 @@ interface Deferral {
   detail: string;
 }
 
-// A pass that fails rethrows its error as a PassError, so the runner can record which pass failed.
-export class PassError extends Error {
-  constructor(readonly pass: PromptPassMode, readonly cause: unknown) {
-    super(errorMessage(cause));
-    this.name = 'PassError';
-  }
-}
-
-async function inPass<T>(pass: PromptPassMode, work: () => Promise<T>): Promise<T> {
-  try {
-    return await work();
-  } catch (err) {
-    throw new PassError(pass, err);
-  }
-}
-
 // Triages one item and returns its record for the run summary.
 export async function processIssue(
   deps: IssueProcessorDeps,
   options: ProcessIssueOptions
 ): Promise<ItemRecord> {
-  const { cfg, db, gh, models, stats } = deps;
-  const { issue, repoLabels, schema, autoDiscover, systemPromptFast, systemPromptPro, runTimestamp, reanalysis = false } = options;
+  const { cfg, db, gh, model, stats } = deps;
+  const { issue, repoLabels, schema, autoDiscover, systemPrompt, runTimestamp, reanalysis = false } = options;
 
   return core.group(`🤖 #${issue.number} ${issue.title}${reanalysis ? ' (re-analysis)' : ''}`, async (): Promise<ItemRecord> => {
     const context = await loadIssueContext(
       { cfg, db, gh },
       { issue, autoDiscover }
     );
-    const fastPass = await inPass('fast', () => runFastPass(
-      { cfg, models, stats },
-      { issue, repoLabels, schema, systemPromptFast, runTimestamp, context }
-    ));
-    const fastPlan = fastPass.plan && summarizePlan(fastPass.plan.operations);
-    const item = { issueNumber: issue.number, type: issue.type, title: issue.title, ...(reanalysis ? { reanalyzed: true } : {}), fastPlan };
-
-    if (fastPass.shouldSkipPro) {
-      console.log(chalk.yellow('Quick pass suggested no operations; skipping full analysis.'));
-      updateDbEntry(db, issue.number, fastPass.plan?.analysis.summary || issue.title, {
-        lastSeenUpdatedAt: getConsumedUpdatedAt(issue),
-      });
-      return { ...item, outcome: 'skipped', escalatedToPro: false, agreement: fastPlan && 'fast-noop' };
-    }
-
-    const proPass = await inPass('pro', () => runPass(
-      { cfg, models, stats },
-      {
-        mode: 'pro',
-        issue,
-        repoLabels,
-        schema,
-        systemPrompt: systemPromptPro,
-        runTimestamp,
-        context,
-        ...(fastPass.plan ? { fastPassPlan: fastPass.plan } : {}),
-      }
-    ));
-
-    // Applying the plan is part of the review pass, so a failed GitHub write is attributed to it.
-    const deferral = await inPass('pro', () => executePlannedOperations(
+    const { analysis, operations } = await analyze(
+      { cfg, model, stats },
+      { issue, repoLabels, schema, systemPrompt, runTimestamp, context }
+    );
+    const deferral = await executePlannedOperations(
       { cfg, gh, stats },
-      { issue, operations: proPass.operations, reanalysis }
-    ));
+      { issue, operations, reanalysis }
+    );
 
-    const proPlan = summarizePlan(proPass.operations);
-    const reviewed = { ...item, escalatedToPro: true, proPlan, agreement: fastPlan && comparePlans(fastPlan, proPlan) };
+    const item = { issueNumber: issue.number, type: issue.type, title: issue.title, ...(reanalysis ? { reanalyzed: true } : {}), plan: summarizePlan(operations) };
     if (deferral) {
-      return { ...reviewed, outcome: 'deferred', detail: deferral.detail, ...(deferral.changed ? { changedDuringAnalysis: true } : {}) };
+      return { ...item, outcome: 'deferred', detail: deferral.detail, ...(deferral.changed ? { changedDuringAnalysis: true } : {}) };
     }
 
-    const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, proPass.operations);
-    updateDbEntry(db, issue.number, proPass.analysis.summary || issue.title, {
+    const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, operations);
+    updateDbEntry(db, issue.number, analysis.summary || issue.title, {
       lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
     });
-    return { ...reviewed, outcome: 'triaged' };
+    return { ...item, outcome: 'triaged' };
   });
 }
 
@@ -177,10 +125,9 @@ async function loadIssueContext(
   const { cfg, db, gh } = deps;
   const { issue, autoDiscover } = options;
   const dbEntry = getDbEntry(db, issue.number);
-  const timelineFetchLimit = Math.max(cfg.limits.fast.timelineEvents, cfg.limits.pro.timelineEvents);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
     issue.number,
-    timelineFetchLimit,
+    cfg.limits.timelineEvents,
     issue.type === 'pull request'
   );
   const runContext = buildRunContext(issue, rawTimelineEvents, dbEntry.lastTriaged, autoDiscover);
@@ -188,68 +135,42 @@ async function loadIssueContext(
   saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
   return {
-    timelineEvents: {
-      fast: timelineEvents.slice(-cfg.limits.fast.timelineEvents),
-      pro: timelineEvents.slice(-cfg.limits.pro.timelineEvents),
-    },
+    timelineEvents: timelineEvents.slice(-cfg.limits.timelineEvents),
     runContext,
   };
 }
 
-// The two passes differ only in which model, prompt, limits, and artifact name they use, so they share one body.
-async function runPass(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'models' | 'stats'>,
-  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'schema' | 'runTimestamp'> & {
-    mode: PromptPassMode;
-    systemPrompt: string;
+async function analyze(
+  deps: Pick<IssueProcessorDeps, 'cfg' | 'model' | 'stats'>,
+  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'schema' | 'systemPrompt' | 'runTimestamp'> & {
     context: IssueContext;
-    fastPassPlan?: FastPassPlan;
   }
-): Promise<PassResult> {
-  const { cfg, models, stats } = deps;
-  const { mode, issue, repoLabels, schema, systemPrompt, runTimestamp, context, fastPassPlan } = options;
-  const isFast = mode === 'fast';
+): Promise<Analysis> {
+  const { cfg, model, stats } = deps;
+  const { issue, repoLabels, schema, systemPrompt, runTimestamp, context } = options;
 
   const userPrompt = buildUserPrompt(
     issue,
-    context.timelineEvents[mode],
-    mode,
-    cfg.limits[mode],
+    context.timelineEvents,
+    cfg.limits,
     context.runContext,
-    fastPassPlan,
     runTimestamp
   );
-  saveArtifact(issue.number, isFast ? 'prompt-fast-user.md' : 'prompt-user.md', userPrompt);
+  saveArtifact(issue.number, 'prompt-user.md', userPrompt);
 
   const { data: analysis, ops: operations } = await generateAnalysis(
-    { model: models[mode], stats },
+    { model, stats },
     {
       issue,
-      model: isFast ? cfg.modelFast : cfg.modelPro,
+      model: cfg.model.model,
       systemPrompt,
       userPrompt,
       repoLabels,
       schema,
-      isFastModel: isFast,
     }
   );
 
   return { analysis, operations };
-}
-
-async function runFastPass(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'models' | 'stats'>,
-  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'schema' | 'systemPromptFast' | 'runTimestamp'> & {
-    context: IssueContext;
-  }
-): Promise<FastPassResult> {
-  if (deps.cfg.skipFastPass) {
-    console.log(chalk.blue('Fast pass skipped; using pro model directly.'));
-    return { shouldSkipPro: false };
-  }
-
-  const plan = await runPass(deps, { ...options, mode: 'fast', systemPrompt: options.systemPromptFast });
-  return { plan, shouldSkipPro: plan.operations.length === 0 };
 }
 
 // Applies the plan, or returns why it was deferred instead.
@@ -265,7 +186,7 @@ async function executePlannedOperations(
   const { issue, operations, reanalysis } = options;
 
   if (operations.length === 0) {
-    console.log(chalk.yellow('Pro model suggested no operations; skipping further processing.'));
+    console.log(chalk.yellow('The model planned no operations.'));
     return undefined;
   }
 
@@ -344,7 +265,7 @@ export async function generateAnalysis(
   options: GenerateAnalysisOptions
 ): Promise<{ data: AnalysisResult; ops: PlannedOperation[] }> {
   const { stats } = deps;
-  const { issue, model, systemPrompt, userPrompt, repoLabels, schema, isFastModel = false } = options;
+  const { issue, model, systemPrompt, userPrompt, repoLabels, schema } = options;
   const request: JsonRequest = { model, systemPrompt, userPrompt, schema };
 
   // It says "asking" rather than "thinking", because some providers report no reasoning.
@@ -353,16 +274,12 @@ export async function generateAnalysis(
   const { data, ...usage } = await deps.model.generateJson(request, parseAnalysisResult);
   const modelRunStats = { startTime, endTime: Date.now(), ...usage, issueNumber: issue.number };
   console.log(chalk.blue(describeModelRun(modelRunStats)));
-  if (isFastModel) {
-    stats.trackFastRun(modelRunStats);
-  } else {
-    stats.trackProRun(modelRunStats);
-  }
+  stats.trackModelRun(modelRunStats);
 
   // The plan's summary and the policy clause each operation cites say why, in the log and the hidden comment block.
   const explanation = explainPlan(data);
   console.log(chalk.magenta(explanation));
-  saveArtifact(issue.number, `${isFastModel ? 'fast' : 'pro'}-analysis.json`, JSON.stringify(data, null, 2));
+  saveArtifact(issue.number, 'analysis.json', JSON.stringify(data, null, 2));
 
   const ops = planOperations(issue, data, repoLabels.map((label) => label.name), explanation);
   return { data, ops };

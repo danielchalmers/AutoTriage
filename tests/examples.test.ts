@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
+import { REMOVED_INPUTS } from '../src/env';
 
 const root = path.join(__dirname, '..');
 const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
@@ -39,6 +40,9 @@ const triageWorkflows: Array<[string, string]> = [
   ...workflowFiles.map((file): [string, string] => [file, read(file)]),
 ];
 
+// Lists the YAML keys named like a removed input, because GitHub passes every with: key to the action and a removed one fails the run as a configuration error.
+const removedInputsIn = (workflow: string) => Object.keys(REMOVED_INPUTS).filter(name => new RegExp(`^ +${name}:`, 'm').test(workflow));
+
 describe.each(triageWorkflows)('%s', (_name, workflow) => {
   it('grants the permissions the action writes with', () => {
     expect(workflow).toMatch(/^permissions:\n {2}contents: read\n {2}issues: write\n {2}pull-requests: write\n/m);
@@ -61,6 +65,10 @@ describe.each(triageWorkflows)('%s', (_name, workflow) => {
     }
   });
 
+  it('passes no input that AutoTriage removed', () => {
+    expect(removedInputsIn(workflow)).toEqual([]);
+  });
+
   it('leaves prompt-path and the triggering item at their defaults', () => {
     expect(workflow).not.toContain('prompt-path');
     expect(workflow).not.toMatch(/issues: \$\{\{ github\.event\.(issue|pull_request)\./);
@@ -76,4 +84,8 @@ it('runs the unit tests in CI for pull requests to any branch, and cancels only 
   expect(ci).toMatch(/^ {2}pull_request:\n {4}branches: \["\*\*"\]\n/m);
   expect(ci).toMatch(/^ {8}run: npm run verify$/m);
   expect(ci).toContain('group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}');
+});
+
+it('passes no input that AutoTriage removed to the CI mock triage', () => {
+  expect(removedInputsIn(read('.github/workflows/ci.yml'))).toEqual([]);
 });

@@ -18,20 +18,16 @@ export interface ActionDetail {
   details: string;
 }
 
-// `skipped` means the fast pass planned nothing.
-// `deferred` means the review's plan was held back because the item changed during analysis or couldn't be rechecked.
-export type ItemOutcome = 'triaged' | 'skipped' | 'deferred' | 'failed';
+// `deferred` means the plan was held back because the item changed during analysis or couldn't be rechecked.
+export type ItemOutcome = 'triaged' | 'deferred' | 'failed';
 // Why a failed item failed: the model failure kind, or `other` for an error outside the model call.
 export type FailureReason = FailureKind | 'other';
 
-// Compact, comparable form of what a pass planned: sorted unique operation kinds plus signed label changes (`+bug`, `-stale`).
+// Compact, comparable form of what the model planned: sorted unique operation kinds plus signed label changes (`+bug`, `-stale`).
 export interface PlanSummary {
   kinds: string[];
   labels: string[];
 }
-
-// How the fast pass's plan relates to the pro pass's plan for one item.
-export type PlanAgreement = 'fast-noop' | 'identical' | 'pro-vetoed' | 'differed';
 
 // What happened to one processed item. The run summary's item counts are all derived from these records.
 export interface ItemRecord {
@@ -39,16 +35,12 @@ export interface ItemRecord {
   type?: string | undefined;
   title?: string | undefined;
   outcome: ItemOutcome;
-  // True when the review pass ran, with or without a fast pass first.
-  escalatedToPro: boolean;
   // True when the item changed during its first analysis and was analyzed again, so the record describes the second analysis.
   reanalyzed?: boolean | undefined;
-  // True when the review's plan was deferred because the item changed during analysis, rather than because it couldn't be rechecked.
+  // True when the plan was deferred because the item changed during analysis, rather than because it couldn't be rechecked.
   changedDuringAnalysis?: boolean | undefined;
-  fastPlan?: PlanSummary | undefined;
-  proPlan?: PlanSummary | undefined;
-  agreement?: PlanAgreement | undefined;
-  failedPass?: 'fast' | 'pro' | undefined;
+  // What the model planned. A failed item has none.
+  plan?: PlanSummary | undefined;
   failureReason?: FailureReason | undefined;
   // One line on why a failed or deferred item didn't finish, for the job summary and the item's warning.
   detail?: string | undefined;
@@ -57,14 +49,7 @@ export interface ItemRecord {
 export interface RunConfigSnapshot {
   dryRun: boolean;
   extended: boolean;
-  skipFastPass: boolean;
-  maxFastRuns: number;
   maxProRuns: number;
-}
-
-export interface PromptHashes {
-  fast: string | null;
-  pro: string;
 }
 
 function countKey(counts: Record<string, number>, key: string): void {
@@ -126,51 +111,31 @@ export function summarizePlan(operations: Array<{ kind: string; labels?: string[
   };
 }
 
-// Compare an escalated fast plan against the pro plan that reviewed it.
-export function comparePlans(fastPlan: PlanSummary, proPlan: PlanSummary): PlanAgreement {
-  if (proPlan.kinds.length === 0) return 'pro-vetoed';
-  const same = (a: string[], b: string[]) => a.join('\n') === b.join('\n');
-  return same(fastPlan.kinds, proPlan.kinds) && same(fastPlan.labels, proPlan.labels)
-    ? 'identical'
-    : 'differed';
-}
-
-export type CapReached = 'fast' | 'pro' | 'none';
-
 export class RunStatistics {
-  private fastRuns: ModelRunStats[] = [];
-  private proRuns: ModelRunStats[] = [];
+  private modelRuns: ModelRunStats[] = [];
   private actionsPerformed: ActionDetail[] = [];
   private githubApiCalls = 0;
   private owner = '';
   private repo = '';
-  private modelFast = '';
-  private modelPro = '';
+  private model = '';
   private discovered = 0;
-  private capReached: CapReached = 'none';
+  private capReached = false;
   private items = new Map<number, ItemRecord>();
   private runConfig: RunConfigSnapshot | null = null;
-  private promptHashes: PromptHashes | null = null;
+  private promptHash: string | null = null;
 
   setRepository(owner: string, repo: string): void {
     this.owner = owner;
     this.repo = repo;
   }
 
-  setModelNames(modelFast: string, modelPro: string): void {
-    this.modelFast = modelFast;
-    this.modelPro = modelPro;
+  setModel(model: string): void {
+    this.model = model;
   }
 
-
-  trackFastRun(stats: ModelRunStats): void {
-    this.fastRuns.push(stats);
+  trackModelRun(stats: ModelRunStats): void {
+    this.modelRuns.push(stats);
   }
-
-  trackProRun(stats: ModelRunStats): void {
-    this.proRuns.push(stats);
-  }
-
 
   trackAction(action: ActionDetail): void {
     this.actionsPerformed.push(action);
@@ -180,16 +145,16 @@ export class RunStatistics {
     this.discovered = count;
   }
 
-  setCapReached(cap: CapReached): void {
-    this.capReached = cap;
+  setCapReached(): void {
+    this.capReached = true;
   }
 
   setRunConfig(config: RunConfigSnapshot): void {
     this.runConfig = config;
   }
 
-  setPromptHashes(hashes: PromptHashes): void {
-    this.promptHashes = hashes;
+  setPromptHash(hash: string): void {
+    this.promptHash = hash;
   }
 
   recordItem(record: ItemRecord): void {
@@ -211,7 +176,7 @@ export class RunStatistics {
   }
 
   private countOutcomes(): Record<ItemOutcome, number> {
-    const counts: Record<ItemOutcome, number> = { triaged: 0, skipped: 0, deferred: 0, failed: 0 };
+    const counts: Record<ItemOutcome, number> = { triaged: 0, deferred: 0, failed: 0 };
     for (const item of this.items.values()) counts[item.outcome]++;
     return counts;
   }
@@ -237,12 +202,11 @@ export class RunStatistics {
     };
   }
 
-  private printModelSummary(label: string, model: string, runs: ModelRunStats[]): void {
-    if (runs.length === 0) return;
+  private printModelSummary(): void {
+    if (this.modelRuns.length === 0) return;
 
-    const stats = this.calculateStats(runs);
-    const modelLabel = model ? ` (${model})` : '';
-    console.log(chalk.cyan(`  ${label}${modelLabel}`));
+    const stats = this.calculateStats(this.modelRuns);
+    console.log(chalk.cyan(`  Model${this.model ? ` (${this.model})` : ''}`));
     console.log(
       `    Total: ${formatDuration(stats.total)} • ` +
       `Avg: ${formatDuration(stats.avg)} • ` +
@@ -263,13 +227,11 @@ export class RunStatistics {
       console.log(`  GitHub API: ${this.githubApiCalls} calls`);
     }
 
-    this.printModelSummary('Fast', this.modelFast, this.fastRuns);
-    this.printModelSummary('Pro', this.modelPro, this.proRuns);
+    this.printModelSummary();
 
-    const { triaged, skipped, deferred, failed } = this.countOutcomes();
+    const { triaged, deferred, failed } = this.countOutcomes();
     const actionParts: string[] = [];
     if (triaged > 0) actionParts.push(`✅ ${triaged} triaged`);
-    if (skipped > 0) actionParts.push(`ℹ️ ${skipped} skipped`);
     if (deferred > 0) actionParts.push(`⏸️ ${deferred} deferred`);
     if (failed > 0) actionParts.push(`❌ ${failed} failed`);
 
@@ -289,7 +251,7 @@ export class RunStatistics {
   private summarizeRuns(runs: ModelRunStats[]) {
     const stats = this.calculateStats(runs);
     return {
-      runs: runs.length,
+      calls: runs.length,
       totalMs: Math.round(stats.total),
       avgMs: Math.round(stats.avg),
       p95Ms: Math.round(stats.p95),
@@ -297,8 +259,8 @@ export class RunStatistics {
     };
   }
 
-  private perItemModel(runs: ModelRunStats[], issueNumber: number) {
-    const matching = runs.filter(r => r.issueNumber === issueNumber);
+  private perItemUsage(issueNumber: number) {
+    const matching = this.modelRuns.filter(r => r.issueNumber === issueNumber);
     if (matching.length === 0) return null;
     return {
       ms: matching.reduce((sum, r) => sum + (r.endTime - r.startTime), 0),
@@ -313,13 +275,6 @@ export class RunStatistics {
    */
   toJSON() {
     const records = this.getItems();
-    const planAgreement: Record<string, number> = {};
-    let escalatedToPro = 0;
-    for (const item of records) {
-      if (item.escalatedToPro) escalatedToPro++;
-      if (item.agreement) countKey(planAgreement, item.agreement);
-    }
-
     const actionsByIssue = groupByIssue(this.actionsPerformed, action => action.type);
     const actionsByKind: Record<string, number> = {};
     for (const action of this.actionsPerformed) {
@@ -331,27 +286,19 @@ export class RunStatistics {
       number: record.issueNumber,
       type: record.type,
       outcome: record.outcome,
-      escalatedToPro: record.escalatedToPro,
       reanalyzed: record.reanalyzed,
-      fastPlan: record.fastPlan,
-      proPlan: record.proPlan,
-      agreement: record.agreement,
-      failedPass: record.failedPass,
+      plan: record.plan,
       failureReason: record.failureReason,
-      fast: this.perItemModel(this.fastRuns, record.issueNumber),
-      pro: this.perItemModel(this.proRuns, record.issueNumber),
+      usage: this.perItemUsage(record.issueNumber),
       operations: actionsByIssue.get(record.issueNumber) ?? [],
     }));
 
     return {
       schemaVersion: 5,
       repo: this.owner && this.repo ? `${this.owner}/${this.repo}` : '',
-      models: {
-        fast: this.modelFast || null,
-        pro: this.modelPro || null,
-      },
+      model: this.model || null,
       config: this.runConfig,
-      promptHash: this.promptHashes,
+      promptHash: this.promptHash,
       github: {
         calls: this.githubApiCalls,
       },
@@ -359,12 +306,9 @@ export class RunStatistics {
         discovered: this.discovered,
         processed: records.length,
         ...this.countOutcomes(),
-        escalatedToPro,
         capReached: this.capReached,
-        planAgreement,
       },
-      fast: this.summarizeRuns(this.fastRuns),
-      pro: this.summarizeRuns(this.proRuns),
+      usage: this.summarizeRuns(this.modelRuns),
       actions: {
         total: this.actionsPerformed.length,
         byKind: actionsByKind,

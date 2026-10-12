@@ -34,20 +34,16 @@ import * as path from 'path';
 import { buildAnalysisResultSchema } from '../src/analysis';
 import type { Config } from '../src/config';
 import { ModelError } from '../src/llm/chat';
-import { PassError } from '../src/issueProcessor';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { ItemRecord, RunStatistics } from '../src/stats';
-import { bothPasses, githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, makePullRequest, makeSameRepoWorkflowRunEvent, withTempDir } from './fixtures';
+import { githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, makePullRequest, makeSameRepoWorkflowRunEvent, withTempDir } from './fixtures';
 
 const baseConfig = makeConfig();
 
-// The records processIssue returns, for an item whose fast pass ran.
-const fastPlan = { kinds: ['add_labels'], labels: ['+bug'] };
+// The records processIssue returns.
+const plan = { kinds: ['add_labels'], labels: ['+bug'] };
 function triaged(issueNumber: number, overrides: Partial<ItemRecord> = {}): ItemRecord {
-  return { issueNumber, type: 'issue', outcome: 'triaged', escalatedToPro: true, fastPlan, proPlan: fastPlan, agreement: 'identical', ...overrides };
-}
-function skipped(issueNumber: number): ItemRecord {
-  return { issueNumber, type: 'issue', outcome: 'skipped', escalatedToPro: false, fastPlan: { kinds: [], labels: [] }, agreement: 'fast-noop' };
+  return { issueNumber, type: 'issue', outcome: 'triaged', plan, ...overrides };
 }
 function deferred(issueNumber: number, overrides: Partial<ItemRecord> = {}): ItemRecord {
   return triaged(issueNumber, { outcome: 'deferred', ...overrides });
@@ -221,7 +217,7 @@ describe('runAutoTriage', () => {
   }
 
   function run(cfg: Config, options: { gh?: ReturnType<typeof createGitHub>; stats?: RunStatistics } = {}) {
-    return runAutoTriage({ cfg, db: makeDb(), gh: (options.gh ?? createGitHub()) as any, models: bothPasses(createModel()), stats: options.stats ?? createStats() });
+    return runAutoTriage({ cfg, db: makeDb(), gh: (options.gh ?? createGitHub()) as any, model: createModel(), stats: options.stats ?? createStats() });
   }
 
   function readJobSummary(): string {
@@ -235,8 +231,8 @@ describe('runAutoTriage', () => {
   const issueLink = (n: number) => `<a href="https://github.com/owner/repo/issues/${n}">#${n}</a>`;
 
   it('tells each item whether it came from backlog auto-discovery', async () => {
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
-    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, model: createModel(), stats: createStats() });
+    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5] }, db: makeDb(), gh: createGitHub() as any, model: createModel(), stats: createStats() });
 
     expect(processIssueMock.mock.calls.map(([, options]) => options.autoDiscover)).toEqual([true, false]);
   });
@@ -285,14 +281,14 @@ describe('runAutoTriage', () => {
   });
 
   it('logs an explicit target list once', async () => {
-    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5, 6] }, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
+    await runAutoTriage({ cfg: { ...baseConfig, issueNumbers: [5, 6] }, db: makeDb(), gh: createGitHub() as any, model: createModel(), stats: createStats() });
 
     const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
     expect(targetLines).toEqual(['▶️ Triaging 2 item(s): #5, #6']);
   });
 
   it('logs the size of an auto-discovered backlog instead of every number', async () => {
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, models: bothPasses(createModel()), stats: createStats() });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, model: createModel(), stats: createStats() });
 
     const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
     expect(targetLines).toEqual([`▶️ Discovered 1 item(s) from ${baseConfig.owner}/${baseConfig.repo} (extended: false)`]);
@@ -309,7 +305,7 @@ describe('runAutoTriage', () => {
         cfg: { ...baseConfig, dbPath, dryRun: false, issueNumbers: [5], maxProRuns: 1 },
         db: makeDb({ '5': { lastTriaged: '2024-04-01T00:00:00Z' } }),
         gh: gh as any,
-        models: bothPasses(model),
+        model,
         stats,
       });
 
@@ -322,29 +318,7 @@ describe('runAutoTriage', () => {
     });
   });
 
-  it('logs remaining backlog items when max fast runs is reached', async () => {
-    const gh = createGitHub();
-    gh.getIssue
-      .mockResolvedValueOnce(makeIssue(5, '2024-04-05T00:00:00Z'))
-      .mockResolvedValueOnce(makeIssue(6, '2024-04-06T00:00:00Z'));
-    const model = createModel();
-    const stats = createStats();
-
-    await runAutoTriage({
-      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxFastRuns: 1 },
-      db: makeDb(),
-      gh: gh as any,
-      models: bothPasses(model),
-      stats,
-    });
-
-    expect(logSpy).toHaveBeenCalledWith('⏳ Max fast runs (1) reached with 2 item(s) remaining');
-    expect(summaryOf(stats).funnel.capReached).toBe('fast');
-    expect(processIssueMock).toHaveBeenCalledOnce();
-    expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-fast-runs (1): ${issueLink(6)}, ${issueLink(7)}.`);
-  });
-
-  it('logs remaining backlog items when max pro runs is reached, and lists them in the job summary without failing the job', async () => {
+  it('logs remaining backlog items when max-pro-runs is reached, and lists them in the job summary without failing the job', async () => {
     const gh = createGitHub();
     const model = createModel();
     const stats = createStats();
@@ -353,37 +327,29 @@ describe('runAutoTriage', () => {
       cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 },
       db: makeDb(),
       gh: gh as any,
-      models: bothPasses(model),
+      model,
       stats,
     });
 
-    expect(logSpy).toHaveBeenCalledWith('⏳ Max pro runs (1) reached with 2 item(s) remaining');
-    expect(summaryOf(stats).funnel.capReached).toBe('pro');
+    expect(logSpy).toHaveBeenCalledWith('⏳ Reached max-pro-runs (1) with 2 item(s) remaining');
+    expect(summaryOf(stats).funnel.capReached).toBe(true);
     expect(processIssueMock).toHaveBeenCalledOnce();
     expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-pro-runs (1): ${issueLink(6)}, ${issueLink(7)}.`);
     expect(core.warning).not.toHaveBeenCalled();
     expect(core.setFailed).not.toHaveBeenCalled();
   });
 
-  it('does not spend the pro budget on items the fast pass skipped', async () => {
-    processIssueMock
-      .mockResolvedValueOnce(skipped(5))
-      .mockResolvedValueOnce(skipped(6));
+  it('does not spend max-pro-runs on an item that failed', async () => {
+    processIssueMock.mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 503: busy', 'capacity'));
     const stats = createStats();
 
-    await runAutoTriage({
-      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 },
-      db: makeDb(),
-      gh: createGitHub() as any,
-      models: bothPasses(createModel()),
-      stats,
-    });
+    await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 }, { stats });
 
-    expect(processIssueMock).toHaveBeenCalledTimes(3);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 3, triaged: 1, skipped: 2, escalatedToPro: 1 });
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 6]);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1, capReached: true });
   });
 
-  it('counts a deferred item apart from triaged ones while spending the pro budget on it', async () => {
+  it('counts a deferred item apart from triaged ones while spending max-pro-runs on it', async () => {
     processIssueMock.mockResolvedValueOnce(deferred(5));
     const stats = createStats();
 
@@ -391,12 +357,12 @@ describe('runAutoTriage', () => {
       cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 2 },
       db: makeDb(),
       gh: createGitHub() as any,
-      models: bothPasses(createModel()),
+      model: createModel(),
       stats,
     });
 
     expect(processIssueMock).toHaveBeenCalledTimes(2);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, deferred: 1, escalatedToPro: 2, capReached: 'pro' });
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, deferred: 1, capReached: true });
     expect(logSpy).toHaveBeenCalledWith('  Total: ✅ 1 triaged ⏸️ 1 deferred');
   });
 
@@ -448,31 +414,25 @@ describe('runAutoTriage', () => {
     expect(core.setFailed).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['fast', { maxFastRuns: 3 }],
-    ['pro', { maxProRuns: 3 }],
-  ] as const)('counts both analyses of a re-analyzed item against max-%s-runs', async (mode, caps) => {
+  it('counts both analyses of a re-analyzed item against max-pro-runs', async () => {
     processIssueMock.mockResolvedValueOnce(changed(5));
     const stats = createStats();
 
-    await run({ ...baseConfig, issueNumbers: [5, 6, 7], ...caps }, { stats });
+    await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 3 }, { stats });
 
     expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, capReached: mode });
-    expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-${mode}-runs (3): ${issueLink(7)}.`);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, capReached: true });
+    expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-pro-runs (3): ${issueLink(7)}.`);
   });
 
-  it.each([
-    ['fast', { maxFastRuns: 1 }],
-    ['pro', { maxProRuns: 1 }],
-  ] as const)('leaves a changed item deferred when max-%s-runs leaves no room to analyze it again', async (mode, caps) => {
+  it('leaves a changed item deferred when max-pro-runs leaves no room to analyze it again', async () => {
     processIssueMock.mockResolvedValueOnce(changed(5));
     const stats = createStats();
 
-    await run({ ...baseConfig, issueNumbers: [5, 6], ...caps }, { stats });
+    await run({ ...baseConfig, issueNumbers: [5, 6], maxProRuns: 1 }, { stats });
 
     expect(processIssueMock).toHaveBeenCalledOnce();
-    expect(logSpy).toHaveBeenCalledWith(`⏳ #5 isn't analyzed again, because the run reached max-${mode}-runs (1)`);
+    expect(logSpy).toHaveBeenCalledWith("⏳ #5 isn't analyzed again, because the run reached max-pro-runs (1)");
     expect(summaryOf(stats).items).toEqual([expect.objectContaining({ number: 5, outcome: 'deferred' })]);
     expect(warnings()).toEqual(["#5 deferred: It changed while it was being analyzed, so the plan wasn't applied."]);
   });
@@ -480,74 +440,56 @@ describe('runAutoTriage', () => {
   it('records a failed re-analysis as a failed item, after spending the budget of the first analysis', async () => {
     processIssueMock
       .mockResolvedValueOnce(changed(5))
-      .mockRejectedValueOnce(new PassError('fast', new ModelError('api.openai.com returned HTTP 503: busy', 'capacity')));
+      .mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 503: busy', 'capacity'));
     const stats = createStats();
 
     await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 2 }, { stats });
 
-    expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'failed', reanalyzed: true, failedPass: 'fast', failureReason: 'capacity' });
-    // The first analysis of #5 spent one review run, so #6 spends the last one.
+    expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'failed', reanalyzed: true, failureReason: 'capacity' });
+    // The first analysis of #5 spent one run, so #6 spends the last one.
     expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1, capReached: 'pro' });
-    expect(warnings()).toEqual(['#5 failed (fast pass): api.openai.com returned HTTP 503: busy']);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1, capReached: true });
+    expect(warnings()).toEqual(['#5 failed: api.openai.com returned HTTP 503: busy']);
     expect(core.setFailed).not.toHaveBeenCalled();
-  });
-
-  it('ignores the fast-run cap and writes no fast system prompt when the fast pass is disabled', async () => {
-    processIssueMock.mockImplementation(async (_deps, { issue }) => triaged(issue.number, { fastPlan: undefined, agreement: undefined }));
-    const gh = createGitHub();
-    gh.listOpenIssues.mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z'), makeIssue(6, '2024-04-06T00:00:00Z')]);
-
-    await runAutoTriage({
-      cfg: { ...baseConfig, skipFastPass: true, modelFast: '', maxFastRuns: 1 },
-      db: makeDb(),
-      gh: gh as any,
-      models: bothPasses(createModel()),
-      stats: createStats(),
-    });
-
-    expect(processIssueMock).toHaveBeenCalledTimes(2);
-    expect(processIssueMock.mock.calls[0]![1].systemPromptFast).toBe('');
-    expect(fs.readdirSync(path.join(artifactsRoot, 'artifacts')).sort()).toEqual(['prompt-system.md', 'run-summary.json']);
   });
 
   it('continues past a GitHub failure on one item and finishes without failing the job', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const stats = createStats();
-    processIssueMock.mockRejectedValueOnce(new PassError('pro', githubError(502, 'Bad Gateway')));
+    processIssueMock.mockRejectedValueOnce(githubError(502, 'Bad Gateway'));
 
     await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
 
     expect(processIssueMock).toHaveBeenCalledTimes(2);
     expect(summaryOf(stats).items).toEqual([
-      expect.objectContaining({ number: 5, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'other' }),
+      expect.objectContaining({ number: 5, outcome: 'failed', failureReason: 'other' }),
       expect.objectContaining({ number: 6, outcome: 'triaged' }),
     ]);
     expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1 });
     expect(warnSpy).toHaveBeenCalledWith('#5: GitHub returned HTTP 502: Bad Gateway');
-    expect(warnings()).toEqual(['#5 failed (review pass): GitHub returned HTTP 502: Bad Gateway']);
+    expect(warnings()).toEqual(['#5 failed: GitHub returned HTTP 502: Bad Gateway']);
     expect(core.setFailed).not.toHaveBeenCalled();
   });
 
   it('records the title of an item that failed after it was fetched', async () => {
     const gh = createGitHub();
     gh.getIssue.mockResolvedValueOnce(makeIssue(5, '2024-04-05T00:00:00Z', { title: 'Crash on save', type: 'pull request' }));
-    processIssueMock.mockRejectedValueOnce(new PassError('fast', new ModelError('api.openai.com returned HTTP 503: busy', 'capacity')));
+    processIssueMock.mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 503: busy', 'capacity'));
 
     await run({ ...baseConfig, issueNumbers: [5] }, { gh });
 
-    expect(readJobSummary()).toContain('<tr><td><a href="https://github.com/owner/repo/pull/5">#5</a></td><td>Failed (fast pass)</td><td>api.openai.com returned HTTP 503: busy</td></tr>');
+    expect(readJobSummary()).toContain('<tr><td><a href="https://github.com/owner/repo/pull/5">#5</a></td><td>Failed</td><td>api.openai.com returned HTTP 503: busy</td></tr>');
   });
 
   it('stops after three items in a row fail, with a warning rather than a failed job', async () => {
     const stats = createStats();
-    processIssueMock.mockRejectedValue(new PassError('fast', new ModelError('generativelanguage.googleapis.com returned HTTP 503: UNAVAILABLE', 'capacity')));
+    processIssueMock.mockRejectedValue(new ModelError('generativelanguage.googleapis.com returned HTTP 503: UNAVAILABLE', 'capacity'));
 
     await run({ ...baseConfig, issueNumbers: [5, 6, 7, 8, 9] }, { stats });
 
     expect(processIssueMock).toHaveBeenCalledTimes(3);
     expect(summaryOf(stats).funnel).toMatchObject({ processed: 3, failed: 3 });
-    const failure = 'failed (fast pass): generativelanguage.googleapis.com returned HTTP 503: UNAVAILABLE';
+    const failure = 'failed: generativelanguage.googleapis.com returned HTTP 503: UNAVAILABLE';
     expect(warnings()).toEqual([
       "Stopped the run after 3 items in a row failed, so 2 item(s) weren't attempted.",
       `#5 ${failure}`,
@@ -576,29 +518,29 @@ describe('runAutoTriage', () => {
     expect(warnSpy.mock.calls.filter(([message]) => String(message).includes('HTTP 503'))).toHaveLength(4);
   });
 
-  it('logs model errors without a stack and attributes the failure to the pass in flight', async () => {
+  it('logs model errors without a stack and records their kind', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    processIssueMock.mockRejectedValueOnce(new PassError('pro', new ModelError('Unable to parse JSON from the api.openai.com response')));
+    processIssueMock.mockRejectedValueOnce(new ModelError('Unable to parse JSON from the api.openai.com response'));
     const stats = createStats();
 
     await run({ ...baseConfig, issueNumbers: [5] }, { stats });
 
     expect(warnSpy).toHaveBeenCalledWith('#5: Unable to parse JSON from the api.openai.com response');
     expect(summaryOf(stats).items).toEqual([
-      expect.objectContaining({ number: 5, outcome: 'failed', escalatedToPro: true, failedPass: 'pro', failureReason: 'retryable' }),
+      expect.objectContaining({ number: 5, outcome: 'failed', failureReason: 'retryable' }),
     ]);
   });
 
   it('logs a model call that ran out of retries without a stack', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    processIssueMock.mockRejectedValueOnce(new PassError('fast', new ModelError('fetch failed (ECONNRESET)', 'capacity')));
+    processIssueMock.mockRejectedValueOnce(new ModelError('fetch failed (ECONNRESET)', 'capacity'));
     const stats = createStats();
 
     await run({ ...baseConfig, issueNumbers: [5] }, { stats });
 
     expect(warnSpy).toHaveBeenCalledWith('#5: fetch failed (ECONNRESET)');
     expect(summaryOf(stats).items).toEqual([
-      expect.objectContaining({ number: 5, outcome: 'failed', escalatedToPro: false, failedPass: 'fast', failureReason: 'capacity' }),
+      expect.objectContaining({ number: 5, outcome: 'failed', failureReason: 'capacity' }),
     ]);
   });
 
@@ -615,13 +557,13 @@ describe('runAutoTriage', () => {
     ['a network error outside Octokit', Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })],
   ])('records %s as a failed item and goes on without failing the job', async (_name, error) => {
     const stats = createStats();
-    processIssueMock.mockRejectedValueOnce(new PassError('pro', error));
+    processIssueMock.mockRejectedValueOnce(error);
 
     await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
 
     expect(processIssueMock).toHaveBeenCalledTimes(2);
     expect(summaryOf(stats).funnel).toMatchObject({ triaged: 1, failed: 1 });
-    expect(warnings()).toEqual([expect.stringMatching(/^#5 failed \(review pass\): /)]);
+    expect(warnings()).toEqual([expect.stringMatching(/^#5 failed: /)]);
     expect(core.setFailed).not.toHaveBeenCalled();
   });
 
@@ -632,13 +574,13 @@ describe('runAutoTriage', () => {
     const stats = createStats();
     const printSummary = vi.spyOn(stats, 'printSummary');
     const message = 'api.openai.com returned HTTP 401: {"error":{"message":"Incorrect API key provided"}} Check OPENAI_API_KEY.';
-    processIssueMock.mockRejectedValueOnce(new PassError('fast', new ModelError(message, 'fatal')));
+    processIssueMock.mockRejectedValueOnce(new ModelError(message, 'fatal'));
 
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, models: bothPasses(createModel()), stats });
+    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: gh as any, model: createModel(), stats });
 
     expect(processIssueMock).toHaveBeenCalledOnce();
     expect(core.setFailed).toHaveBeenCalledExactlyOnceWith(`Stopped the run at #5, because every later item would fail the same way: ${message}`);
-    expect(summaryOf(stats).items).toEqual([expect.objectContaining({ outcome: 'failed', failedPass: 'fast', failureReason: 'fatal' })]);
+    expect(summaryOf(stats).items).toEqual([expect.objectContaining({ outcome: 'failed', failureReason: 'fatal' })]);
     // The run still reports.
     expect(printSummary).toHaveBeenCalledOnce();
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Incorrect API key'));
@@ -649,7 +591,7 @@ describe('runAutoTriage', () => {
     [401, 'Bad credentials', ' Check the token in GITHUB_TOKEN.'],
     [403, 'Resource not accessible by integration', " Check that the token can reach this repository and that the workflow's permissions grant contents: read, issues: write and pull-requests: write."],
   ])('stops the run and fails the job when GitHub answers HTTP %i: %s', async (status, message, hint) => {
-    processIssueMock.mockRejectedValueOnce(new PassError('pro', githubError(status, message)));
+    processIssueMock.mockRejectedValueOnce(githubError(status, message));
 
     await run({ ...baseConfig, issueNumbers: [5, 6] });
 
@@ -661,7 +603,7 @@ describe('runAutoTriage', () => {
   it('fails the job when an item hits an unexpected error, and still processes the rest', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const bug = new TypeError("Cannot read properties of undefined (reading 'labels')");
-    processIssueMock.mockRejectedValueOnce(new PassError('pro', bug));
+    processIssueMock.mockRejectedValueOnce(bug);
     const stats = createStats();
 
     await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
@@ -725,13 +667,12 @@ describe('runAutoTriage', () => {
     const summary = readJobSummary();
     expect(summary).toContain('<h2>AutoTriage</h2>');
     expect(summary).toContain('<li>Mode: dry run, so nothing was changed</li>');
-    expect(summary).toContain('<li>Fast pass: <code>fast-model at api.openai.com</code></li>');
-    expect(summary).toContain('<li>Review pass: <code>pro-model at api.openai.com</code></li>');
+    expect(summary).toContain('<li>Model: <code>test-model at api.openai.com</code></li>');
     expect(summary).toContain(`<li>Policy: <code>${baseConfig.promptPath}</code></li>`);
-    expect(summary).toMatch(/<li>Prompt hashes: fast <code>sha256:[0-9a-f]{16}<\/code>, review <code>sha256:[0-9a-f]{16}<\/code><\/li>/);
+    expect(summary).toMatch(/<li>Prompt hash: <code>sha256:[0-9a-f]{16}<\/code><\/li>/);
     expect(summary).toContain('<h3>Planned</h3>');
     expect(summary).toContain(`<tr><td>${issueLink(5)}</td><td>Crash when &#60;b&#62;saving&#60;/b&#62; &#38; loading</td><td>labels: +bug</td></tr>`);
-    expect(summary).toContain('Discovered 1 and processed 1: 1 triaged, 0 skipped by the fast pass, 0 deferred and 0 failed. 1 reached the review pass.');
+    expect(summary).toContain('Discovered 1 and processed 1: 1 triaged, 0 deferred and 0 failed.');
     expect(summary).not.toContain('Not finished');
     expect(core.warning).not.toHaveBeenCalled();
     expect(core.setFailed).not.toHaveBeenCalled();
@@ -743,22 +684,18 @@ describe('runAutoTriage', () => {
     expect(readJobSummary()).toContain('<li>Policy: the built-in label-only policy, because no policy file was found</li>');
   });
 
-  it('writes the system prompts and run summary artifacts', async () => {
+  it('hands every item the one system prompt, and writes it and the run summary as artifacts', async () => {
     const stats = createStats();
 
-    await runAutoTriage({
-      cfg: { ...baseConfig, issueNumbers: [5] },
-      db: makeDb(),
-      gh: createGitHub() as any,
-      models: bothPasses(createModel()),
-      stats,
-    });
+    await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
 
     const artifacts = path.join(artifactsRoot, 'artifacts');
-    expect(fs.readdirSync(artifacts).sort()).toEqual(['prompt-system-fast.md', 'prompt-system.md', 'run-summary.json']);
+    expect(fs.readdirSync(artifacts).sort()).toEqual(['prompt-system.md', 'run-summary.json']);
+    const systemPrompt = fs.readFileSync(path.join(artifacts, 'prompt-system.md'), 'utf8');
+    expect(systemPrompt).toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY ===');
+    expect(processIssueMock.mock.calls.map(([, options]) => options.systemPrompt)).toEqual([systemPrompt, systemPrompt]);
     const summary = JSON.parse(fs.readFileSync(path.join(artifacts, 'run-summary.json'), 'utf8'));
-    expect(summary).toMatchObject({ schemaVersion: 5, funnel: { processed: 1, triaged: 1 }, items: [{ number: 5, outcome: 'triaged' }] });
-    expect(summary.promptHash).toEqual({ fast: expect.stringMatching(/^sha256:[0-9a-f]{16}$/), pro: expect.stringMatching(/^sha256:[0-9a-f]{16}$/) });
-    expect(fs.readFileSync(path.join(artifacts, 'prompt-system.md'), 'utf8')).toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY ===');
+    expect(summary).toMatchObject({ schemaVersion: 5, funnel: { processed: 2, triaged: 2 }, items: [{ number: 5, outcome: 'triaged' }, { number: 6, outcome: 'triaged' }] });
+    expect(summary.promptHash).toMatch(/^sha256:[0-9a-f]{16}$/);
   });
 });

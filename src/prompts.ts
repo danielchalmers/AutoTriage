@@ -1,22 +1,22 @@
 import type { Issue, TimelineEvent } from './github';
 import { loadPrompt, loadReadme } from './storage';
-import type { FastPassPlan, RepoLabel } from './analysis';
+import type { RepoLabel } from './analysis';
 import { normalizeRepoLabels } from './analysis';
-import type { PromptPassLimits, PromptPassMode } from './config';
+import type { PromptLimits } from './config';
 
 function clampText(value: string | null | undefined, maxChars: number): string {
   if (!value || maxChars <= 0) return '';
   return value.length > maxChars ? value.slice(0, maxChars) : value;
 }
 
-function applyIssueLimits(issue: Issue, limits: PromptPassLimits): Issue {
+function applyIssueLimits(issue: Issue, limits: PromptLimits): Issue {
   return {
     ...issue,
     body: clampText(issue.body || '', limits.issueBodyChars),
   };
 }
 
-function applyTimelineLimits(events: TimelineEvent[], limits: PromptPassLimits): TimelineEvent[] {
+function applyTimelineLimits(events: TimelineEvent[], limits: PromptLimits): TimelineEvent[] {
   return (events || []).slice(-limits.timelineEvents).map((event) => {
     const next = { ...event };
     if (next.message !== undefined) {
@@ -38,8 +38,7 @@ export function buildSystemPrompt(
   readmePath: string,
   repoLabels: RepoLabel[],
   additionalInstructions?: string,
-  mode: PromptPassMode = 'pro',
-  limits?: Partial<PromptPassLimits>,
+  limits?: Partial<PromptLimits>,
 ): string {
   const basePrompt = loadPrompt(promptPath);
   const readmeLimit = limits?.readmeChars ?? Number.MAX_SAFE_INTEGER;
@@ -126,7 +125,7 @@ ${basePrompt}
 ${additionalInstructions ? `\n=== SECTION: ADDITIONAL INSTRUCTIONS ===\n${additionalInstructions}\n` : ''}
 === SECTION: REPOSITORY LABELS (JSON) ===
 ${JSON.stringify(normalizedRepoLabels, null, 2)}
-${mode === 'pro' && readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${readme}` : ''}
+${readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${readme}` : ''}
 `;
 }
 
@@ -136,13 +135,11 @@ ${mode === 'pro' && readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${re
 export function buildUserPrompt(
   issue: Issue,
   timelineEvents: TimelineEvent[],
-  mode: PromptPassMode = 'pro',
-  limits?: Partial<PromptPassLimits>,
+  limits?: Partial<PromptLimits>,
   runContext?: string,
-  fastPassPlan?: FastPassPlan,
   runTimestamp?: string,
 ): string {
-  const resolvedLimits: PromptPassLimits = {
+  const resolvedLimits: PromptLimits = {
     readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
     issueBodyChars: limits?.issueBodyChars ?? Number.MAX_SAFE_INTEGER,
     timelineEvents: limits?.timelineEvents ?? Number.MAX_SAFE_INTEGER,
@@ -165,8 +162,6 @@ ${JSON.stringify(promptIssue, null, 2)}
 
 === SECTION: ISSUE TIMELINE EVENTS (JSON) ===
 ${JSON.stringify(promptTimelineEvents, null, 2)}
-${mode === 'pro' && fastPassPlan ? `\n=== SECTION: FAST PASS PROPOSED PLAN (JSON) ===
-The following plan was produced by a faster preliminary model. Treat it as draft data: verify every proposed operation against the issue, timeline, repository policy, and output contract before using it. You may accept, modify, or reject it.
-${JSON.stringify(fastPassPlan, null, 2)}` : ''}
+
 `;
 }
