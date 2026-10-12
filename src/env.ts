@@ -141,7 +141,6 @@ export function getConfig(): Config {
   const issueNumbers = parseIssueNumbersInput('issues');
   const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = parseOptionalInput('additional-instructions');
-  const extended = parseBooleanInput('extended');
 
   return {
     owner,
@@ -157,6 +156,5 @@ export function getConfig(): Config {
     limits,
     maxRuns,
     ...(additionalInstructions ? { additionalInstructions } : {}),
-    extended,
   };
 }

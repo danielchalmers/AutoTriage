@@ -48,7 +48,6 @@ export interface ItemRecord {
 
 export interface RunConfigSnapshot {
   dryRun: boolean;
-  extended: boolean;
   maxRuns: number;
 }
 

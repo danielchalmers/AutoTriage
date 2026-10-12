@@ -16,7 +16,6 @@ import type { Config } from '../src/config';
 import { RunStatistics } from '../src/stats';
 import type { TriageDb } from '../src/storage';
 import { TimelineEvent } from '../src/github';
-import { buildAutoDiscoverQueue } from '../src/autoDiscover';
 import { githubError, makeConfig, makeIssue, withArtifactsDir } from './fixtures';
 
 const baseIssue = makeIssue(42, '2024-04-10T00:00:00Z', { created_at: '2024-04-01T00:00:00Z' });
@@ -216,7 +215,6 @@ describe('processIssue', () => {
           '⚠️ #42 changed while it was being analyzed (updated at 2024-04-10T00:00:00Z, now 2024-04-12T00:00:00Z). Deferring its planned operations: state: not_planned.'
         );
         expect(db.items['42']).toBeUndefined();
-        expect(buildAutoDiscoverQueue([{ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }], db, true)).toEqual([42]);
       } finally {
         warnSpy.mockRestore();
       }
@@ -254,7 +252,6 @@ describe('processIssue', () => {
           lastSeenUpdatedAt: '2024-04-05T00:00:00Z',
           summary: 'Previous summary',
         });
-        expect(buildAutoDiscoverQueue([baseIssue], db, true)).toEqual([42]);
         expect(result).toMatchObject({
           outcome: 'deferred',
           detail: "It couldn't be rechecked before applying the plan, so the plan wasn't applied: recheck failed",

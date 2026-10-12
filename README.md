@@ -67,6 +67,8 @@ AutoTriage only adds labels that already exist in the repository, and the model 
 
 For each item — the triggering issue/PR, an explicit `issues` list, or auto-discovered backlog — AutoTriage gathers the body, full timeline, repository labels, and your policy. One call to the model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run). A run analyzes at most `max-runs` items, 50 by default, and the job summary lists any it didn't reach.
 
+A backlog sweep, which runs when there's no triggering item and no `issues` list, starts with the open items that are new or have changed since they were last triaged, then revisits the rest, longest since triaged first. It also rechecks recently closed items that it triaged before and that have new activity. It tells what changed from the triage history in `db-path`.
+
 Just before applying a plan, AutoTriage checks that the item hasn't changed since it was read. If it has, the item is analyzed once more with its latest state, which counts against `max-runs`. That plan is applied unless the item changed yet again, in which case the item is deferred and the job summary lists it.
 
 Overloads and rate limits are waited out. Each request to the model gets up to 10 minutes, and a whole call gets 15 minutes counting its retries and waits, after which that item fails with a warning. While a request is waiting, the log notes each minute that passes. A model error that no retry can fix, such as a rejected API key, an unknown model, or an account out of credit, stops the run and fails the job right away. A reply the model refuses, or cuts off at its output limit, fails that item.
@@ -113,13 +115,12 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 | `budget-scale` | Multiplier for prompt context limits. | `1` |
 | `db-path` | Path to the triage history JSON file. | — |
 | `dry-run` | Log planned actions without applying changes. Must be `true` or `false`. | `"false"` |
-| `extended` | Broaden backlog auto-discovery. | `"false"` |
 | `issues` | Issue or PR numbers separated by spaces or commas, such as `12, #34`. | event target or backlog |
 | `max-runs` | Maximum items to analyze per run. | `50` |
 | `model` | Model to use. Blank uses the default for the API key you set (`gemini-3.5-flash-lite` for `GEMINI_API_KEY`). | `""` (default for your key) |
 | `prompt-path` | Repo-relative path to the triage prompt. Without the default file, the built-in label-only policy is used, but any other path must exist. | `.github/AutoTriage.prompt` |
 
-A `dry-run` or `extended` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged.
+A `dry-run` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged.
 
 ## Job summary
 

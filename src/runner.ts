@@ -97,7 +97,7 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
 
   console.log(`⚙️ Running in ${cfg.dryRun ? 'dry-run' : 'live'} mode`);
   console.log(autoDiscover
-    ? `▶️ Discovered ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (extended: ${cfg.extended})`
+    ? `▶️ Discovered ${targets.length} item(s) from ${cfg.owner}/${cfg.repo}`
     : `▶️ Triaging ${targets.length} item(s): ${targets.map((n) => `#${n}`).join(', ')}`);
   console.log(`⏳ Runs limited to ${cfg.maxRuns} item(s)`);
 
@@ -106,7 +106,6 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
 
   stats.setRunConfig({
     dryRun: cfg.dryRun,
-    extended: cfg.extended,
     maxRuns: cfg.maxRuns,
   });
   stats.setPromptHash(hashPrompt(systemPrompt));
@@ -201,9 +200,8 @@ export async function listTargets(
   if (payloadNumber) return { targets: [Number(payloadNumber)], autoDiscover: false };
 
   const issues = await gh.listOpenIssues();
-  const recentlyClosedIssues = cfg.extended ? await gh.listRecentlyClosedIssues() : [];
+  const recentlyClosedIssues = await gh.listRecentlyClosedIssues();
   const closedIssuesToRecheck = filterPreviouslyTriagedClosedIssuesWithNewActivity(recentlyClosedIssues, db);
-  const skipUnchanged = !cfg.extended;
-  const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, skipUnchanged);
+  const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db);
   return { targets: orderedNumbers, autoDiscover: true };
 }

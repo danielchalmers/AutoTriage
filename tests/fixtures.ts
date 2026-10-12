@@ -111,7 +111,6 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     model: makeEndpoint('test-model'),
     limits: { readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 },
     maxRuns: 50,
-    extended: false,
     ...overrides,
   };
 }

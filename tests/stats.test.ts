@@ -115,7 +115,7 @@ describe('RunStatistics', () => {
       stats.setDiscovered(100);
       stats.setCapReached();
       stats.incrementGithubApiCalls(12);
-      stats.setRunConfig({ dryRun: false, extended: true, maxRuns: 50 });
+      stats.setRunConfig({ dryRun: false, maxRuns: 50 });
       stats.setPromptHash('sha256:aaaa');
 
       // Item 1: triaged with an action, after a first analysis that the item outdated by changing.
@@ -148,7 +148,7 @@ describe('RunStatistics', () => {
         schemaVersion: 5,
         repo: 'octo/demo',
         model: 'test-model',
-        config: { dryRun: false, extended: true, maxRuns: 50 },
+        config: { dryRun: false, maxRuns: 50 },
         promptHash: 'sha256:aaaa',
         github: { calls: 12 },
         actions: { total: 1, byKind: { add_labels: 1 } },
