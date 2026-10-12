@@ -18,8 +18,6 @@ jobs:
       group: autotriage
       queue: max
     steps:
-      - uses: actions/checkout@v7
-
       - name: AutoTriage - triage PR
         uses: danielchalmers/AutoTriage@v4
         env:

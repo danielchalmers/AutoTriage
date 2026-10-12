@@ -24,9 +24,11 @@ Preserve these invariants:
 - Action entry point: `dist/index.js`.
 - Source of truth: TypeScript under `src/`.
 - Generated bundle: `dist/` is committed, but never edited manually.
-- Default runtime prompt: with no `.github/AutoTriage.prompt` configured, the
-  built-in label-only prompt (`src/prompt.ts`) is used. The
+- Default runtime prompt: with no `.github/AutoTriage.prompt` at the run's
+  commit, the built-in label-only prompt (`src/prompt.ts`) is used. The
   `examples/AutoTriage.prompt` file is a copy-paste starting point, not bundled.
+- Policy source: the policy and README are read through the GitHub API at `GITHUB_SHA` (the default branch on a local run), never from the workspace, so consumer workflows need no checkout.
+  A transient failure reading them stops the run with a warning instead of falling back to the built-in prompt.
 - Unit tests must not require real GitHub or model API credentials, or any network
   beyond localhost.
 - Public action behavior must stay aligned across `action.yml`, `README.md`,
@@ -47,13 +49,14 @@ Start with the smallest useful context:
   Only `schedule`, `workflow_dispatch` and local runs sweep the backlog.
 - `src/failures.ts` - decides whether a failure fails the job or only warns.
 - `src/summary.ts` - the job summary and the warning annotations.
-- `src/github.ts` - GitHub API boundary.
+- `src/github.ts` - GitHub API boundary, including the contents reads for the policy and README.
 - `src/llm/` - the model API boundary, with no SDK.
   `endpoint.ts` picks the Chat Completions endpoint and key for a model input.
   `chat.ts` is the one client every provider goes through, with its retries, per-call deadline, error classification, and undici fetch.
   danielchalmers/Nuntia copies `src/llm/` and `tests/llm/` verbatim, so change them here first and copy them over in a paired PR.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
-- `src/prompts.ts` and `src/prompt.ts` - prompt loading and prompt assembly.
+- `src/prompts.ts` and `src/prompt.ts` - reading the policy and README, and prompt assembly.
+  `buildSystemPrompt` is a pure function of the policy text, README text, labels and limits.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.
 - `src/util.ts` - shared error-detail and timestamp helpers.
   `errorMessage` is imported straight from `src/llm/chat.ts`.
@@ -65,6 +68,7 @@ Start with the smallest useful context:
 - `examples/workflows/` - example workflows.
   They and this repo's triage workflows queue in one job-level `queue: max` group, only the backlog sweep saves the DB cache, and `tests/examples.test.ts` checks both sets.
 - `.github/workflows/` - CI expectations.
+  This repo's workflows run the action with `uses: ./`, so unlike the examples they keep their checkout step.
   `ci.yml` runs `npm run verify` on every pull request, whatever its base branch, and on every push to main, then dry-runs the action on the pull request.
   A newer push to a pull request cancels that pull request's older CI run.
 - `dist/` - generated action bundle.
@@ -151,9 +155,10 @@ When changing inputs, defaults, permissions, or runtime behavior:
 
 When changing prompt loading or the built-in fallback:
 
-- Test custom prompt path behavior.
+- Test reading a policy file through the mocked GitHub client.
 - Test built-in label-only fallback behavior.
-- Test missing or invalid prompt behavior when applicable.
+- Test missing or unreadable policy behavior when applicable.
+- Keep the system prompt byte-identical for the same policy and README text unless the change means to alter it.
 
 ### Dependency Changes
 

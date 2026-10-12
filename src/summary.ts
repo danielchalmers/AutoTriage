@@ -14,8 +14,9 @@ const LINKED_NOT_REACHED = 50;
 
 // What the run knows beyond its statistics.
 export interface RunReport {
-  // The policy file, or null when the built-in label-only policy stood in for a missing one.
-  policy: string | null;
+  // The policy file and README the run read, and the commit it read them at, unless it stopped first.
+  // A null policy means the built-in label-only policy stood in for a missing file, and a null README means the repository has none.
+  sources?: { at: string; policy: string | null; readme: string | null };
   // The pull request behind a workflow_run event, and how it was found.
   workflowRun?: string;
   // The targets the run stopped before, and why.
@@ -86,11 +87,15 @@ export async function writeJobSummary(
   const header = (...names: string[]) => names.map((data) => ({ data, header: true }));
   const summary = core.summary.emptyBuffer().addHeading('AutoTriage', 2);
   const paragraph = (html: string) => summary.addRaw(`<p>${html}</p>`, true);
+  const { sources } = report;
 
   summary.addList([
     `Mode: ${cfg.dryRun ? 'dry run, so nothing was changed' : 'live'}`,
     `Model: ${code(describeEndpoint(cfg.model))}`,
-    `Policy: ${report.policy ? code(report.policy) : 'the built-in label-only policy, because no policy file was found'}`,
+    ...(sources ? [
+      `Policy: ${sources.policy ? `${code(sources.policy)} at ${escapeHtml(sources.at)}` : 'built-in'}`,
+      `README: ${sources.readme ? `${code(sources.readme)} at ${escapeHtml(sources.at)}` : 'none'}`,
+    ] : []),
     ...(report.workflowRun ? [`Workflow run: ${escapeHtml(report.workflowRun)}`] : []),
     ...(run.promptHash ? [`Prompt hash: ${code(run.promptHash)}`] : []),
   ]);

@@ -32,6 +32,8 @@ beforeEach(() => {
   vi.stubEnv('GITHUB_REPOSITORY', 'danielchalmers/AutoTriage');
   // The fallback test below gives the context a payload, so every test starts without one.
   github.context.payload = {};
+  // The context reads GITHUB_SHA once, when it's created, so a test run inside GitHub Actions would otherwise see its own commit.
+  github.context.sha = '';
   setInputs({});
 });
 
@@ -79,6 +81,14 @@ describe('getConfig removed inputs', () => {
       'Remove or rename the inputs that AutoTriage no longer takes: model-fast (delete it; v5 reviews every item with model), max-fast-runs (delete it), strict-mode (delete it; runs fail only for configuration errors and bugs).'
     );
   });
+
+  it('fails on prompt-path, even set to the old default, because the policy is always read through the API', () => {
+    vi.stubEnv('INPUT_PROMPT-PATH', '.github/AutoTriage.prompt');
+
+    expect(() => getConfig()).toThrow(
+      'Remove or rename the inputs that AutoTriage no longer takes: prompt-path (delete it; the policy is always .github/AutoTriage.prompt, read through the API at the event commit).'
+    );
+  });
 });
 
 describe('getConfig repository context', () => {
@@ -107,7 +117,7 @@ describe('getConfig path and text inputs', () => {
   it('omits optional values that were not provided', () => {
     const cfg = getConfig();
 
-    expect(cfg.promptPath).toBe('.github/AutoTriage.prompt');
+    expect(cfg).not.toHaveProperty('sha');
     expect(cfg).not.toHaveProperty('dbPath');
     expect(cfg).not.toHaveProperty('additionalInstructions');
     expect(cfg).not.toHaveProperty('issueNumbers');
@@ -116,16 +126,20 @@ describe('getConfig path and text inputs', () => {
 
   it('trims provided paths and instructions', () => {
     setInputs({
-      'prompt-path': ' .github/triage.prompt ',
       'db-path': ' triage-db.json ',
       'additional-instructions': '  Only label bugs.  ',
     });
 
     expect(getConfig()).toMatchObject({
-      promptPath: '.github/triage.prompt',
       dbPath: 'triage-db.json',
       additionalInstructions: 'Only label bugs.',
     });
+  });
+
+  it('takes the commit to read the policy and README at from the workflow context', () => {
+    github.context.sha = '0123456789abcdef0123456789abcdef01234567';
+
+    expect(getConfig().sha).toBe('0123456789abcdef0123456789abcdef01234567');
   });
 });
 
@@ -291,14 +305,6 @@ describe('getConfig model input', () => {
 
     setInputs({ 'budget-scale': 'lots' });
     expect(getConfig().limits.timelineEvents).toBe(40);
-  });
-
-  it('always uses README.md for README context', () => {
-    setInputs({ 'readme-path': 'docs/README.md' });
-
-    const cfg = getConfig();
-
-    expect(cfg.readmePath).toBe('README.md');
   });
 });
 

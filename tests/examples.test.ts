@@ -69,9 +69,13 @@ describe.each(triageWorkflows)('%s', (_name, workflow) => {
     expect(removedInputsIn(workflow)).toEqual([]);
   });
 
-  it('leaves prompt-path and the triggering item at their defaults', () => {
-    expect(workflow).not.toContain('prompt-path');
+  it('leaves the triggering item at its default', () => {
     expect(workflow).not.toMatch(/issues: \$\{\{ github\.event\.(issue|pull_request)\./);
+  });
+
+  // The action reads the policy and README through the API, so only a workflow that runs this repository's own code with uses: ./ needs a checkout.
+  it('checks out the repository only to run the action from it', () => {
+    expect(workflow.includes('actions/checkout@')).toBe(/^ +(- )?uses: \.\/$/m.test(workflow));
   });
 });
 

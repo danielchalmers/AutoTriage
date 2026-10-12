@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { loadDatabase, loadReadme, saveArtifact, saveDatabase, saveRunArtifact, updateDbEntry } from '../src/storage'
+import { loadDatabase, saveArtifact, saveDatabase, saveRunArtifact, updateDbEntry } from '../src/storage'
 import { withArtifactsDir, withTempDir } from './fixtures'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -206,23 +206,6 @@ describe('saveDatabase', () => {
           },
         },
       })
-    })
-  })
-})
-
-describe('loadReadme', () => {
-  it('reads the README relative to the working directory', async () => {
-    await withArtifactsDir((tempDir) => {
-      fs.writeFileSync(path.join(tempDir, 'README.md'), '# Project')
-
-      expect(loadReadme('README.md')).toBe('# Project')
-    })
-  })
-
-  it('returns an empty string when there is no README', async () => {
-    await withArtifactsDir(() => {
-      expect(loadReadme('README.md')).toBe('')
-      expect(loadReadme('')).toBe('')
     })
   })
 })

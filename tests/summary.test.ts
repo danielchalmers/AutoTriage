@@ -19,7 +19,7 @@ function failed(issueNumber: number, detail = 'api.openai.com returned HTTP 503:
 }
 
 function report(overrides: Partial<RunReport> = {}): RunReport {
-  return { policy: '.github/AutoTriage.prompt', failures: [], warnings: [], notices: [], ...overrides };
+  return { sources: { at: 'abc1234', policy: '.github/AutoTriage.prompt', readme: 'README.md' }, failures: [], warnings: [], notices: [], ...overrides };
 }
 
 function warnings(): string[] {
@@ -119,7 +119,8 @@ describe('writeJobSummary', () => {
     const summary = read();
     expect(summary).toContain('<li>Mode: live</li>');
     expect(summary).toContain('<li>Model: <code>test-model at api.openai.com</code></li>');
-    expect(summary).toContain('<li>Policy: <code>.github/AutoTriage.prompt</code></li>');
+    expect(summary).toContain('<li>Policy: <code>.github/AutoTriage.prompt</code> at abc1234</li>');
+    expect(summary).toContain('<li>README: <code>README.md</code> at abc1234</li>');
     expect(summary).toContain('<li>Prompt hash: <code>sha256:0123456789abcdef</code></li>');
     expect(summary).toContain('<h3>Acted on</h3>');
     expect(summary).toContain('<tr><td><a href="https://github.com/owner/repo/pull/2">#2</a></td><td>Fix &#34;quotes&#34; in &#60;Button&#62;</td><td>labels: +bug, comment</td></tr>');
@@ -133,15 +134,24 @@ describe('writeJobSummary', () => {
     expect(summary).toContain('<tr><td>1</td><td>12,345</td><td>2,000</td><td>50</td><td>700</td></tr>');
   });
 
-  it('shows the run\'s failures and warnings, escaped', async () => {
-    await writeJobSummary(makeConfig(), new RunStatistics(), report({
-      policy: null,
-      failures: ['Stopped the run at #5: <bad key>'],
-      warnings: ['Triage didn\'t start'],
-    }));
+  it('names the built-in policy and a missing README', async () => {
+    await writeJobSummary(makeConfig(), new RunStatistics(), report({ sources: { at: 'the default branch', policy: null, readme: null } }));
 
     const summary = read();
-    expect(summary).toContain('<li>Policy: the built-in label-only policy, because no policy file was found</li>');
+    expect(summary).toContain('<li>Policy: built-in</li>');
+    expect(summary).toContain('<li>README: none</li>');
+  });
+
+  it('shows the run\'s failures and warnings, escaped, and no policy when the run stopped before reading it', async () => {
+    await writeJobSummary(makeConfig(), new RunStatistics(), {
+      failures: ['Stopped the run at #5: <bad key>'],
+      warnings: ['Triage didn\'t start'],
+      notices: [],
+    });
+
+    const summary = read();
+    expect(summary).not.toContain('Policy:');
+    expect(summary).not.toContain('README:');
     expect(summary).toContain('<p>❌ Stopped the run at #5: &#60;bad key&#62;</p>');
     expect(summary).toContain('<p>⚠️ Triage didn&#39;t start</p>');
     expect(summary).not.toContain('Prompt hash');

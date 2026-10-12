@@ -1,18 +1,18 @@
 import * as core from '@actions/core';
 import { createHash } from 'node:crypto';
 import { buildAnalysisResultSchema, normalizeRepoLabels } from './analysis';
-import { buildSystemPrompt } from './prompts';
+import { POLICY_PATH, PromptSources, buildSystemPrompt, readPromptSources } from './prompts';
 import {
   buildAutoDiscoverQueue,
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
 } from './autoDiscover';
 import { ModelError } from './llm/chat';
-import { GitHubClient, Issue } from './github';
+import { GitHubClient, Issue, describeRef } from './github';
 import { EventGitHub, TriggerEvent, currentEvent, resolveEventTarget } from './event';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import type { RunStatistics } from './stats';
 import type { Config } from './config';
-import { TriageDb, hasPromptFile, saveDatabase, saveRunArtifact } from './storage';
+import { TriageDb, saveDatabase, saveRunArtifact } from './storage';
 import { classifyFailure, configurationHint, describeFailure } from './failures';
 import { RunReport, annotateItems, writeJobSummary } from './summary';
 import { errorDetail } from './util';
@@ -74,11 +74,11 @@ function hashPrompt(text: string): string {
  */
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   const { cfg, gh, stats } = deps;
-  const report: RunReport = { policy: hasPromptFile(cfg.promptPath) ? cfg.promptPath : null, failures: [], warnings: [], notices: [] };
+  const report: RunReport = { failures: [], warnings: [], notices: [] };
   try {
     await triageTargets(deps, report);
   } catch (err) {
-    // Only a failure outside an item gets here, such as finding the event's pull request or listing the repository's labels or its backlog.
+    // Only a failure outside an item gets here, such as reading the policy, finding the event's pull request or listing the repository's labels or its backlog.
     const failure = classifyFailure(err);
     if (failure === 'external') {
       warn(report, `Triage didn't start: ${describeFailure(err)}`);
@@ -98,15 +98,37 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   }
 }
 
+/**
+ * Reads the policy and README at the run's commit, and says where they came from in the log and the job summary.
+ * A transient GitHub failure stops the run with a warning and returns undefined, because the built-in policy must not stand in for a policy file that exists but couldn't be read.
+ */
+async function readSources(gh: AutoTriageDeps['gh'], sha: string | undefined, report: RunReport): Promise<PromptSources | undefined> {
+  const at = describeRef(sha);
+  let sources: PromptSources;
+  try {
+    sources = await readPromptSources(gh, sha);
+  } catch (err) {
+    if (classifyFailure(err) !== 'external') throw err;
+    warn(report, `Triage didn't start, because the policy and README couldn't be read at ${at}, and the built-in policy doesn't stand in for a policy file that failed to load: ${describeFailure(err)}`);
+    return undefined;
+  }
+  report.sources = { at, policy: sources.policy === null ? null : POLICY_PATH, readme: sources.readme?.name ?? null };
+  console.log(`📜 Policy: ${sources.policy === null ? 'built-in' : `${POLICY_PATH} at ${at}`}`);
+  console.log(`📖 README: ${sources.readme ? `${sources.readme.name} at ${at}` : 'none'}`);
+  return sources;
+}
+
 async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<void> {
   const { cfg, db, gh, model, stats } = deps;
+  const sources = await readSources(gh, cfg.sha, report);
+  if (!sources) return;
   const { targets, autoDiscover, via, notice } = await listTargets({ cfg, db, gh });
   stats.setDiscovered(targets.length);
   if (via) {
     console.log(`🔗 workflow_run event: ${via}`);
     report.workflowRun = via;
   }
-  // An event with nothing to triage ends the run here, green, before it reads the labels or the policy.
+  // An event with nothing to triage ends the run here, green, before it reads the labels.
   if (notice) {
     note(report, notice);
     return;
@@ -123,7 +145,7 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
     : `▶️ Triaging ${targets.length} item(s): ${targets.map((n) => `#${n}`).join(', ')}`);
   console.log(`⏳ Analyses limited to ${cfg.maxProRuns} (max-pro-runs)`);
 
-  const systemPrompt = buildSystemPrompt(cfg.promptPath, cfg.readmePath, repoLabels, cfg.additionalInstructions, cfg.limits);
+  const systemPrompt = buildSystemPrompt(sources.policy, sources.readme?.text ?? null, repoLabels, cfg.additionalInstructions, cfg.limits);
   saveRunArtifact('prompt-system.md', systemPrompt);
 
   stats.setRunConfig({

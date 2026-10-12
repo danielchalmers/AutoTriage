@@ -18,8 +18,6 @@ jobs:
       group: autotriage
       queue: max
     steps:
-      - uses: actions/checkout@v7
-
       # Comment runs get read-only cache access, so they restore the backlog sweep's triage history but never save it.
       - uses: actions/cache/restore@v6
         with:

@@ -35,10 +35,6 @@ inputs:
     description: "Model to use. Blank uses the default for the API key you map."
     required: false
     default: ""
-  prompt-path:
-    description: "Repo-relative path to the triage prompt."
-    required: false
-    default: ".github/AutoTriage.prompt"
 
 runs:
   using: "node24"

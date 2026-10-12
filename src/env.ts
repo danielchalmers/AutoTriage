@@ -4,8 +4,6 @@ import type { Config, PromptLimits } from './config';
 import { describeReasoning } from './llm/chat';
 import { describeEndpoint, resolveModel, type Endpoint, type ModelEnv, type ProviderId } from './llm/endpoint';
 
-const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
-const DEFAULT_README_PATH = 'README.md';
 // The model each key gets when the model input is blank.
 const DEFAULT_MODELS: Record<ProviderId, string> = {
   gemini: 'gemini-3.5-flash-lite',
@@ -24,6 +22,7 @@ export const REMOVED_INPUTS: Readonly<Record<string, string>> = {
   'model-pro': 'rename it to model',
   'max-fast-runs': 'delete it',
   'strict-mode': 'delete it; runs fail only for configuration errors and bugs',
+  'prompt-path': 'delete it; the policy is always .github/AutoTriage.prompt, read through the API at the event commit',
 };
 
 function normalizeInput(input?: string): string | undefined {
@@ -74,10 +73,6 @@ function parseBudgetScaleInput(name: string, defaultValue: number): number {
 
   const parsed = Number(normalized);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
-}
-
-function parseInputOrDefault(name: string, defaultValue: string): string {
-  return normalizeInput(core.getInput(name)) ?? defaultValue;
 }
 
 function parseOptionalInput(name: string): string | undefined {
@@ -154,8 +149,7 @@ export function getConfig(): Config {
   const model = resolveModel('model', core.getInput('model'), readModelEnv(), DEFAULT_MODELS);
 
   const dryRun = parseBooleanInput('dry-run');
-  const promptPath = parseInputOrDefault('prompt-path', DEFAULT_PROMPT_PATH);
-  const readmePath = DEFAULT_README_PATH;
+  const sha = normalizeInput(github.context.sha);
   const dbPath = parseOptionalInput('db-path');
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
   const limits = scaleLimits({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 }, multiplier);
@@ -172,8 +166,7 @@ export function getConfig(): Config {
     dryRun,
     ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
-    promptPath,
-    readmePath,
+    ...(sha ? { sha } : {}),
     ...(dbPath ? { dbPath } : {}),
     model,
     limits,

@@ -33,12 +33,16 @@ import * as os from 'os';
 import * as path from 'path';
 import { buildAnalysisResultSchema } from '../src/analysis';
 import type { Config } from '../src/config';
+import { ConfigurationError } from '../src/failures';
 import { ModelError } from '../src/llm/chat';
+import { BUILTIN_LABEL_ONLY_PROMPT } from '../src/prompt';
+import { POLICY_PATH } from '../src/prompts';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { ItemRecord, RunStatistics } from '../src/stats';
 import { githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, makePullRequest, makeSameRepoWorkflowRunEvent, withTempDir } from './fixtures';
 
 const baseConfig = makeConfig();
+const SHA = '0123456789abcdef0123456789abcdef01234567';
 
 // The records processIssue returns.
 const plan = { kinds: ['add_labels'], labels: ['+bug'] };
@@ -205,6 +209,8 @@ describe('runAutoTriage', () => {
 
   function createGitHub() {
     return {
+      listRootFiles: vi.fn().mockResolvedValue(['LICENSE', 'README.md']),
+      readRepoFile: vi.fn(async (path: string): Promise<string | null> => (path === POLICY_PATH ? 'Label bugs.' : '# Project')),
       listRepoLabels: vi.fn().mockResolvedValue([]),
       listOpenIssues: vi.fn().mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z')]),
       listRecentlyClosedIssues: vi.fn().mockResolvedValue([]),
@@ -662,13 +668,14 @@ describe('runAutoTriage', () => {
       return triaged(issue.number, { title: 'Crash when <b>saving</b> & loading' });
     });
 
-    await run({ ...baseConfig, issueNumbers: [5] });
+    await run({ ...baseConfig, sha: SHA, issueNumbers: [5] });
 
     const summary = readJobSummary();
     expect(summary).toContain('<h2>AutoTriage</h2>');
     expect(summary).toContain('<li>Mode: dry run, so nothing was changed</li>');
     expect(summary).toContain('<li>Model: <code>test-model at api.openai.com</code></li>');
-    expect(summary).toContain(`<li>Policy: <code>${baseConfig.promptPath}</code></li>`);
+    expect(summary).toContain('<li>Policy: <code>.github/AutoTriage.prompt</code> at 0123456</li>');
+    expect(summary).toContain('<li>README: <code>README.md</code> at 0123456</li>');
     expect(summary).toMatch(/<li>Prompt hash: <code>sha256:[0-9a-f]{16}<\/code><\/li>/);
     expect(summary).toContain('<h3>Planned</h3>');
     expect(summary).toContain(`<tr><td>${issueLink(5)}</td><td>Crash when &#60;b&#62;saving&#60;/b&#62; &#38; loading</td><td>labels: +bug</td></tr>`);
@@ -678,10 +685,70 @@ describe('runAutoTriage', () => {
     expect(core.setFailed).not.toHaveBeenCalled();
   });
 
-  it('names the built-in policy in the job summary when the policy file is missing', async () => {
-    await run({ ...baseConfig, promptPath: '.github/missing.prompt', issueNumbers: [5] });
+  it('reads the policy and README at the run\'s commit, and names them in the log', async () => {
+    const gh = createGitHub();
 
-    expect(readJobSummary()).toContain('<li>Policy: the built-in label-only policy, because no policy file was found</li>');
+    await run({ ...baseConfig, sha: SHA, issueNumbers: [5] }, { gh });
+
+    expect(gh.listRootFiles).toHaveBeenCalledExactlyOnceWith(SHA);
+    expect(gh.readRepoFile.mock.calls).toEqual([[POLICY_PATH, SHA], ['README.md', SHA]]);
+    expect(logSpy).toHaveBeenCalledWith('📜 Policy: .github/AutoTriage.prompt at 0123456');
+    expect(logSpy).toHaveBeenCalledWith('📖 README: README.md at 0123456');
+  });
+
+  it('uses the built-in policy and says so when the repository has no policy file or README', async () => {
+    const gh = createGitHub();
+    gh.listRootFiles.mockResolvedValue(['LICENSE']);
+    gh.readRepoFile.mockResolvedValue(null);
+
+    await run({ ...baseConfig, issueNumbers: [5] }, { gh });
+
+    expect(processIssueMock.mock.calls[0]![1].systemPrompt).toContain(`=== SECTION: ASSISTANT BEHAVIOR POLICY ===\n${BUILTIN_LABEL_ONLY_PROMPT}\n`);
+    expect(logSpy).toHaveBeenCalledWith('📜 Policy: built-in');
+    expect(logSpy).toHaveBeenCalledWith('📖 README: none');
+    const summary = readJobSummary();
+    expect(summary).toContain('<li>Policy: built-in</li>');
+    expect(summary).toContain('<li>README: none</li>');
+  });
+
+  it('stops green with a warning, and triages nothing, when a transient GitHub error keeps it from reading the policy', async () => {
+    const gh = createGitHub();
+    gh.readRepoFile.mockRejectedValueOnce(githubError(503, 'Service Unavailable'));
+
+    await run({ ...baseConfig, sha: SHA, issueNumbers: [5] }, { gh });
+
+    expect(warnings()).toEqual([
+      "Triage didn't start, because the policy and README couldn't be read at 0123456, and the built-in policy doesn't stand in for a policy file that failed to load: GitHub returned HTTP 503: Service Unavailable",
+    ]);
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(gh.listRepoLabels).not.toHaveBeenCalled();
+    expect(processIssueMock).not.toHaveBeenCalled();
+    const summary = readJobSummary();
+    expect(summary).toContain('<p>⚠️ Triage didn&#39;t start, because the policy and README couldn&#39;t be read at 0123456,');
+    expect(summary).not.toContain('Policy:');
+  });
+
+  it.each([
+    [
+      "the token can't list the repository's files",
+      'listRootFiles',
+      new ConfigurationError("Couldn't list the repository's files at 0123456: GitHub returned HTTP 404: Not Found."),
+      "Triage didn't start: Couldn't list the repository's files at 0123456: GitHub returned HTTP 404: Not Found.",
+    ],
+    [
+      'GitHub refuses to read the policy',
+      'readRepoFile',
+      githubError(403, 'Resource not accessible by integration'),
+      "Triage didn't start: GitHub returned HTTP 403: Resource not accessible by integration Check that the token can reach this repository and that the workflow's permissions grant contents: read, issues: write and pull-requests: write.",
+    ],
+  ] as const)('fails the job and triages nothing when %s', async (_name, method, error, message) => {
+    const gh = createGitHub();
+    gh[method].mockRejectedValueOnce(error);
+
+    await run({ ...baseConfig, sha: SHA, issueNumbers: [5] }, { gh });
+
+    expect(core.setFailed).toHaveBeenCalledExactlyOnceWith(message);
+    expect(processIssueMock).not.toHaveBeenCalled();
   });
 
   it('hands every item the one system prompt, and writes it and the run summary as artifacts', async () => {
@@ -692,7 +759,8 @@ describe('runAutoTriage', () => {
     const artifacts = path.join(artifactsRoot, 'artifacts');
     expect(fs.readdirSync(artifacts).sort()).toEqual(['prompt-system.md', 'run-summary.json']);
     const systemPrompt = fs.readFileSync(path.join(artifacts, 'prompt-system.md'), 'utf8');
-    expect(systemPrompt).toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY ===');
+    expect(systemPrompt).toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY ===\nLabel bugs.\n');
+    expect(systemPrompt).toContain('=== SECTION: PROJECT README (MARKDOWN) ===\n# Project\n');
     expect(processIssueMock.mock.calls.map(([, options]) => options.systemPrompt)).toEqual([systemPrompt, systemPrompt]);
     const summary = JSON.parse(fs.readFileSync(path.join(artifacts, 'run-summary.json'), 'utf8'));
     expect(summary).toMatchObject({ schemaVersion: 5, funnel: { processed: 2, triaged: 2 }, items: [{ number: 5, outcome: 'triaged' }, { number: 6, outcome: 'triaged' }] });

@@ -14,13 +14,16 @@ const mocks = vi.hoisted(() => ({
   issuesRemoveLabel: vi.fn(),
   issuesCreateComment: vi.fn(),
   issuesUpdate: vi.fn(),
+  reposGetContent: vi.fn(),
 }));
 
 vi.mock('@actions/github', () => ({
   getOctokit: mocks.getOctokit,
 }));
 
+import { ConfigurationError, classifyFailure } from '../src/failures';
 import { GitHubClient } from '../src/github';
+import { githubError } from './fixtures';
 
 function baseIssuePayload(number: number) {
   return {
@@ -57,6 +60,7 @@ beforeEach(() => {
         update: mocks.issuesUpdate,
       },
       pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments, get: mocks.pullsGet, list: mocks.pullsList },
+      repos: { getContent: mocks.reposGetContent },
     },
     paginate: mocks.paginate,
   });
@@ -274,6 +278,111 @@ describe('GitHubClient pull request lookups for a workflow_run event', () => {
     const client = new GitHubClient('token', 'owner', 'repo');
 
     expect(await client.getLastReadyForReview(12)).toBeUndefined();
+  });
+});
+
+describe('GitHubClient repository file reads', () => {
+  const SHA = '0123456789abcdef0123456789abcdef01234567';
+
+  it('lists the names of the files in the repository root at a commit', async () => {
+    mocks.reposGetContent.mockResolvedValue({
+      data: [
+        { type: 'dir', name: '.github', path: '.github' },
+        { type: 'file', name: 'LICENSE', path: 'LICENSE' },
+        { type: 'file', name: 'README.md', path: 'README.md' },
+        { type: 'symlink', name: 'docs', path: 'docs' },
+        { type: 'file' },
+      ],
+    });
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.listRootFiles(SHA)).toEqual(['LICENSE', 'README.md']);
+    expect(mocks.reposGetContent).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', path: '', ref: SHA });
+    expect(client.getApiCallCount()).toBe(1);
+  });
+
+  it('lists the default branch on a local run, which has no commit', async () => {
+    mocks.reposGetContent.mockResolvedValue({ data: [] });
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.listRootFiles(undefined)).toEqual([]);
+    expect(mocks.reposGetContent).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', path: '' });
+  });
+
+  // A private repository answers a token without contents: read with a 404, so the root listing's 404 means no access rather than no file.
+  it.each([
+    [404, 'Not Found'],
+    [403, 'Resource not accessible by integration'],
+    [401, 'Bad credentials'],
+  ])('fails the root listing on HTTP %i as a configuration error that names contents: read', async (status, message) => {
+    mocks.reposGetContent.mockRejectedValue(githubError(status, message));
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const error = await client.listRootFiles(SHA).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(ConfigurationError);
+    expect(classifyFailure(error)).toBe('configuration');
+    expect((error as Error).message).toBe(
+      `Couldn't list the repository's files at 0123456: GitHub returned HTTP ${status}: ${message}. AutoTriage reads its policy and README through the API, so the workflow's permissions must grant contents: read.`
+    );
+  });
+
+  it.each([
+    ['a server error', githubError(503, 'Service Unavailable')],
+    ['a rate limit', githubError(403, 'API rate limit exceeded for installation.', { 'x-ratelimit-remaining': '0' })],
+  ])('lets %s from the root listing through unchanged, as a transient failure', async (_name, error) => {
+    mocks.reposGetContent.mockRejectedValue(error);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    await expect(client.listRootFiles(SHA)).rejects.toBe(error);
+    expect(classifyFailure(error)).toBe('external');
+  });
+
+  it('reads a file as raw text at a commit', async () => {
+    mocks.reposGetContent.mockResolvedValue({ data: '## Policy\n- Label bugs.\n' });
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.readRepoFile('.github/AutoTriage.prompt', SHA)).toBe('## Policy\n- Label bugs.\n');
+    expect(mocks.reposGetContent).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', path: '.github/AutoTriage.prompt', ref: SHA, mediaType: { format: 'raw' } });
+    expect(client.getApiCallCount()).toBe(1);
+  });
+
+  it('decodes a file that GitHub sends as bytes', async () => {
+    mocks.reposGetContent.mockResolvedValue({ data: new TextEncoder().encode('# Café').buffer });
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.readRepoFile('README', SHA)).toBe('# Café');
+  });
+
+  it('reads a missing file as null', async () => {
+    mocks.reposGetContent.mockRejectedValue(githubError(404, 'Not Found'));
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.readRepoFile('.github/AutoTriage.prompt', SHA)).toBeNull();
+  });
+
+  it('lets a 403 for a file through, so the run fails on the token or its permissions', async () => {
+    const error = githubError(403, 'Resource not accessible by integration');
+    mocks.reposGetContent.mockRejectedValue(error);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    await expect(client.readRepoFile('.github/AutoTriage.prompt', SHA)).rejects.toBe(error);
+    expect(classifyFailure(error)).toBe('configuration');
+  });
+
+  it('fails as a configuration error when the path is a directory, which GitHub answers with its listing', async () => {
+    mocks.reposGetContent.mockResolvedValue({ data: [{ type: 'file', name: 'policy.md' }] });
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    await expect(client.readRepoFile('.github/AutoTriage.prompt', SHA)).rejects.toThrow(new ConfigurationError(".github/AutoTriage.prompt at 0123456 isn't a file."));
   });
 });
 

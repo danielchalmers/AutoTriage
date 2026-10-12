@@ -1,4 +1,5 @@
 import * as github from '@actions/github';
+import { ConfigurationError, classifyFailure, describeFailure, githubStatus } from './failures';
 import { parseTimestamp } from './util';
 
 // A request without a version header gets API version 2022-11-28, which marks issue edits as deprecated and due for removal on 2028-03-10 because version 2026-03-10 drops their singular assignee field.
@@ -63,6 +64,11 @@ export type PullRequestSummary = {
 
 function summarizePullRequest(pr: { number: number; state: string; draft?: boolean; created_at: string; head: { sha: string } }): PullRequestSummary {
   return { number: pr.number, state: pr.state, draft: pr.draft === true, created_at: pr.created_at, head_sha: pr.head.sha };
+}
+
+// The commit that repository files are read at, as the log names it: its short SHA, or the default branch when there is none.
+export function describeRef(ref?: string): string {
+  return ref ? ref.slice(0, 7) : 'the default branch';
 }
 
 export class GitHubClient {
@@ -209,6 +215,45 @@ export class GitHubClient {
         } as { name: string; description: string | null };
       })
       .filter((l: any): l is { name: string; description: string | null } => !!l);
+  }
+
+  /**
+   * The names of the files in the repository's root at ref, or at the default branch when ref is undefined.
+   * It's the run's first read of the repository's contents, so a failure that means the token can't read them is a configuration error. A private repository answers such a token with a 404.
+   */
+  async listRootFiles(ref?: string): Promise<string[]> {
+    this.incrementApiCalls();
+    let data: unknown;
+    try {
+      ({ data } = await this.octokit.rest.repos.getContent({ owner: this.owner, repo: this.repo, path: '', ...(ref ? { ref } : {}) }));
+    } catch (err) {
+      if (githubStatus(err) === 404 || classifyFailure(err) === 'configuration') {
+        throw new ConfigurationError(`Couldn't list the repository's files at ${describeRef(ref)}: ${describeFailure(err)}. AutoTriage reads its policy and README through the API, so the workflow's permissions must grant contents: read.`);
+      }
+      throw err;
+    }
+    // A listing names files, directories, symlinks and submodules, and only the files are kept.
+    const entries: unknown[] = Array.isArray(data) ? data : [];
+    return entries.flatMap((entry) => {
+      const { type, name } = (entry ?? {}) as { type?: unknown; name?: unknown };
+      return type === 'file' && typeof name === 'string' ? [name] : [];
+    });
+  }
+
+  // A file's text at ref, or at the default branch when ref is undefined, or null when no such file exists there.
+  async readRepoFile(path: string, ref?: string): Promise<string | null> {
+    this.incrementApiCalls();
+    let data: unknown;
+    try {
+      ({ data } = await this.octokit.rest.repos.getContent({ owner: this.owner, repo: this.repo, path, ...(ref ? { ref } : {}), mediaType: { format: 'raw' } }));
+    } catch (err) {
+      if (githubStatus(err) === 404) return null;
+      throw err;
+    }
+    // The raw media type answers with the file's text, or with its bytes when GitHub doesn't call it UTF-8, but a directory still answers with its listing.
+    if (typeof data === 'string') return data;
+    if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+    throw new ConfigurationError(`${path} at ${describeRef(ref)} isn't a file.`);
   }
 
   private async listReviewComments(issue_number: number): Promise<TimelineEvent[]> {

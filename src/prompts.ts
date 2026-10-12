@@ -1,8 +1,43 @@
-import type { Issue, TimelineEvent } from './github';
-import { loadPrompt, loadReadme } from './storage';
+import type { GitHubClient, Issue, TimelineEvent } from './github';
+import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
 import type { RepoLabel } from './analysis';
 import { normalizeRepoLabels } from './analysis';
 import type { PromptLimits } from './config';
+
+// The policy always lives here, and it's read through the API at the run's commit rather than from a checkout.
+export const POLICY_PATH = '.github/AutoTriage.prompt';
+
+// The README is the root file named README in any case, with no extension or .md, .markdown or .txt.
+const README_NAME = /^readme(\.(md|markdown|txt))?$/i;
+// When several match, the first extension listed here wins, and GitHub's listing order settles the rest.
+const README_EXTENSIONS = ['.md', '.markdown', '.txt', ''];
+
+// What the system prompt is built from besides the labels.
+export interface PromptSources {
+  // The policy file's text, or null when the repository has none and the built-in label-only policy applies.
+  policy: string | null;
+  // The README in the repository root, or null when there is none.
+  readme: { name: string; text: string } | null;
+}
+
+function readmeRank(name: string): number {
+  return README_EXTENSIONS.indexOf(name.slice('readme'.length).toLowerCase());
+}
+
+/**
+ * Reads the policy and README through the API at sha, or at the default branch when sha is undefined.
+ * Listing the root first proves the token can read contents, so a 404 for the policy afterwards means the repository has none. It also gives the README's real file name.
+ * Any other failure propagates, so a transient error can't swap in the built-in policy unnoticed.
+ */
+export async function readPromptSources(gh: Pick<GitHubClient, 'listRootFiles' | 'readRepoFile'>, sha?: string): Promise<PromptSources> {
+  const rootFiles = await gh.listRootFiles(sha);
+  const policy = await gh.readRepoFile(POLICY_PATH, sha);
+  const readmeName = rootFiles
+    .filter((name) => README_NAME.test(name))
+    .sort((a, b) => readmeRank(a) - readmeRank(b))[0];
+  const readmeText = readmeName ? await gh.readRepoFile(readmeName, sha) : null;
+  return { policy, readme: readmeName && readmeText !== null ? { name: readmeName, text: readmeText } : null };
+}
 
 function clampText(value: string | null | undefined, maxChars: number): string {
   if (!value || maxChars <= 0) return '';
@@ -32,17 +67,18 @@ function applyTimelineLimits(events: TimelineEvent[], limits: PromptLimits): Tim
 /**
  * Build the static system prompt that is identical across all issues in a run.
  * It leads every request unchanged, so providers that cache prompt prefixes can reuse it across the run.
+ * A null policy means the built-in label-only policy, and a null README leaves its section out.
  */
 export function buildSystemPrompt(
-  promptPath: string,
-  readmePath: string,
+  policy: string | null,
+  readmeText: string | null,
   repoLabels: RepoLabel[],
   additionalInstructions?: string,
   limits?: Partial<PromptLimits>,
 ): string {
-  const basePrompt = loadPrompt(promptPath);
+  const basePrompt = policy ?? BUILTIN_LABEL_ONLY_PROMPT;
   const readmeLimit = limits?.readmeChars ?? Number.MAX_SAFE_INTEGER;
-  const readme = readmeLimit > 0 ? clampText(loadReadme(readmePath), readmeLimit) : '';
+  const readme = readmeLimit > 0 ? clampText(readmeText, readmeLimit) : '';
   const normalizedRepoLabels = normalizeRepoLabels(repoLabels);
   return `
 === SECTION: PROMPT MAP ===

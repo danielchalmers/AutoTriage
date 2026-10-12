@@ -1,6 +1,6 @@
 import * as github from '@actions/github';
 import { describe, expect, it } from 'vitest';
-import { classifyFailure, configurationHint, describeFailure } from '../src/failures';
+import { ConfigurationError, classifyFailure, configurationHint, describeFailure } from '../src/failures';
 import { ModelError } from '../src/llm/chat';
 import { githubError } from './fixtures';
 
@@ -106,5 +106,13 @@ describe('configurationHint', () => {
 
   it('adds nothing to a model error, which names its own key or setting', () => {
     expect(configurationHint(new ModelError('api.openai.com returned HTTP 401: nope Check OPENAI_API_KEY.', 'fatal'))).toBe('');
+  });
+
+  it('treats a ConfigurationError as a configuration error that says what to fix itself', () => {
+    const err = new ConfigurationError(".github/AutoTriage.prompt at 0123456 isn't a file.");
+
+    expect(classifyFailure(err)).toBe('configuration');
+    expect(describeFailure(err)).toBe(".github/AutoTriage.prompt at 0123456 isn't a file.");
+    expect(configurationHint(err)).toBe('');
   });
 });

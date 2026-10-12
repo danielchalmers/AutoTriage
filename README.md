@@ -35,8 +35,6 @@ jobs:
       group: autotriage
       queue: max
     steps:
-      - uses: actions/checkout@v7
-
       - uses: danielchalmers/AutoTriage@v4
         with:
           dry-run: "true" # change to "false" after reviewing the plan output
@@ -48,7 +46,7 @@ jobs:
 ```
 
 3. Open a test issue, review the plan in the run's job summary and logs, then set `dry-run: "false"`.
-4. Optionally write your own policy at `.github/AutoTriage.prompt`, starting from the [example prompt](./examples/AutoTriage.prompt).
+4. Optionally commit your own policy to `.github/AutoTriage.prompt` on the default branch, starting from the [example prompt](./examples/AutoTriage.prompt). The workflow needs no checkout step, because AutoTriage reads the policy through the API (see [Policy and README](#policy-and-readme)).
 
 For event-specific workflows, start from the examples in [`examples/workflows`](./examples/workflows/):
 
@@ -63,7 +61,7 @@ The examples share one job-level `concurrency` group with `queue: max`, so a bur
 
 ## How it works
 
-For each item — the triggering issue/PR, an explicit `issues` list, or the backlog on a schedule or dispatch run — AutoTriage gathers the body, full timeline, repository labels, and your policy. One call to the model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
+For each item — the triggering issue/PR, an explicit `issues` list, or the backlog on a schedule or dispatch run — AutoTriage gathers the body, full timeline, repository labels, your policy and your README. One call to the model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
 
 Just before applying a plan, AutoTriage checks that the item hasn't changed since it was read. If it has, the item is analyzed once more with its latest state, which counts against `max-pro-runs`. That plan is applied unless the item changed yet again, in which case the item is deferred and the job summary lists it.
 
@@ -79,6 +77,20 @@ Operations:
 - add_labels: Label documentation-only changes docs.
 🏷️ Labels: +docs
 ```
+
+## Policy and README
+
+AutoTriage reads your policy from `.github/AutoTriage.prompt` and your README from the repository root, where it's the file named README in any case, with no extension or `.md`, `.markdown` or `.txt`. Without a policy file, the built-in label-only policy applies, and the README is optional. Both are read through the GitHub API at the commit the run is for (`GITHUB_SHA`), never from a checkout, so the workflow needs `contents: read` but no checkout step. That commit depends on the event:
+
+- `issues`, `issue_comment`, `schedule` and `workflow_run`: the head of the default branch.
+- `workflow_dispatch`: the head of the branch you run it from, which is the default branch unless you pick another.
+- `pull_request_target`: the head of the pull request's base branch, usually the default branch.
+- `pull_request`: the pull request's merge commit, so the pull request's own copy of the policy applies. This repository's CI uses that on purpose, to dry-run a pull request's policy edits. It's safe because GitHub gives `pull_request` runs from forks no secrets and a read-only token.
+- A local run, which has no `GITHUB_SHA`: the default branch.
+
+So under every event except `pull_request`, a pull request can't change the policy that triages it.
+
+The log and the job summary name both sources, such as `Policy: .github/AutoTriage.prompt at 1a2b3c4` or `Policy: built-in`, and `README: README.md at 1a2b3c4` or `README: none`. AutoTriage first lists the repository's root files, which also finds the README's real name. If GitHub refuses that listing, the token can't read the repository's contents, so the run fails and asks for `contents: read`. A private repository answers such a token with a 404. A GitHub outage or rate limit while reading either file stops the run with a warning before anything is triaged, rather than triaging with the built-in policy in place of yours.
 
 ## Models
 
@@ -115,15 +127,14 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 | `issues` | Issue or PR numbers separated by spaces or commas, such as `12, #34`. | the event's item, or the backlog on `schedule` or `workflow_dispatch` |
 | `max-pro-runs` | Maximum model analyses per run. | `20` |
 | `model` | Model to use. Blank uses the default for the API key you map (see [Models](#models)). | `""` (default for your key) |
-| `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
 
-A `dry-run` or `extended` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged. So does passing an input that AutoTriage no longer takes, such as `model-pro`, even with a blank value, and the error says what to do with each one.
+A `dry-run` or `extended` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged. So does passing an input that AutoTriage no longer takes, such as `model-pro` or `prompt-path`, even with a blank value, and the error says what to do with each one.
 
 ## Job summary
 
 Once its configuration checks out, every run writes a job summary to its page on GitHub. It shows:
 
-- the mode, the model, the policy file (or the built-in policy) and the prompt hash;
+- the mode, the model, the policy file (or the built-in policy) and the README, with the commit they were read at, and the prompt hash;
 - for a `workflow_run` event, the pull request it led to and how AutoTriage found it, such as `PR #12 (fork lookup by pat:fix-typo, head SHA matched)`;
 - a notice when the event had nothing to triage, and why;
 - the items the run acted on, or would have in a dry run, with their operations;
@@ -136,10 +147,10 @@ Each failed or deferred item also gets a warning annotation. GitHub shows up to 
 
 - a configuration error at startup, such as a missing token or key, an invalid or removed input, or a blank `model` with several keys set;
 - a model error that every item would hit, such as a rejected API key, an unknown model, or an account out of credit;
-- a GitHub error that means the token or the workflow's permissions are wrong: HTTP 401, or a 403 that isn't a rate limit;
+- a GitHub error that means the token or the workflow's permissions are wrong: HTTP 401, a 403 that isn't a rate limit, or a 404 for the listing of the repository's files, which is how a private repository answers a token without `contents: read`;
 - an unexpected error, which points to a bug in AutoTriage.
 
-Everything else only warns, so a provider's bad day doesn't turn your runs red. That covers model overloads, rate limits and timeouts, replies that are malformed, refused or cut off, deferred items, GitHub outages, rate limits and network errors, and a run that stops after three items in a row fail. An event with nothing to triage ends the run green with a notice.
+Everything else only warns, so a provider's bad day doesn't turn your runs red. That covers model overloads, rate limits and timeouts, replies that are malformed, refused or cut off, deferred items, GitHub outages, rate limits and network errors, including one that stops the run before it can read the policy, and a run that stops after three items in a row fail. An event with nothing to triage ends the run green with a notice.
 
 ## Run summary
 

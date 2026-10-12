@@ -57,8 +57,6 @@ describe('buildRunContext', () => {
 
 function createConfig(overrides: Partial<Config> = {}): Config {
   return makeConfig({
-    promptPath: '',
-    readmePath: '',
     limits: { readmeChars: 0, issueBodyChars: 5000, timelineEvents: 10, timelineTextChars: 5000 },
     ...overrides,
   });

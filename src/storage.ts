@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
 import { errorMessage } from './llm/chat';
 
 export interface TriageDbEntry {
@@ -156,39 +155,4 @@ function writeArtifact(fileName: string, contents: string): void {
     const message = errorMessage(err);
     console.error(`⚠️ Failed to save artifact ${fileName}: ${message}`);
   }
-}
-
-function resolveFromCwd(filePath: string): string {
-  return path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
-}
-
-export function loadReadme(readmePath?: string): string {
-  if (!readmePath) return '';
-
-  try {
-    const resolved = resolveFromCwd(readmePath);
-    if (!fs.existsSync(resolved)) return '';
-    return fs.readFileSync(resolved, 'utf8');
-  } catch (err) {
-    const message = errorMessage(err);
-    console.warn(`⚠️ Failed to read README at '${readmePath}': ${message}`);
-    return '';
-  }
-}
-
-// Without a policy file, loadPrompt falls back to the built-in label-only prompt.
-export function hasPromptFile(promptPath?: string): boolean {
-  return !!promptPath && fs.existsSync(resolveFromCwd(promptPath));
-}
-
-export function loadPrompt(promptPath?: string): string {
-  const resolvedPath = promptPath ? resolveFromCwd(promptPath) : undefined;
-
-  if (resolvedPath && fs.existsSync(resolvedPath)) {
-    return fs.readFileSync(resolvedPath, 'utf8');
-  }
-
-  const missing = resolvedPath ? `custom path '${promptPath}'` : 'no prompt path configured';
-  console.warn(`⚠️ No AutoTriage prompt found (${missing}); using built-in label-only prompt.`);
-  return BUILTIN_LABEL_ONLY_PROMPT;
 }

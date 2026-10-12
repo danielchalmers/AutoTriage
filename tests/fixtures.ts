@@ -71,20 +71,6 @@ export async function withArtifactsDir<T>(fn: (dir: string) => T | Promise<T>): 
   });
 }
 
-// Materializes files in a throwaway directory for the duration of fn, since prompt loading reads real paths.
-// fn receives a resolver from file name to its path in that directory.
-export function withTempFiles<T>(files: Record<string, string>, fn: (file: (name: string) => string) => T): T {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autotriage-'));
-  try {
-    for (const [name, contents] of Object.entries(files)) {
-      fs.writeFileSync(path.join(dir, name), contents);
-    }
-    return fn(name => path.join(dir, name));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 // An OpenAI endpoint, as getConfig resolves it with only OPENAI_API_KEY set.
 export function makeEndpoint(model: string, overrides: Partial<Endpoint> = {}): Endpoint {
   return {
@@ -106,9 +92,6 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     repo: 'repo',
     token: 'token',
     dryRun: true,
-    // Absolute, so tests that point process.cwd() at a temp directory still load the example prompt.
-    promptPath: path.join(__dirname, '..', 'examples', 'AutoTriage.prompt'),
-    readmePath: 'README.md',
     model: makeEndpoint('test-model'),
     limits: { readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 },
     maxProRuns: 20,

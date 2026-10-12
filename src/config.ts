@@ -14,8 +14,8 @@ export interface Config {
   dryRun: boolean;
   issueNumber?: number;
   issueNumbers?: number[];
-  promptPath: string;
-  readmePath: string;
+  // The commit the run reads the policy and README at (GITHUB_SHA). A local run has none and reads the default branch.
+  sha?: string;
   dbPath?: string;
   // The endpoint that serves every analysis, and its model ID.
   model: Endpoint;
