@@ -1,6 +1,7 @@
 name: AutoTriage (PRs)
 
 on:
+  # In a public repository, GitHub stops starting this trigger on 2026-11-02 unless an Actions policy allows it. See the README.
   pull_request_target:
     types: [opened]
 
@@ -21,10 +22,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: AutoTriage - triage PR
-        uses: danielchalmers/AutoTriage@v4
+        uses: danielchalmers/AutoTriage@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Or use Claude or OpenAI instead (see the README's Models section):
-          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Or use Gemini or OpenAI instead (see the README's Models section):
+          # GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

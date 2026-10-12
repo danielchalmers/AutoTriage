@@ -10,7 +10,7 @@ AutoTriage is a GitHub Action that triages issues and pull requests against a pl
 
 ## Quick start
 
-1. Add a model API key as a secret in your repository or organization: `GEMINI_API_KEY` ([get a key](https://aistudio.google.com/apikey)), `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. Map it in the step's `env` (see [Models](#models)).
+1. Add a model API key as a secret in your repository or organization: `ANTHROPIC_API_KEY` ([get a key](https://platform.claude.com/settings/keys)), `GEMINI_API_KEY` ([get a key](https://aistudio.google.com/apikey)) or `OPENAI_API_KEY`. Map only that one in the step's `env` (see [Models](#models)).
 2. Add a workflow:
 
 ```yaml
@@ -37,18 +37,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: danielchalmers/AutoTriage@v4
+      - uses: danielchalmers/AutoTriage@v5
         with:
           dry-run: "true" # change to "false" after reviewing the plan output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-3. Open a test issue, review the plan in the run's job summary and logs, then set `dry-run: "false"`.
-4. Optionally write your own policy at `.github/AutoTriage.prompt`, starting from the [example prompt](./examples/AutoTriage.prompt).
+3. In a public repository, [allow `pull_request_target`](#public-repositories-allow-pull_request_target) for this workflow, or PRs won't be triaged from November 2, 2026.
+4. Open a test issue, review the plan in the run's job summary and logs, then set `dry-run: "false"`.
+5. Optionally write your own policy at `.github/AutoTriage.prompt`, starting from the [example prompt](./examples/AutoTriage.prompt).
 
 For event-specific workflows, start from the examples in [`examples/workflows`](./examples/workflows/):
 
@@ -58,6 +59,18 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 - [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) — scheduled backlog sweep.
 
 The examples share one job-level `concurrency` group with `queue: max`, so a burst of runs waits its turn instead of being cancelled. Only the backlog sweep saves the triage history cache, because GitHub gives `issues`, `pull_request_target` and `issue_comment` runs read-only cache access. The comments example restores it to see when an item was last triaged.
+
+## Public repositories: allow `pull_request_target`
+
+From November 2, 2026, GitHub no longer starts `pull_request_target` workflows in a public repository unless an Actions policy allows that event. A skipped run doesn't fail or warn, so PRs just stop being triaged. Private repositories aren't affected.
+
+To keep PR triage, a repository admin adds a policy:
+
+1. In the repository's **Settings**, open **Actions** › **Policies** in the sidebar and create a policy.
+2. Set it to **Active**, and target only the workflow file that runs AutoTriage, such as `.github/workflows/autotriage.yml`.
+3. Under **Restrict events**, allow every event that file uses. For the quick start that's `pull_request_target` and `issues`.
+
+A policy lets only the listed events start the workflows it targets. So an event left off the list stops that trigger, and a policy that targets every workflow would also stop the rest of your CI. Renaming the workflow file takes it out of the policy, so update the policy when you rename it. Until the policy is in place, PRs are triaged only by a backlog sweep or a manual run.
 
 ## How it works
 
@@ -151,3 +164,11 @@ Each run writes a machine-readable `run-summary.json` to the `artifacts/` direct
 - `items` — per-item rows with outcome, whether the review pass ran (`escalatedToPro`), whether the item changed during analysis and was analyzed again (`reanalyzed`, where the row describes the second analysis and its timing and tokens cover both), pass timing/tokens, the operations performed, what each pass planned (`fastPlan` / `proPlan` / `agreement`), and for failures, which pass failed (`failedPass`, where applying the review's plan counts as the review pass) and why (`failureReason`: `capacity`, `retryable`, `permanent` or `fatal` for a model error, or `other` for an error outside the model call).
 
 Upload it by including `artifacts/` in your workflow's `upload-artifact` step.
+
+## Upgrading from v4
+
+- **Public repositories:** add the [`pull_request_target` policy](#public-repositories-allow-pull_request_target) before November 2, 2026.
+- **Models:** besides `GEMINI_API_KEY`, you can map `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENAI_BASE_URL`. Map only one, or set `model-pro`: a blank `model-pro` with several keys mapped fails the run.
+- **`strict-mode` is removed.** The job now fails only for configuration errors and bugs. Model failures and transient GitHub errors show as warnings and in the job summary. Delete the input, which GitHub otherwise ignores with a warning.
+- **Invalid values fail.** `dry-run` must be `true` or `false`, and `issues` must be issue or PR numbers. Anything else fails the run, where v4 ran live or swept the backlog.
+- **Run summary:** the artifact is `run-summary.json`, not `0-run-summary.json`, and its `schemaVersion` is 5. See [Run summary](#run-summary).

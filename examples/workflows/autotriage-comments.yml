@@ -28,12 +28,12 @@ jobs:
           restore-keys: triage-db-
 
       - name: AutoTriage - triage comment
-        uses: danielchalmers/AutoTriage@v4
+        uses: danielchalmers/AutoTriage@v5
         with:
           db-path: triage-db.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Or use Claude or OpenAI instead (see the README's Models section):
-          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Or use Gemini or OpenAI instead (see the README's Models section):
+          # GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
