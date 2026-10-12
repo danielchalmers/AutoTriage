@@ -27,9 +27,9 @@ const timelineEvents: TimelineEvent[] = [
 describe('buildRunContext', () => {
   const NEW_ACTIVITY = 'it has new activity since then and needs to be re-checked';
 
-  it('treats items without a previous triage record as a first review', () => {
+  it('tells the model to check the timeline when there is no triage record, instead of assuming a first review', () => {
     expect(buildRunContext(baseIssue, timelineEvents, undefined, false)).toBe(
-      'This item has no previous triage record, so treat this as the first review.'
+      "There's no triage record for this item. Check the timeline for this bot's earlier labels or comments before treating anything as a first review."
     );
   });
 
