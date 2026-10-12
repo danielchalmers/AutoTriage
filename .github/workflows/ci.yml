@@ -11,6 +11,12 @@ permissions:
   issues: read
   pull-requests: read
 
+# A newer push to a pull request cancels its older run, because restacking a stack pushes each branch several times within seconds.
+# Pushes to main each get their own group, so they never cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,14 +28,9 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Typecheck tests
-        run: npm run typecheck:test
-      - name: Build
-        run: npm run build
-      - name: Ensure dist is up to date
-        run: npm run check:dist
+      # Runs typecheck, typecheck:test, the unit tests, build and check:dist.
+      - name: Verify
+        run: npm run verify
       - name: Mock triage
         if: github.event_name == 'pull_request'
         uses: ./
