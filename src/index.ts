@@ -1,8 +1,7 @@
 import * as core from '@actions/core';
-import { describeModels, getConfig } from './env';
+import { describeModel, getConfig } from './env';
 import { loadDatabase } from './storage';
 import { ChatClient, errorMessage } from './llm/chat';
-import type { ModelClients } from './issueProcessor';
 import { GitHubClient } from './github';
 import { RunStatistics } from './stats';
 import { runAutoTriage } from './runner';
@@ -30,16 +29,15 @@ try {
   core.setFailed(errorMessage(err));
   process.exit(1);
 }
-for (const line of describeModels(cfg.models)) console.log(line);
+console.log(describeModel(cfg.model));
 const db = loadDatabase(cfg.dbPath);
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
-const pro = new ChatClient(cfg.models.pro);
-const models: ModelClients = { fast: cfg.models.fast ? new ChatClient(cfg.models.fast) : pro, pro };
+const model = new ChatClient(cfg.model);
 const stats = new RunStatistics();
 stats.setRepository(cfg.owner, cfg.repo);
-stats.setModelNames(cfg.modelFast, cfg.modelPro);
+stats.setModel(cfg.model.model);
 
 // The runner reports model, GitHub and configuration failures itself, so anything that gets here is a bug.
-runAutoTriage({ cfg, db, gh, models, stats }).catch((err) => {
+runAutoTriage({ cfg, db, gh, model, stats }).catch((err) => {
   core.setFailed(errorDetail(err));
 });

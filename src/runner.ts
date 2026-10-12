@@ -9,8 +9,7 @@ import {
 } from './autoDiscover';
 import { ModelError } from './llm/chat';
 import { GitHubClient, Issue } from './github';
-import { IssueProcessorDeps, PassError, processIssue } from './issueProcessor';
-import type { ItemRecord, RunStatistics } from './stats';
+import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import type { Config } from './config';
 import { TriageDb, hasPromptFile, saveDatabase, saveRunArtifact } from './storage';
 import { classifyFailure, configurationHint, describeFailure } from './failures';
@@ -29,13 +28,6 @@ export interface ListTargetsDeps {
 
 // After this many items in a row fail, the cause is most likely an outage, so the run stops.
 const MAX_CONSECUTIVE_FAILURES = 3;
-
-// Every run cap is reported the same way: log the remaining backlog, stamp which cap stopped the run, and list what it didn't reach.
-function reportCapReached(stats: RunStatistics, report: RunReport, mode: 'fast' | 'pro', maxRuns: number, remaining: number[]): void {
-  console.log(`⏳ Max ${mode} runs (${maxRuns}) reached with ${remaining.length} item(s) remaining`);
-  stats.setCapReached(mode);
-  report.notReached = { items: remaining, reason: `the run reached max-${mode}-runs (${maxRuns})` };
-}
 
 // A failure fails the job at once, and the job summary repeats it.
 function fail(report: RunReport, message: string): void {
@@ -94,13 +86,12 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
 }
 
 async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<void> {
-  const { cfg, db, gh, models, stats } = deps;
+  const { cfg, db, gh, model, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
   stats.setDiscovered(targets.length);
   const runTimestamp = new Date().toISOString();
-  let triagesPerformed = 0;
-  let fastRunsPerformed = 0;
+  let runsPerformed = 0;
   let consecutiveFailures = 0;
   const bugs: string[] = [];
 
@@ -108,85 +99,47 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
   console.log(autoDiscover
     ? `▶️ Discovered ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (extended: ${cfg.extended})`
     : `▶️ Triaging ${targets.length} item(s): ${targets.map((n) => `#${n}`).join(', ')}`);
-  console.log(`⏳ Fast runs limited to ${cfg.maxFastRuns} item(s), Pro runs limited to ${cfg.maxProRuns} item(s)`);
+  console.log(`⏳ Runs limited to ${cfg.maxRuns} item(s)`);
 
-  const systemPromptFast = cfg.skipFastPass
-    ? ''
-    : buildSystemPrompt(cfg.promptPath, cfg.readmePath, repoLabels, cfg.additionalInstructions, 'fast', cfg.limits.fast);
-  const systemPromptPro = buildSystemPrompt(
-    cfg.promptPath,
-    cfg.readmePath,
-    repoLabels,
-    cfg.additionalInstructions,
-    'pro',
-    cfg.limits.pro
-  );
-  if (!cfg.skipFastPass) saveRunArtifact('prompt-system-fast.md', systemPromptFast);
-  saveRunArtifact('prompt-system.md', systemPromptPro);
+  const systemPrompt = buildSystemPrompt(cfg.promptPath, cfg.readmePath, repoLabels, cfg.additionalInstructions, cfg.limits);
+  saveRunArtifact('prompt-system.md', systemPrompt);
 
   stats.setRunConfig({
     dryRun: cfg.dryRun,
     extended: cfg.extended,
-    skipFastPass: cfg.skipFastPass,
-    maxFastRuns: cfg.maxFastRuns,
-    maxProRuns: cfg.maxProRuns,
+    maxRuns: cfg.maxRuns,
   });
-  stats.setPromptHashes({
-    fast: cfg.skipFastPass ? null : hashPrompt(systemPromptFast),
-    pro: hashPrompt(systemPromptPro),
-  });
+  stats.setPromptHash(hashPrompt(systemPrompt));
 
-
-  // The pass budget that's used up, if any, which leaves no room for another analysis.
-  const spentBudget = (): 'fast' | 'pro' | undefined => {
-    if (!cfg.skipFastPass && fastRunsPerformed >= cfg.maxFastRuns) return 'fast';
-    if (triagesPerformed >= cfg.maxProRuns) return 'pro';
-    return undefined;
-  };
-  const maxRuns = (mode: 'fast' | 'pro') => (mode === 'fast' ? cfg.maxFastRuns : cfg.maxProRuns);
-  // A finished analysis spends the review budget when its review pass ran, and the fast budget when its fast pass ran, which is when it has a fastPlan.
-  const spend = (record: ItemRecord) => {
-    if (record.escalatedToPro) triagesPerformed++;
-    if (record.fastPlan) fastRunsPerformed++;
-  };
-  const itemDeps = { cfg, db, gh, models, stats };
-  const itemOptions = { repoLabels, schema: buildAnalysisResultSchema(repoLabels), autoDiscover, systemPromptFast, systemPromptPro, runTimestamp };
+  const itemDeps = { cfg, db, gh, model, stats };
+  const itemOptions = { repoLabels, schema: buildAnalysisResultSchema(repoLabels), autoDiscover, systemPrompt, runTimestamp };
 
   for (const [index, issueNumber] of targets.entries()) {
-    const spent = spentBudget();
-    if (spent) {
-      reportCapReached(stats, report, spent, maxRuns(spent), targets.slice(index));
-      break;
-    }
-
     let issue: Issue | undefined;
     let reanalyzed = false;
     try {
       issue = await gh.getIssue(issueNumber);
       let record = await processIssue(itemDeps, { ...itemOptions, issue });
-      spend(record);
-      // An item that changed during analysis gets one more analysis with its latest state, if the budgets allow it.
+      runsPerformed++;
+      // An item that changed during analysis gets one more analysis with its latest state, if max-runs allows it.
       // It runs from here so that the first analysis's log group is closed, because log groups don't nest.
       if (record.changedDuringAnalysis) {
-        const spentNow = spentBudget();
-        if (spentNow) {
-          console.log(`⏳ #${issueNumber} isn't analyzed again, because the run reached max-${spentNow}-runs (${maxRuns(spentNow)})`);
+        if (runsPerformed >= cfg.maxRuns) {
+          console.log(`⏳ #${issueNumber} isn't analyzed again, because the run reached max-runs (${cfg.maxRuns})`);
         } else {
           console.log(`🔁 Analyzing #${issueNumber} again, because it changed while it was being analyzed`);
           reanalyzed = true;
           issue = await gh.getIssue(issueNumber);
           record = await processIssue(itemDeps, { ...itemOptions, issue, reanalysis: true });
-          spend(record);
+          runsPerformed++;
         }
       }
       stats.recordItem(record);
       consecutiveFailures = 0;
-    } catch (thrown) {
+    } catch (err) {
       // Any per-item failure is recorded and skipped so one bad item can't abort the remaining backlog.
       // A configuration error, such as a rejected key or a missing permission, would fail every later item too, so it stops the run and fails the job at once.
       // The consecutive-failure breaker below still stops the run if errors cascade, as in an outage.
-      const failedPass = thrown instanceof PassError ? thrown.pass : undefined;
-      const err = thrown instanceof PassError ? thrown.cause : thrown;
       const failure = classifyFailure(err);
       const detail = describeFailure(err);
       stats.recordItem({
@@ -194,9 +147,7 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
         type: issue?.type,
         title: issue?.title,
         outcome: 'failed',
-        escalatedToPro: failedPass === 'pro',
         ...(reanalyzed ? { reanalyzed } : {}),
-        failedPass,
         failureReason: err instanceof ModelError ? err.kind : 'other',
         detail,
       });
@@ -224,8 +175,11 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
 
     saveDatabase(db, cfg.dbPath, cfg.dryRun);
 
-    if (triagesPerformed >= cfg.maxProRuns) {
-      reportCapReached(stats, report, 'pro', cfg.maxProRuns, targets.slice(index + 1));
+    if (runsPerformed >= cfg.maxRuns) {
+      const remaining = targets.slice(index + 1);
+      console.log(`⏳ Reached max-runs (${cfg.maxRuns}) with ${remaining.length} item(s) remaining`);
+      stats.setCapReached();
+      report.notReached = { items: remaining, reason: `the run reached max-runs (${cfg.maxRuns})` };
       break;
     }
   }

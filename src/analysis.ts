@@ -10,11 +10,6 @@ export type ModelOperation =
   | { kind: 'set_state'; state: 'open' | 'completed' | 'not_planned'; authorization: string }
   | { kind: 'set_title'; title: string; authorization: string };
 
-export type FastPassPlan = {
-  analysis: AnalysisResult;
-  operations: unknown[];
-};
-
 /**
  * Narrow the model's parsed reply to the AnalysisResult shape.
  * A reply that isn't an object with an operations array throws, so the model call retries it like a parse error.
