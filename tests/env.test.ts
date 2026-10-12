@@ -273,6 +273,7 @@ describe('getConfig model inputs', () => {
 
   it('masks every model API key that is set', () => {
     vi.stubEnv('OPENAI_API_KEY', ' openai-key ');
+    setInputs({ 'model-pro': 'gemini-3.5-flash-lite' });
 
     getConfig();
 
@@ -281,12 +282,18 @@ describe('getConfig model inputs', () => {
 
   it('describes the model and host for each pass', () => {
     vi.stubEnv('OPENAI_BASE_URL', 'http://localhost:11434/v1');
-    setInputs({ 'model-fast': 'llama3:8b' });
+    setInputs({ 'model-fast': 'llama3:8b', 'model-pro': 'gemini-3.5-flash-lite' });
 
     expect(describeModels(getConfig().models)).toEqual([
       'Model (fast): llama3:8b at localhost:11434, reasoning: high if localhost:11434 honors reasoning_effort.',
-      'Model (pro): gemini-3.5-flash-lite at generativelanguage.googleapis.com (default for GEMINI_API_KEY), reasoning: high.',
+      'Model (pro): gemini-3.5-flash-lite at generativelanguage.googleapis.com, reasoning: high.',
     ]);
+  });
+
+  it('fails when model-pro is blank and several API keys are set, instead of picking one', () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'anthropic-key');
+
+    expect(() => getConfig()).toThrow('Several API keys are set (GEMINI_API_KEY, ANTHROPIC_API_KEY). Set model-pro, or map only one key.');
   });
 
   it('scales every limit by budget-scale and allows 0 to disable context', () => {
