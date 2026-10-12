@@ -11,16 +11,22 @@ AutoTriage is a GitHub Action that triages issues and pull requests with an AI m
 ## Quick start
 
 1. Add a model API key as a repository or organization secret: `GEMINI_API_KEY` ([get a free key](https://aistudio.google.com/apikey)), `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
-2. Add `.github/workflows/autotriage.yml`:
+2. Add [`.github/workflows/autotriage.yml`](./examples/workflows/autotriage.yml). It triages new issues, pull requests and comments:
 
 ```yaml
 name: AutoTriage
 
 on:
-  pull_request_target:
-    types: [opened]
   issues:
-    types: [opened]
+    types: [opened, reopened]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: 'Issue or PR numbers (blank triages the backlog once, up to max-runs)'
 
 permissions:
   contents: read
@@ -29,6 +35,10 @@ permissions:
 
 jobs:
   triage:
+    # Pull requests from anyone except drafts, and everything else only from people, so the bot's own comments don't trigger another run.
+    if: >-
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.draft) ||
+      (github.event_name != 'pull_request_target' && github.event.sender.type != 'Bot')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     concurrency:
@@ -39,6 +49,7 @@ jobs:
 
       - uses: danielchalmers/AutoTriage@v5
         with:
+          issues: ${{ inputs.issues }}
           dry-run: "true" # change to "false" after reviewing the plan output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,7 +60,7 @@ jobs:
 
 3. Open a test issue, check the plan in the run's job summary, then set `dry-run: "false"`.
 
-For re-triage on new comments and a nightly backlog sweep, see [`examples/workflows`](./examples/workflows/).
+To triage existing items once, run the workflow manually with `issues` left blank. Time-based policy rules, such as the example's stale handling, only fire from a scheduled sweep, so add [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) if your policy has them.
 
 ## Policy and labels
 

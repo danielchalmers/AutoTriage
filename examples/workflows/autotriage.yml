@@ -1,0 +1,42 @@
+name: AutoTriage
+
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: 'Issue or PR numbers (blank triages the backlog once, up to max-runs)'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  triage:
+    # Pull requests from anyone except drafts, and everything else only from people, so the bot's own comments don't trigger another run.
+    if: >-
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.draft) ||
+      (github.event_name != 'pull_request_target' && github.event.sender.type != 'Bot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: autotriage
+      queue: max
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: danielchalmers/AutoTriage@v5
+        with:
+          issues: ${{ inputs.issues }}
+          dry-run: "true" # change to "false" after reviewing the plan output
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

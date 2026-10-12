@@ -4,16 +4,6 @@ on:
   schedule:
     # This runs after Gemini's daily quota resets at midnight Pacific, and avoids the busy top of the hour.
     - cron: '23 8 * * *'
-  workflow_dispatch:
-    inputs:
-      issues:
-        description: 'Space-separated issue numbers'
-        required: false
-      dry-run:
-        description: 'Dry run (true = no writes)'
-        type: boolean
-        required: false
-        default: true
 
 permissions:
   contents: read
@@ -37,10 +27,9 @@ jobs:
           restore-keys: triage-db-
 
       - name: AutoTriage - triage backlog
-        uses: danielchalmers/AutoTriage@v4
+        uses: danielchalmers/AutoTriage@v5
         with:
-          issues: ${{ github.event.inputs.issues }}
-          dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry-run || false }}
+          dry-run: "true" # change to "false" after reviewing the plan output
           db-path: triage-db.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
