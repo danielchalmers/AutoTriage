@@ -62,6 +62,7 @@ This document is the repository-specific triage behavior policy. It is a map of 
 - Edit titles only when misleading or unclear; keep short and accurate. Use a `set_title` operation to propose changes.
 
 ## Inactivity Rules
+<!-- These rules need a `stale` label, which GitHub doesn't create by default. Add one to your repository before relying on them. -->
 - Skip this section for closed items, and for items assigned to, or created by, a maintainer. A maintainer commenting on an item, or changing its labels, does not exempt it.
 - Activity means any timeline event by a human, except label changes, renames, and removed assignees or reviewers, whoever made them. Bot actions never count.
 - Check every item this section applies to, even when nothing else about it needs action: find the date of its latest activity, and of its `stale` label if it has one, then count the days to the current UTC timestamp.
