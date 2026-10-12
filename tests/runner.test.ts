@@ -86,16 +86,20 @@ describe('listTargets', () => {
     expect(gh.listOpenIssues).not.toHaveBeenCalled();
   });
 
-  it('falls back to auto-discovery and skips unchanged items outside extended mode', async () => {
+  it('falls back to auto-discovery, with new and changed items first, then unchanged ones oldest-triaged first', async () => {
     const gh = {
       listOpenIssues: vi.fn().mockResolvedValue([
+        makeIssue(6, '2024-04-06T00:00:00Z'),
         makeIssue(5, '2024-04-05T00:00:00Z'),
         makeIssue(4, '2024-04-01T00:00:00Z'),
+        makeIssue(3, '2024-04-01T00:00:00Z'),
       ]),
-      listRecentlyClosedIssues: vi.fn(),
+      listRecentlyClosedIssues: vi.fn().mockResolvedValue([]),
     };
     const db = makeDb({
-      '4': { lastTriaged: '2024-04-02T00:00:00Z' },
+      '6': { lastTriaged: '2024-04-03T00:00:00Z' },
+      '4': { lastTriaged: '2024-04-03T00:00:00Z' },
+      '3': { lastTriaged: '2024-04-02T00:00:00Z' },
     });
 
     const result = await listTargets({
@@ -105,11 +109,10 @@ describe('listTargets', () => {
       payload: {},
     });
 
-    expect(result).toEqual({ targets: [5], autoDiscover: true });
-    expect(gh.listRecentlyClosedIssues).not.toHaveBeenCalled();
+    expect(result).toEqual({ targets: [6, 5, 3, 4], autoDiscover: true });
   });
 
-  it('includes re-check candidates from recently closed issues in extended mode', async () => {
+  it('includes re-check candidates from recently closed issues', async () => {
     const gh = {
       listOpenIssues: vi.fn().mockResolvedValue([
         makeIssue(5, '2024-04-01T00:00:00Z'),
@@ -124,7 +127,7 @@ describe('listTargets', () => {
     });
 
     const result = await listTargets({
-      cfg: { ...baseConfig, extended: true },
+      cfg: baseConfig,
       db,
       gh,
       payload: {},
@@ -236,7 +239,7 @@ describe('runAutoTriage', () => {
     await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, model: createModel(), stats: createStats() });
 
     const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
-    expect(targetLines).toEqual([`▶️ Discovered 1 item(s) from ${baseConfig.owner}/${baseConfig.repo} (extended: false)`]);
+    expect(targetLines).toEqual([`▶️ Discovered 1 item(s) from ${baseConfig.owner}/${baseConfig.repo}`]);
   });
 
   it('saves the database after processing the item that reaches max-runs', async () => {

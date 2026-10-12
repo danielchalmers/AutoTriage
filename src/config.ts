@@ -21,5 +21,4 @@ export interface Config {
   limits: PromptLimits;
   maxRuns: number;
   additionalInstructions?: string;
-  extended: boolean;
 }

@@ -110,10 +110,8 @@ describe('getConfig path and text inputs', () => {
 });
 
 describe('getConfig boolean inputs', () => {
-  it('defaults booleans to false when inputs are not set', () => {
-    const cfg = getConfig();
-    expect(cfg.dryRun).toBe(false);
-    expect(cfg.extended).toBe(false);
+  it('defaults dry-run to false when it is not set', () => {
+    expect(getConfig().dryRun).toBe(false);
   });
 
   it('keeps the default for a blank value, as a workflow expression can produce', () => {
@@ -123,31 +121,21 @@ describe('getConfig boolean inputs', () => {
   });
 
   it.each(['true', 'True', 'TRUE', ' true '])('parses %j as true', (value) => {
-    setInputs({ 'dry-run': value, extended: value });
-    const cfg = getConfig();
+    setInputs({ 'dry-run': value });
 
-    expect(cfg.dryRun).toBe(true);
-    expect(cfg.extended).toBe(true);
+    expect(getConfig().dryRun).toBe(true);
   });
 
   it.each(['false', 'False', 'FALSE'])('parses %j as false', (value) => {
-    setInputs({ 'dry-run': value, extended: value });
-    const cfg = getConfig();
+    setInputs({ 'dry-run': value });
 
-    expect(cfg.dryRun).toBe(false);
-    expect(cfg.extended).toBe(false);
+    expect(getConfig().dryRun).toBe(false);
   });
 
   it.each(['yes', 'no', 'on', '1', 'TrUe'])('fails on dry-run %j instead of running live', (value) => {
     setInputs({ 'dry-run': value });
 
     expect(() => getConfig()).toThrow(`The dry-run input must be true or false, not '${value}'.`);
-  });
-
-  it('fails on an invalid extended value', () => {
-    setInputs({ extended: 'yes' });
-
-    expect(() => getConfig()).toThrow(`The extended input must be true or false, not 'yes'.`);
   });
 });
 

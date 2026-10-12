@@ -20,10 +20,6 @@ inputs:
     description: "Log planned actions without applying changes. Must be true or false."
     required: false
     default: "false"
-  extended:
-    description: "Broaden backlog auto-discovery."
-    required: false
-    default: "false"
   issues:
     description: "Issue or PR numbers separated by spaces or commas, such as \"12, #34\"."
     required: false

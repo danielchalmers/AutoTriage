@@ -3,8 +3,7 @@ import { TriageDb, TriageDbEntry, getDbEntry } from './storage';
 import { parseTimestamp } from './util';
 
 // Orders auto-discover targets so anything new or updated since our last triage is processed first.
-// If skipUnchanged is true, issues that are already in the database and haven't changed are excluded.
-export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchanged: boolean = false): number[] {
+export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb): number[] {
   if (!issues || issues.length === 0) return [];
 
   const prioritized: number[] = [];
@@ -18,8 +17,6 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchan
       // Preserve GitHub's recency order inside prioritized bucket to keep cycling smoothly.
       prioritized.push(issue.number);
     } else {
-      if (skipUnchanged) continue;
-
       // parseTimestamp returns 0 for missing values, which sorts never-triaged items first.
       const lastTriagedMs = parseTimestamp(entry?.lastTriaged);
       secondary.push({ number: issue.number, lastTriagedMs });
