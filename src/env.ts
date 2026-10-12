@@ -4,7 +4,7 @@ import type { Config, PromptPassLimits } from './config';
 import { describeReasoning } from './llm/chat';
 import { describeEndpoint, resolveModel, type Endpoint, type ModelEnv, type ProviderId } from './llm/endpoint';
 
-const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
+export const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
 const DEFAULT_README_PATH = 'README.md';
 // The review model each key gets when model-pro is blank.
 const DEFAULT_MODELS: Record<ProviderId, string> = {
