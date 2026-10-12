@@ -16,6 +16,7 @@ import { TriageDb, hasPromptFile, saveDatabase, saveRunArtifact } from './storag
 import { classifyFailure, configurationHint, describeFailure } from './failures';
 import { RunReport, annotateItems, writeJobSummary } from './summary';
 import { errorDetail } from './util';
+import { DEFAULT_PROMPT_PATH } from './env';
 
 export type AutoTriageDeps = IssueProcessorDeps;
 
@@ -61,6 +62,15 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   const { cfg, gh, stats } = deps;
   const report: RunReport = { policy: hasPromptFile(cfg.promptPath) ? cfg.promptPath : null, failures: [], warnings: [] };
   try {
+    if (!report.policy) {
+      if (cfg.promptPath !== DEFAULT_PROMPT_PATH) {
+        fail(report, `Triage didn't start: prompt-path '${cfg.promptPath}' isn't in the workspace. Check the path, and that the job runs actions/checkout before AutoTriage.`);
+        return;
+      }
+      if (await gh.hasFile(DEFAULT_PROMPT_PATH)) {
+        warn(report, `This run used the built-in label-only policy, because the repository has ${DEFAULT_PROMPT_PATH} but the workspace doesn't. Add actions/checkout before AutoTriage.`);
+      }
+    }
     await triageTargets(deps, report);
   } catch (err) {
     // Only a failure outside an item gets here, such as listing the repository's labels or its backlog.

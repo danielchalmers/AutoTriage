@@ -44,7 +44,7 @@ inputs:
     required: false
     default: ""
   prompt-path:
-    description: "Repo-relative path to the triage prompt."
+    description: "Repo-relative path to the triage prompt. Without the default file, the built-in label-only policy is used, but any other path must exist."
     required: false
     default: ".github/AutoTriage.prompt"
 

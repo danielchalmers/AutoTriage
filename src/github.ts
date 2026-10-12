@@ -139,6 +139,16 @@ export class GitHubClient {
     return data.map((issue: any) => this.buildMetadata(issue));
   }
 
+  async hasFile(path: string): Promise<boolean> {
+    this.incrementApiCalls();
+    try {
+      await this.octokit.rest.repos.getContent({ owner: this.owner, repo: this.repo, path });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {
     this.incrementApiCalls();
     const labels = await this.octokit.paginate(this.octokit.rest.issues.listLabelsForRepo, {

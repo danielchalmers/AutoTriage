@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   issuesRemoveLabel: vi.fn(),
   issuesCreateComment: vi.fn(),
   issuesUpdate: vi.fn(),
+  reposGetContent: vi.fn(),
 }));
 
 vi.mock('@actions/github', () => ({
@@ -55,6 +56,7 @@ beforeEach(() => {
         update: mocks.issuesUpdate,
       },
       pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments },
+      repos: { getContent: mocks.reposGetContent },
     },
     paginate: mocks.paginate,
   });
@@ -204,6 +206,16 @@ describe('GitHubClient listing', () => {
       { name: 'bug', description: 'Something is broken' },
       { name: 'question', description: null },
     ]);
+  });
+
+  it('reports whether the repository has a file, treating any error as no', async () => {
+    const client = new GitHubClient('token', 'owner', 'repo');
+    mocks.reposGetContent.mockResolvedValueOnce({ data: {} });
+    mocks.reposGetContent.mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }));
+
+    expect(await client.hasFile('.github/AutoTriage.prompt')).toBe(true);
+    expect(await client.hasFile('.github/AutoTriage.prompt')).toBe(false);
+    expect(mocks.reposGetContent).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', path: '.github/AutoTriage.prompt' });
   });
 
   it('keeps named repository labels and normalizes blank descriptions to null', async () => {

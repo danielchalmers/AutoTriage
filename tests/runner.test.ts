@@ -35,7 +35,7 @@ import { ModelError } from '../src/llm/chat';
 import { PassError } from '../src/issueProcessor';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { ItemRecord, RunStatistics } from '../src/stats';
-import { bothPasses, githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, withTempDir } from './fixtures';
+import { bothPasses, githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, withArtifactsDir, withTempDir } from './fixtures';
 
 const baseConfig = makeConfig();
 
@@ -193,6 +193,7 @@ describe('runAutoTriage', () => {
       listRecentlyClosedIssues: vi.fn().mockResolvedValue([]),
       getIssue: vi.fn(async (issueNumber: number) => makeIssue(issueNumber, '2024-04-05T00:00:00Z')),
       getApiCallCount: vi.fn().mockReturnValue(0),
+      hasFile: vi.fn().mockResolvedValue(false),
     };
   }
 
@@ -681,10 +682,40 @@ describe('runAutoTriage', () => {
     expect(core.setFailed).not.toHaveBeenCalled();
   });
 
-  it('names the built-in policy in the job summary when the policy file is missing', async () => {
-    await run({ ...baseConfig, promptPath: '.github/missing.prompt', issueNumbers: [5] });
+  it('uses the built-in policy without a warning when the repository has no policy file', async () => {
+    await withArtifactsDir(async () => {
+      const gh = createGitHub();
 
-    expect(readJobSummary()).toContain('<li>Policy: the built-in label-only policy, because no policy file was found</li>');
+      await run({ ...baseConfig, promptPath: '.github/AutoTriage.prompt', issueNumbers: [5] }, { gh });
+
+      expect(gh.hasFile).toHaveBeenCalledWith('.github/AutoTriage.prompt');
+      expect(readJobSummary()).toContain('<li>Policy: the built-in label-only policy, because no policy file was found</li>');
+      expect(core.warning).not.toHaveBeenCalled();
+      expect(processIssueMock).toHaveBeenCalled();
+    });
+  });
+
+  it('warns when the repository has a policy file that the workspace lacks, as without actions/checkout', async () => {
+    await withArtifactsDir(async () => {
+      const gh = createGitHub();
+      gh.hasFile.mockResolvedValue(true);
+
+      await run({ ...baseConfig, promptPath: '.github/AutoTriage.prompt', issueNumbers: [5] }, { gh });
+
+      expect(core.warning).toHaveBeenCalledWith("This run used the built-in label-only policy, because the repository has .github/AutoTriage.prompt but the workspace doesn't. Add actions/checkout before AutoTriage.");
+      expect(core.setFailed).not.toHaveBeenCalled();
+      expect(processIssueMock).toHaveBeenCalled();
+    });
+  });
+
+  it('fails without triaging when a custom prompt-path is missing', async () => {
+    const gh = createGitHub();
+
+    await run({ ...baseConfig, promptPath: '.github/missing.prompt', issueNumbers: [5] }, { gh });
+
+    expect(core.setFailed).toHaveBeenCalledWith("Triage didn't start: prompt-path '.github/missing.prompt' isn't in the workspace. Check the path, and that the job runs actions/checkout before AutoTriage.");
+    expect(processIssueMock).not.toHaveBeenCalled();
+    expect(gh.hasFile).not.toHaveBeenCalled();
   });
 
   it('writes the system prompts and run summary artifacts', async () => {

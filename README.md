@@ -115,7 +115,7 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 | `max-pro-runs` | Maximum review-model analyses per run. | `20` |
 | `model-fast` | Fast-pass model. Leave blank to skip. | `""` (skip) |
 | `model-pro` | Review model. Blank uses the default for the API key you set (`gemini-3.5-flash-lite` for `GEMINI_API_KEY`). | `""` (default for your key) |
-| `prompt-path` | Repo-relative path to the triage prompt. | `.github/AutoTriage.prompt` |
+| `prompt-path` | Repo-relative path to the triage prompt. Without the default file, the built-in label-only policy is used, but any other path must exist. | `.github/AutoTriage.prompt` |
 
 A `dry-run` or `extended` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged.
 
