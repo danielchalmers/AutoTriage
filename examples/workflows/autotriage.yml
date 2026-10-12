@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       issues:
-        description: 'Issue or PR numbers (blank triages the backlog once, up to max-runs)'
+        description: 'Issue or PR numbers (blank = backlog)'
 
 permissions:
   contents: read

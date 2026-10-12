@@ -26,15 +26,13 @@ jobs:
           key: triage-db-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: triage-db-
 
-      - name: AutoTriage - triage backlog
-        uses: danielchalmers/AutoTriage@v5
+      - uses: danielchalmers/AutoTriage@v5
         with:
           dry-run: "true" # change to "false" after reviewing the plan output
           db-path: triage-db.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Or use Claude or OpenAI instead (see the README's Models section):
           # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
@@ -44,12 +42,3 @@ jobs:
         with:
           path: triage-db.json
           key: triage-db-${{ github.run_id }}-${{ github.run_attempt }}
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: triage-artifacts-${{ github.run_number }}
-          path: |
-            triage-db.json
-            artifacts/
