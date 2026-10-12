@@ -62,6 +62,8 @@ Start with the smallest useful context:
 - `examples/workflows/` - example workflows.
   They and this repo's triage workflows queue in one job-level `queue: max` group, only the backlog sweep saves the DB cache, and `tests/examples.test.ts` checks both sets.
 - `.github/workflows/` - CI expectations.
+  `ci.yml` runs `npm run verify` on every pull request, whatever its base branch, and on every push to main, then dry-runs the action on the pull request.
+  A newer push to a pull request cancels that pull request's older CI run.
 - `dist/` - generated action bundle.
 
 Read the relevant source and nearby tests before editing. Prefer
@@ -105,6 +107,9 @@ Docs-only changes usually do not require `npm run build`. Changes to `src/`,
 `package.json`, `package-lock.json`, `action.yml`, or bundling behavior require
 build verification and updated `dist/` output when the bundle changes.
 
+`npm run verify` runs the default verification, then the build, then `npm run check:dist`, which fails when the build left `dist/` different from what is committed.
+CI runs the same script before its dry run of the action.
+
 ## Development Commands
 
 - `npm ci` - install dependencies from `package-lock.json`.
@@ -115,6 +120,8 @@ build verification and updated `dist/` output when the bundle changes.
 - `npm run dev` - run TypeScript in watch mode.
 - `npm run build` - type-check, clean `dist/`, and bundle with `esbuild` into a single minified `dist/index.js` (third-party license notices appended at the end; no source map or code-split chunks).
 - `npm run clean` - remove `dist/`.
+- `npm run check:dist` - fail when `dist/` has uncommitted changes.
+- `npm run verify` - typecheck, typecheck tests, run the tests, build, then check `dist/`.
 
 ## Change Rules
 

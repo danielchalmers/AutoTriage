@@ -70,3 +70,10 @@ describe.each(triageWorkflows)('%s', (_name, workflow) => {
 it('keeps the quick start in dry-run until the user has reviewed a plan', () => {
   expect(quickStart).toContain('dry-run: "true"');
 });
+
+it('runs the unit tests in CI for pull requests to any branch, and cancels only a pull request\'s superseded runs', () => {
+  const ci = read('.github/workflows/ci.yml');
+  expect(ci).toMatch(/^ {2}pull_request:\n {4}branches: \["\*\*"\]\n/m);
+  expect(ci).toMatch(/^ {8}run: npm run verify$/m);
+  expect(ci).toContain('group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}');
+});
