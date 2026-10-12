@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
+import { MAX_SWEEP_ITEMS } from './autoDiscover';
 import type { Config } from './config';
 import { describeEndpoint } from './llm/endpoint';
 import type { ItemRecord, RunStatistics } from './stats';
@@ -128,9 +129,12 @@ export async function writeJobSummary(
     }
   }
 
-  const { discovered, processed, triaged, deferred, failed } = run.funnel;
+  const { discovered, processed, triaged, deferred, failed, leftForNextSweep } = run.funnel;
   summary.addHeading('Counts', 3);
   paragraph(`Discovered ${discovered} and processed ${processed}: ${triaged} triaged, ${deferred} deferred and ${failed} failed.`);
+  if (leftForNextSweep > 0) {
+    paragraph(`⏳ A sweep triages at most ${MAX_SWEEP_ITEMS} items, so ${leftForNextSweep} were left for the next sweep.`);
+  }
   const { usage } = run;
   if (usage.calls > 0) {
     const count = (n: number) => n.toLocaleString('en-US');

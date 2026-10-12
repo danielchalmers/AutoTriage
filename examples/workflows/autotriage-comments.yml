@@ -27,8 +27,6 @@ jobs:
 
       - name: AutoTriage - triage comment
         uses: danielchalmers/AutoTriage@v4
-        with:
-          db-path: triage-db.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

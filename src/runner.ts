@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { buildAnalysisResultSchema, normalizeRepoLabels } from './analysis';
 import { POLICY_PATH, PromptSources, buildSystemPrompt, readPromptSources } from './prompts';
 import {
+  MAX_SWEEP_ITEMS,
   buildAutoDiscoverQueue,
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
 } from './autoDiscover';
@@ -10,7 +11,6 @@ import { ModelError } from './llm/chat';
 import { GitHubClient, Issue, describeRef } from './github';
 import { EventGitHub, TriggerEvent, currentEvent, resolveEventTarget } from './event';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
-import type { RunStatistics } from './stats';
 import type { Config } from './config';
 import { TriageDb, saveDatabase, saveRunArtifact } from './storage';
 import { classifyFailure, configurationHint, describeFailure } from './failures';
@@ -23,6 +23,9 @@ export interface ListTargetsDeps {
   cfg: Config;
   db: TriageDb;
   gh: Pick<GitHubClient, 'listOpenIssues' | 'listRecentlyClosedIssues'> & EventGitHub;
+  // True when the repository has a policy file, so a sweep also revisits unchanged items and recently closed ones with new activity.
+  // The built-in label-only policy has nothing to add to an item that hasn't changed, so without a policy file a sweep takes only new and changed items.
+  revisit: boolean;
   // The event from the workflow's context when left out.
   event?: TriggerEvent;
 }
@@ -30,6 +33,8 @@ export interface ListTargetsDeps {
 export interface Targets {
   targets: number[];
   autoDiscover: boolean;
+  // How many more items a sweep found than MAX_SWEEP_ITEMS, which wait for the next sweep.
+  leftForNextSweep?: number;
   // How the pull request behind a workflow_run event was found, such as "PR #12 (listed on the workflow run)".
   via?: string;
   // Why the run has nothing to triage.
@@ -38,13 +43,6 @@ export interface Targets {
 
 // After this many items in a row fail, the cause is most likely an outage, so the run stops.
 const MAX_CONSECUTIVE_FAILURES = 3;
-
-// Logs the remaining backlog, marks the run as capped, and lists what it didn't reach.
-function reportCapReached(stats: RunStatistics, report: RunReport, maxRuns: number, remaining: number[]): void {
-  console.log(`⏳ Reached max-pro-runs (${maxRuns}) with ${remaining.length} item(s) remaining`);
-  stats.setCapReached();
-  report.notReached = { items: remaining, reason: `the run reached max-pro-runs (${maxRuns})` };
-}
 
 // A failure fails the job at once, and the job summary repeats it.
 function fail(report: RunReport, message: string): void {
@@ -122,8 +120,10 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
   const { cfg, db, gh, model, stats } = deps;
   const sources = await readSources(gh, cfg.sha, report);
   if (!sources) return;
-  const { targets, autoDiscover, via, notice } = await listTargets({ cfg, db, gh });
-  stats.setDiscovered(targets.length);
+  const revisit = sources.policy !== null;
+  const { targets, autoDiscover, leftForNextSweep = 0, via, notice } = await listTargets({ cfg, db, gh, revisit });
+  const discovered = targets.length + leftForNextSweep;
+  stats.setDiscovered(discovered, leftForNextSweep);
   if (via) {
     console.log(`🔗 workflow_run event: ${via}`);
     report.workflowRun = via;
@@ -135,24 +135,22 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
   }
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const runTimestamp = new Date().toISOString();
-  let triagesPerformed = 0;
   let consecutiveFailures = 0;
   const bugs: string[] = [];
 
   console.log(`⚙️ Running in ${cfg.dryRun ? 'dry-run' : 'live'} mode`);
-  console.log(autoDiscover
-    ? `▶️ Discovered ${targets.length} item(s) from ${cfg.owner}/${cfg.repo} (extended: ${cfg.extended})`
-    : `▶️ Triaging ${targets.length} item(s): ${targets.map((n) => `#${n}`).join(', ')}`);
-  console.log(`⏳ Analyses limited to ${cfg.maxProRuns} (max-pro-runs)`);
+  if (autoDiscover) {
+    const scope = revisit ? 'new, changed and unchanged items, because the repository has a policy file' : 'new and changed items only, because the built-in policy applies';
+    console.log(`▶️ Discovered ${discovered} item(s) from ${cfg.owner}/${cfg.repo}: ${scope}`);
+    if (leftForNextSweep > 0) console.log(`⏳ A sweep triages at most ${MAX_SWEEP_ITEMS} items, so ${leftForNextSweep} are left for the next sweep`);
+  } else {
+    console.log(`▶️ Triaging ${targets.length} item(s): ${targets.map((n) => `#${n}`).join(', ')}`);
+  }
 
-  const systemPrompt = buildSystemPrompt(sources.policy, sources.readme?.text ?? null, repoLabels, cfg.additionalInstructions, cfg.limits);
+  const systemPrompt = buildSystemPrompt(sources.policy, sources.readme?.text ?? null, repoLabels);
   saveRunArtifact('prompt-system.md', systemPrompt);
 
-  stats.setRunConfig({
-    dryRun: cfg.dryRun,
-    extended: cfg.extended,
-    maxProRuns: cfg.maxProRuns,
-  });
+  stats.setRunConfig({ dryRun: cfg.dryRun });
   stats.setPromptHash(hashPrompt(systemPrompt));
 
   const itemDeps = { cfg, db, gh, model, stats };
@@ -164,19 +162,13 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
     try {
       issue = await gh.getIssue(issueNumber);
       let record = await processIssue(itemDeps, { ...itemOptions, issue });
-      triagesPerformed++;
-      // An item that changed during analysis gets one more analysis with its latest state, if max-pro-runs allows it.
+      // An item that changed during analysis gets one more analysis with its latest state, and it still counts as one item of the run.
       // It runs from here so that the first analysis's log group is closed, because log groups don't nest.
       if (record.changedDuringAnalysis) {
-        if (triagesPerformed >= cfg.maxProRuns) {
-          console.log(`⏳ #${issueNumber} isn't analyzed again, because the run reached max-pro-runs (${cfg.maxProRuns})`);
-        } else {
-          console.log(`🔁 Analyzing #${issueNumber} again, because it changed while it was being analyzed`);
-          reanalyzed = true;
-          issue = await gh.getIssue(issueNumber);
-          record = await processIssue(itemDeps, { ...itemOptions, issue, reanalysis: true });
-          triagesPerformed++;
-        }
+        console.log(`🔁 Analyzing #${issueNumber} again, because it changed while it was being analyzed`);
+        reanalyzed = true;
+        issue = await gh.getIssue(issueNumber);
+        record = await processIssue(itemDeps, { ...itemOptions, issue, reanalysis: true });
       }
       stats.recordItem(record);
       consecutiveFailures = 0;
@@ -217,12 +209,7 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
       continue;
     }
 
-    saveDatabase(db, cfg.dbPath, cfg.dryRun);
-
-    if (triagesPerformed >= cfg.maxProRuns) {
-      reportCapReached(stats, report, cfg.maxProRuns, targets.slice(index + 1));
-      break;
-    }
+    saveDatabase(db, cfg.dryRun);
   }
 
   if (bugs.length > 0) {
@@ -232,21 +219,21 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
 
 /**
  * The run's targets: a non-blank issues input, else the item the event names, else the pull request behind a workflow_run event, else a backlog sweep on schedule, workflow_dispatch or a local run.
+ * An issues input runs in full, while a sweep takes at most MAX_SWEEP_ITEMS from the front of its queue.
  * Any other event triages nothing and says so in a notice.
  */
 export async function listTargets(deps: ListTargetsDeps): Promise<Targets> {
-  const { cfg, db, gh } = deps;
-  const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
-  if (fromInput.length > 0) return { targets: fromInput, autoDiscover: false };
+  const { cfg, db, gh, revisit } = deps;
+  if (cfg.issueNumbers?.length) return { targets: cfg.issueNumbers, autoDiscover: false };
 
   const target = await resolveEventTarget(deps.event ?? currentEvent(), gh);
   if (target.kind === 'none') return { targets: [], autoDiscover: false, notice: target.notice };
   if (target.kind === 'item') return { targets: [target.number], autoDiscover: false, ...(target.via ? { via: target.via } : {}) };
 
   const issues = await gh.listOpenIssues();
-  const recentlyClosedIssues = cfg.extended ? await gh.listRecentlyClosedIssues() : [];
+  const recentlyClosedIssues = revisit ? await gh.listRecentlyClosedIssues() : [];
   const closedIssuesToRecheck = filterPreviouslyTriagedClosedIssuesWithNewActivity(recentlyClosedIssues, db);
-  const skipUnchanged = !cfg.extended;
-  const orderedNumbers = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, skipUnchanged);
-  return { targets: orderedNumbers, autoDiscover: true };
+  const queue = buildAutoDiscoverQueue(issues.concat(closedIssuesToRecheck), db, revisit);
+  const targets = queue.slice(0, MAX_SWEEP_ITEMS);
+  return { targets, autoDiscover: true, leftForNextSweep: queue.length - targets.length };
 }

@@ -89,6 +89,23 @@ describe('getConfig removed inputs', () => {
       'Remove or rename the inputs that AutoTriage no longer takes: prompt-path (delete it; the policy is always .github/AutoTriage.prompt, read through the API at the event commit).'
     );
   });
+
+  it('fails on the backlog and context inputs that are now built in, saying what each became', () => {
+    vi.stubEnv('INPUT_EXTENDED', 'true');
+    vi.stubEnv('INPUT_MAX-PRO-RUNS', '30');
+    vi.stubEnv('INPUT_BUDGET-SCALE', '1');
+    vi.stubEnv('INPUT_ADDITIONAL-INSTRUCTIONS', '');
+    vi.stubEnv('INPUT_DB-PATH', 'triage-db.json');
+
+    expect(() => getConfig()).toThrow(
+      'Remove or rename the inputs that AutoTriage no longer takes: ' +
+      'max-pro-runs (delete it; sweeps stop at 30 items and explicit lists run in full), ' +
+      'extended (delete it; with a policy file, sweeps revisit unchanged and recently closed items), ' +
+      'budget-scale (delete it), ' +
+      'additional-instructions (move the text into .github/AutoTriage.prompt), ' +
+      'db-path (delete it; the database is always triage-db.json in the working directory, so keep that cache path).'
+    );
+  });
 });
 
 describe('getConfig repository context', () => {
@@ -113,27 +130,12 @@ describe('getConfig repository context', () => {
   });
 });
 
-describe('getConfig path and text inputs', () => {
+describe('getConfig optional values', () => {
   it('omits optional values that were not provided', () => {
     const cfg = getConfig();
 
     expect(cfg).not.toHaveProperty('sha');
-    expect(cfg).not.toHaveProperty('dbPath');
-    expect(cfg).not.toHaveProperty('additionalInstructions');
     expect(cfg).not.toHaveProperty('issueNumbers');
-    expect(cfg).not.toHaveProperty('issueNumber');
-  });
-
-  it('trims provided paths and instructions', () => {
-    setInputs({
-      'db-path': ' triage-db.json ',
-      'additional-instructions': '  Only label bugs.  ',
-    });
-
-    expect(getConfig()).toMatchObject({
-      dbPath: 'triage-db.json',
-      additionalInstructions: 'Only label bugs.',
-    });
   });
 
   it('takes the commit to read the policy and README at from the workflow context', () => {
@@ -144,10 +146,8 @@ describe('getConfig path and text inputs', () => {
 });
 
 describe('getConfig boolean inputs', () => {
-  it('defaults booleans to false when inputs are not set', () => {
-    const cfg = getConfig();
-    expect(cfg.dryRun).toBe(false);
-    expect(cfg.extended).toBe(false);
+  it('defaults dry-run to false when it is not set', () => {
+    expect(getConfig().dryRun).toBe(false);
   });
 
   it('keeps the default for a blank value, as a workflow expression can produce', () => {
@@ -157,19 +157,15 @@ describe('getConfig boolean inputs', () => {
   });
 
   it.each(['true', 'True', 'TRUE', ' true '])('parses %j as true', (value) => {
-    setInputs({ 'dry-run': value, extended: value });
-    const cfg = getConfig();
+    setInputs({ 'dry-run': value });
 
-    expect(cfg.dryRun).toBe(true);
-    expect(cfg.extended).toBe(true);
+    expect(getConfig().dryRun).toBe(true);
   });
 
   it.each(['false', 'False', 'FALSE'])('parses %j as false', (value) => {
-    setInputs({ 'dry-run': value, extended: value });
-    const cfg = getConfig();
+    setInputs({ 'dry-run': value });
 
-    expect(cfg.dryRun).toBe(false);
-    expect(cfg.extended).toBe(false);
+    expect(getConfig().dryRun).toBe(false);
   });
 
   it.each(['yes', 'no', 'on', '1', 'TrUe'])('fails on dry-run %j instead of running live', (value) => {
@@ -177,29 +173,20 @@ describe('getConfig boolean inputs', () => {
 
     expect(() => getConfig()).toThrow(`The dry-run input must be true or false, not '${value}'.`);
   });
-
-  it('fails on an invalid extended value', () => {
-    setInputs({ extended: 'yes' });
-
-    expect(() => getConfig()).toThrow(`The extended input must be true or false, not 'yes'.`);
-  });
 });
 
-describe('getConfig integer and list inputs', () => {
+describe('getConfig issues input', () => {
   it('parses issue numbers separated by spaces or commas, with or without #', () => {
     setInputs({ issues: ' 12, #34  56,#78\n90 ' });
     const cfg = getConfig();
 
     expect(cfg.issueNumbers).toEqual([12, 34, 56, 78, 90]);
-    expect(cfg.issueNumber).toBeUndefined();
   });
 
-  it('sets issueNumber for a single issue', () => {
+  it('parses a single issue as a list of one', () => {
     setInputs({ issues: '#27' });
-    const cfg = getConfig();
 
-    expect(cfg.issueNumbers).toEqual([27]);
-    expect(cfg.issueNumber).toBe(27);
+    expect(getConfig().issueNumbers).toEqual([27]);
   });
 
   it('triages a repeated issue number once', () => {
@@ -224,18 +211,6 @@ describe('getConfig integer and list inputs', () => {
     setInputs({ issues: '9007199254740993' });
 
     expect(() => getConfig()).toThrow("but got '9007199254740993'.");
-  });
-
-  it.each(['0', '1.5'])('falls back to the default for max-pro-runs %j', (value) => {
-    setInputs({ 'max-pro-runs': value });
-
-    expect(getConfig().maxProRuns).toBe(20);
-  });
-
-  it('uses a provided positive max-pro-runs', () => {
-    setInputs({ 'max-pro-runs': '7' });
-
-    expect(getConfig().maxProRuns).toBe(7);
   });
 });
 
@@ -286,25 +261,6 @@ describe('getConfig model input', () => {
     vi.stubEnv('OPENAI_BASE_URL', 'http://localhost:11434/v1');
     setInputs({ model: 'llama3:8b' });
     expect(describeModel(getConfig().model)).toBe('Model: llama3:8b at localhost:11434, reasoning: high if localhost:11434 honors reasoning_effort.');
-  });
-
-  it('scales every limit by budget-scale and allows 0 to disable context', () => {
-    setInputs({ 'budget-scale': '0' });
-
-    expect(getConfig().limits).toEqual({ readmeChars: 0, issueBodyChars: 0, timelineEvents: 0, timelineTextChars: 0 });
-  });
-
-  it('uses a valid budget scale and falls back for invalid values', () => {
-    expect(getConfig().limits).toEqual({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 });
-
-    setInputs({ 'budget-scale': '1.5' });
-    expect(getConfig().limits.timelineEvents).toBe(60);
-
-    setInputs({ 'budget-scale': '-2' });
-    expect(getConfig().limits.timelineEvents).toBe(40);
-
-    setInputs({ 'budget-scale': 'lots' });
-    expect(getConfig().limits.timelineEvents).toBe(40);
   });
 });
 

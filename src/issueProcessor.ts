@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import chalk from 'chalk';
 import { AnalysisResult, RepoLabel, parseAnalysisResult } from './analysis';
-import { buildUserPrompt } from './prompts';
+import { TIMELINE_EVENTS, buildUserPrompt } from './prompts';
 import { errorMessage, type ChatClient, type JsonRequest } from './llm/chat';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { ItemRecord, RunStatistics, describeModelRun, summarizePlan } from './stats';
@@ -46,11 +46,6 @@ interface IssueContext {
   runContext: string;
 }
 
-interface Analysis {
-  analysis: AnalysisResult;
-  operations: PlannedOperation[];
-}
-
 interface Deferral {
   // True when the item changed during analysis, rather than when it couldn't be rechecked.
   changed: boolean;
@@ -67,10 +62,10 @@ export async function processIssue(
 
   return core.group(`🤖 #${issue.number} ${issue.title}${reanalysis ? ' (re-analysis)' : ''}`, async (): Promise<ItemRecord> => {
     const context = await loadIssueContext(
-      { cfg, db, gh },
+      { db, gh },
       { issue, autoDiscover }
     );
-    const { analysis, operations } = await analyze(
+    const operations = await analyze(
       { cfg, model, stats },
       { issue, repoLabels, schema, systemPrompt, runTimestamp, context }
     );
@@ -85,9 +80,7 @@ export async function processIssue(
     }
 
     const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, operations);
-    updateDbEntry(db, issue.number, analysis.summary || issue.title, {
-      lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
-    });
+    updateDbEntry(db, issue.number, getConsumedUpdatedAt(consumedIssue));
     return { ...item, outcome: 'triaged' };
   });
 }
@@ -119,15 +112,15 @@ function getConsumedUpdatedAt(issue: Pick<Issue, 'updated_at' | 'created_at'>): 
 }
 
 async function loadIssueContext(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'db' | 'gh'>,
+  deps: Pick<IssueProcessorDeps, 'db' | 'gh'>,
   options: Pick<ProcessIssueOptions, 'issue' | 'autoDiscover'>
 ): Promise<IssueContext> {
-  const { cfg, db, gh } = deps;
+  const { db, gh } = deps;
   const { issue, autoDiscover } = options;
   const dbEntry = getDbEntry(db, issue.number);
   const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
     issue.number,
-    cfg.limits.timelineEvents,
+    TIMELINE_EVENTS,
     issue.type === 'pull request'
   );
   const runContext = buildRunContext(issue, rawTimelineEvents, dbEntry.lastTriaged, autoDiscover);
@@ -135,7 +128,7 @@ async function loadIssueContext(
   saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
 
   return {
-    timelineEvents: timelineEvents.slice(-cfg.limits.timelineEvents),
+    timelineEvents: timelineEvents.slice(-TIMELINE_EVENTS),
     runContext,
   };
 }
@@ -145,20 +138,19 @@ async function analyze(
   options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'schema' | 'systemPrompt' | 'runTimestamp'> & {
     context: IssueContext;
   }
-): Promise<Analysis> {
+): Promise<PlannedOperation[]> {
   const { cfg, model, stats } = deps;
   const { issue, repoLabels, schema, systemPrompt, runTimestamp, context } = options;
 
   const userPrompt = buildUserPrompt(
     issue,
     context.timelineEvents,
-    cfg.limits,
     context.runContext,
     runTimestamp
   );
   saveArtifact(issue.number, 'prompt-user.md', userPrompt);
 
-  const { data: analysis, ops: operations } = await generateAnalysis(
+  const { ops: operations } = await generateAnalysis(
     { model, stats },
     {
       issue,
@@ -170,7 +162,7 @@ async function analyze(
     }
   );
 
-  return { analysis, operations };
+  return operations;
 }
 
 // Applies the plan, or returns why it was deferred instead.

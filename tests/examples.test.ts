@@ -60,9 +60,12 @@ describe.each(triageWorkflows)('%s', (_name, workflow) => {
     if (/^ {2}(issues|pull_request_target|issue_comment):/m.test(triggers)) {
       expect(workflow).not.toContain('actions/cache/save');
     }
-    if (!workflow.includes('db-path')) {
-      expect(workflow).not.toContain('triage-db.json');
-    }
+  });
+
+  it('caches the triage DB at triage-db.json, where the action always reads and writes it', () => {
+    const cachePaths = [...workflow.matchAll(/uses: actions\/cache\/(?:restore|save)@\S+\n +with:\n +path: (.*)/g)].map(match => match[1]);
+    expect(cachePaths.length).toBe((workflow.match(/actions\/cache\//g) ?? []).length);
+    expect(cachePaths.every(cachePath => cachePath === 'triage-db.json')).toBe(true);
   });
 
   it('passes no input that AutoTriage removed', () => {

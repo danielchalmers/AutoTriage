@@ -2,9 +2,12 @@ import { Issue } from './github';
 import { TriageDb, TriageDbEntry, getDbEntry } from './storage';
 import { parseTimestamp } from './util';
 
+// A backlog sweep triages at most this many items, and the rest of its queue waits for the next sweep.
+export const MAX_SWEEP_ITEMS = 30;
+
 // Orders auto-discover targets so anything new or updated since our last triage is processed first.
-// If skipUnchanged is true, issues that are already in the database and haven't changed are excluded.
-export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchanged: boolean = false): number[] {
+// Unchanged items follow, oldest-triaged first, only when revisitUnchanged is true.
+export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, revisitUnchanged: boolean): number[] {
   if (!issues || issues.length === 0) return [];
 
   const prioritized: number[] = [];
@@ -18,7 +21,7 @@ export function buildAutoDiscoverQueue(issues: Issue[], db: TriageDb, skipUnchan
       // Preserve GitHub's recency order inside prioritized bucket to keep cycling smoothly.
       prioritized.push(issue.number);
     } else {
-      if (skipUnchanged) continue;
+      if (!revisitUnchanged) continue;
 
       // parseTimestamp returns 0 for missing values, which sorts never-triaged items first.
       const lastTriagedMs = parseTimestamp(entry?.lastTriaged);

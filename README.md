@@ -55,7 +55,7 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 - [`autotriage-comments.yml`](./examples/workflows/autotriage-comments.yml) — re-triage when someone replies.
 - [`autotriage-backlog.yml`](./examples/workflows/autotriage-backlog.yml) — scheduled backlog sweep.
 
-The examples share one job-level `concurrency` group with `queue: max`, so a burst of runs waits its turn instead of being cancelled. Only the backlog sweep saves the triage history cache, because GitHub gives `issues`, `pull_request_target` and `issue_comment` runs read-only cache access. The comments example restores it to see when an item was last triaged.
+The examples share one job-level `concurrency` group with `queue: max`, so a burst of runs waits its turn instead of being cancelled. Only the backlog sweep saves the triage history cache, because GitHub gives `issues`, `pull_request_target` and `issue_comment` runs read-only cache access. The comments example restores it to see when an item was last triaged. The cache path is always `triage-db.json`, because that's where AutoTriage keeps its triage history (see [Backlog sweeps](#backlog-sweeps)).
 
 **What each event triages.** An `issues`, `issue_comment`, `pull_request` or `pull_request_target` event triages the item it names. A `workflow_run` event triages the pull request behind the run it reports, so a small signal workflow on `pull_request` can stand in for `pull_request_target`, fork PRs included. Run the triage job only when `github.event.workflow_run.conclusion == 'success'`. AutoTriage finds the PR itself, and skips drafts, closed PRs and trigger runs that weren't created within 10 minutes of the PR being opened or marked ready for review. Only `schedule` and `workflow_dispatch` runs sweep the backlog. Any other event, such as `push`, triages nothing and leaves a notice. A non-blank `issues` input overrides all of these.
 
@@ -63,7 +63,7 @@ The examples share one job-level `concurrency` group with `queue: max`, so a bur
 
 For each item — the triggering issue/PR, an explicit `issues` list, or the backlog on a schedule or dispatch run — AutoTriage gathers the body, full timeline, repository labels, your policy and your README. One call to the model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
 
-Just before applying a plan, AutoTriage checks that the item hasn't changed since it was read. If it has, the item is analyzed once more with its latest state, which counts against `max-pro-runs`. That plan is applied unless the item changed yet again, in which case the item is deferred and the job summary lists it.
+Just before applying a plan, AutoTriage checks that the item hasn't changed since it was read. If it has, the item is analyzed once more with its latest state, and it still counts as one item. That plan is applied unless the item changed yet again, in which case the item is deferred and the job summary lists it.
 
 Overloads and rate limits are waited out. Each request to the model gets up to 10 minutes, and a whole call gets 15 minutes counting its retries and waits, after which that item fails with a warning. While a request is waiting, the log notes each minute that passes. A model error that no retry can fix, such as a rejected API key, an unknown model, or an account out of credit, stops the run and fails the job right away. A reply the model refuses, or cuts off at its output limit, fails that item.
 
@@ -77,6 +77,17 @@ Operations:
 - add_labels: Label documentation-only changes docs.
 🏷️ Labels: +docs
 ```
+
+## Backlog sweeps
+
+A `schedule` or `workflow_dispatch` run with a blank `issues` input sweeps the backlog. Its queue starts with the open items that are new or have changed since they were last triaged, most recently updated first.
+
+- With a policy file, the queue goes on with the unchanged open items, least recently triaged first, and also takes recently closed items that were triaged before and have had activity since. That lets a policy act on time, such as following up on stale items.
+- With the built-in label-only policy, a sweep takes only new and changed items, because the built-in policy has nothing to add to an item that hasn't changed.
+
+A sweep triages the first 30 items in its queue and leaves the rest for the next sweep. The log, the job summary and the run summary say how many it left. An explicit `issues` list always runs in full, however long it is.
+
+AutoTriage keeps its triage history, which is when it last triaged each item and the item's update time it saw then, in `triage-db.json` in the working directory. It reads the file when it's there, and writes it after each item unless the run is a dry run. Without the file, every item counts as new, so keep it between runs with a cache step, as the [backlog example](./examples/workflows/autotriage-backlog.yml) does.
 
 ## Policy and README
 
@@ -119,16 +130,11 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 
 | Input | Purpose | Default |
 | --- | --- | --- |
-| `additional-instructions` | Extra prompt instructions for this run. | — |
-| `budget-scale` | Multiplier for prompt context limits. | `1` |
-| `db-path` | Path to the triage history JSON file. | — |
 | `dry-run` | Log planned actions without applying changes. Must be `true` or `false`. | `"false"` |
-| `extended` | Broaden backlog auto-discovery. | `"false"` |
 | `issues` | Issue or PR numbers separated by spaces or commas, such as `12, #34`. | the event's item, or the backlog on `schedule` or `workflow_dispatch` |
-| `max-pro-runs` | Maximum model analyses per run. | `20` |
 | `model` | Model to use. Blank uses the default for the API key you map (see [Models](#models)). | `""` (default for your key) |
 
-A `dry-run` or `extended` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged. So does passing an input that AutoTriage no longer takes, such as `model-pro` or `prompt-path`, even with a blank value, and the error says what to do with each one.
+A `dry-run` value other than true or false, or an `issues` value that isn't a list of issue or PR numbers, fails the run before anything is triaged. So does passing an input that AutoTriage no longer takes, such as `model-pro`, `prompt-path` or `db-path`, even with a blank value, and the error says what to do with each one.
 
 ## Job summary
 
@@ -138,8 +144,8 @@ Once its configuration checks out, every run writes a job summary to its page on
 - for a `workflow_run` event, the pull request it led to and how AutoTriage found it, such as `PR #12 (fork lookup by pat:fix-typo, head SHA matched)`;
 - a notice when the event had nothing to triage, and why;
 - the items the run acted on, or would have in a dry run, with their operations;
-- each failed or deferred item, and any items a run cap or an early stop left out, with the reason;
-- the item counts and the model's token counts.
+- each failed or deferred item, and any items an early stop left out, with the reason;
+- the item counts, how many items a sweep left for the next sweep, and the model's token counts.
 
 Each failed or deferred item also gets a warning annotation. GitHub shows up to 10 warnings per step, so any more are merged into one.
 
@@ -159,7 +165,7 @@ Each run writes a machine-readable `run-summary.json` to the `artifacts/` direct
 - `model` — the model ID the run sent.
 - `config` / `promptHash` — the run's effective settings and a truncated hash of the assembled system prompt, so runs can be segmented by configuration and policy version.
 - `github` — the number of GitHub API calls the run made.
-- `funnel` — items discovered and processed; how many processed items were `triaged`, `deferred` (the item changed during its final analysis, or couldn't be rechecked, so its plan wasn't applied) or `failed`; and whether `max-pro-runs` stopped the run (`capReached`). The three outcome counts add up to `processed`.
+- `funnel` — items discovered and processed; how many processed items were `triaged`, `deferred` (the item changed during its final analysis, or couldn't be rechecked, so its plan wasn't applied) or `failed`; and how many items a sweep left for the next sweep (`leftForNextSweep`). The three outcome counts add up to `processed`.
 - `usage` — the number of model calls, their duration percentiles and their token usage, including `cachedInputTokens` and `reasoningTokens` (the reasoning tokens a provider reports, which output tokens exclude here).
 - `items` — per-item rows with outcome, whether the item changed during analysis and was analyzed again (`reanalyzed`, where the row describes the second analysis and its `usage` covers both), what the model planned (`plan`: the operation kinds and signed label changes such as `+bug`), the item's model time and tokens (`usage`), the operations performed, and for failures, why (`failureReason`: `capacity`, `retryable`, `permanent` or `fatal` for a model error, or `other` for an error outside the model call).
 

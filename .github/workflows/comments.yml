@@ -29,8 +29,6 @@ jobs:
 
       - name: Triage comment
         uses: ./
-        with:
-          db-path: triage-db.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

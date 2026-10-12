@@ -42,6 +42,16 @@ describe('RunStatistics', () => {
       expect(lines).toContain('  Total: ✅ 2 triaged ⏸️ 1 deferred ❌ 1 failed');
       const actionLines = lines.filter(line => line.startsWith('  #'));
       expect(actionLines).toEqual(['  #3: labels: +bug', '  #12: comment, state: completed']);
+      expect(lines).not.toContainEqual(expect.stringContaining('Left for the next sweep'));
+    });
+
+    it('says how many items a sweep left for the next sweep', () => {
+      stats.setDiscovered(45, 15);
+      stats.recordItem({ issueNumber: 3, outcome: 'triaged' });
+
+      const lines = captureSummaryOutput(() => stats.printSummary());
+
+      expect(lines).toContain('  Left for the next sweep: 15');
     });
 
     it('formats run durations', () => {
@@ -112,10 +122,9 @@ describe('RunStatistics', () => {
     it('captures the model, the funnel, the usage and per-item rows', () => {
       stats.setRepository('octo', 'demo');
       stats.setModel('test-model');
-      stats.setDiscovered(100);
-      stats.setCapReached();
+      stats.setDiscovered(100, 70);
       stats.incrementGithubApiCalls(12);
-      stats.setRunConfig({ dryRun: false, extended: true, maxProRuns: 20 });
+      stats.setRunConfig({ dryRun: false });
       stats.setPromptHash('sha256:aaaa');
 
       // Item 1: triaged with an action, after a first analysis that the item outdated by changing.
@@ -148,12 +157,12 @@ describe('RunStatistics', () => {
         schemaVersion: 5,
         repo: 'octo/demo',
         model: 'test-model',
-        config: { dryRun: false, extended: true, maxProRuns: 20 },
+        config: { dryRun: false },
         promptHash: 'sha256:aaaa',
         github: { calls: 12 },
         actions: { total: 1, byKind: { add_labels: 1 } },
       });
-      expect(json.funnel).toEqual({ discovered: 100, processed: 3, triaged: 1, deferred: 1, failed: 1, capReached: true });
+      expect(json.funnel).toEqual({ discovered: 100, processed: 3, triaged: 1, deferred: 1, failed: 1, leftForNextSweep: 70 });
       expect(json.usage).toEqual({
         calls: 3,
         totalMs: 8000,
@@ -190,7 +199,7 @@ describe('RunStatistics', () => {
       expect(() => JSON.stringify(stats.toJSON())).not.toThrow();
       const json = stats.toJSON() as any;
       expect(json.items).toEqual([]);
-      expect(json.funnel).toEqual({ discovered: 0, processed: 0, triaged: 0, deferred: 0, failed: 0, capReached: false });
+      expect(json.funnel).toEqual({ discovered: 0, processed: 0, triaged: 0, deferred: 0, failed: 0, leftForNextSweep: 0 });
       expect(json.usage).toMatchObject({ calls: 0, inputTokens: 0 });
       expect(json.model).toBeNull();
       expect(json.config).toBeNull();

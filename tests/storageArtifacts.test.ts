@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { loadDatabase, saveArtifact, saveDatabase, saveRunArtifact, updateDbEntry } from '../src/storage'
-import { withArtifactsDir, withTempDir } from './fixtures'
+import { DB_FILE, loadDatabase, saveArtifact, saveDatabase, saveRunArtifact, updateDbEntry } from '../src/storage'
+import { withArtifactsDir } from './fixtures'
 import * as fs from 'fs'
 import * as path from 'path'
 import type { TriageDb } from '../src/storage'
@@ -29,31 +29,28 @@ describe('saveArtifact', () => {
 })
 
 describe('updateDbEntry', () => {
-  it('writes summary, completion time, and consumed GitHub watermark', () => {
+  it('writes the completion time and the consumed GitHub watermark, and no summary', () => {
     const db: TriageDb = { version: 2, items: {} }
 
-    updateDbEntry(db, 42, 'summary', { lastSeenUpdatedAt: '2024-04-02T00:00:00.000Z' })
+    updateDbEntry(db, 42, '2024-04-02T00:00:00.000Z')
 
-    expect(db.items['42']).toMatchObject({
-      summary: 'summary',
-      lastSeenUpdatedAt: '2024-04-02T00:00:00.000Z',
-    })
-    expect(db.items['42']?.lastTriaged).toEqual(expect.any(String))
+    expect(db.items['42']).toEqual({ lastTriaged: expect.any(String), lastSeenUpdatedAt: '2024-04-02T00:00:00.000Z' })
   })
 
   it('keeps the previous watermark when no new one is supplied', () => {
     const db: TriageDb = {
       version: 2,
-      items: { '42': { lastTriaged: '2024-01-01T00:00:00.000Z', lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z', summary: 'old' } },
+      items: { '42': { lastTriaged: '2024-01-01T00:00:00.000Z', lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z' } },
     }
 
-    updateDbEntry(db, 42, 'new')
+    updateDbEntry(db, 42)
 
-    expect(db.items['42']).toMatchObject({ summary: 'new', lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z' })
+    expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z' })
     expect(db.items['42']?.lastTriaged).not.toBe('2024-01-01T00:00:00.000Z')
   })
 })
 
+// The database is always triage-db.json in the working directory, which withArtifactsDir points at a throwaway directory.
 describe('loadDatabase', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -61,79 +58,42 @@ describe('loadDatabase', () => {
 
   const EMPTY_DB = { version: 2, items: {} }
 
-  it('starts empty without a configured path or when the file does not exist yet', async () => {
-    expect(loadDatabase(undefined)).toEqual(EMPTY_DB)
-    await withTempDir((tempDir) => {
-      expect(loadDatabase(path.join(tempDir, 'missing.json'))).toEqual(EMPTY_DB)
-    })
-  })
+  it('starts empty when the working directory has no triage-db.json yet, or an empty one', async () => {
+    await withArtifactsDir((tempDir) => {
+      expect(loadDatabase()).toEqual(EMPTY_DB)
 
-  it('starts empty from an empty file', async () => {
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json')
-      fs.writeFileSync(dbPath, '')
-
-      expect(loadDatabase(dbPath)).toEqual(EMPTY_DB)
+      fs.writeFileSync(path.join(tempDir, DB_FILE), '')
+      expect(loadDatabase()).toEqual(EMPTY_DB)
     })
   })
 
   it('logs and starts empty instead of failing the run on corrupt JSON', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json')
-      fs.writeFileSync(dbPath, '{"version": 2, "items": {')
+    await withArtifactsDir((tempDir) => {
+      fs.writeFileSync(path.join(tempDir, DB_FILE), '{"version": 2, "items": {')
 
-      expect(loadDatabase(dbPath)).toEqual(EMPTY_DB)
+      expect(loadDatabase()).toEqual(EMPTY_DB)
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Starting with empty database'))
     })
   })
 
-  it('drops legacy entries whose lastTriaged is not a date', async () => {
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json')
-      fs.writeFileSync(dbPath, JSON.stringify({ '42': { lastTriaged: 'yesterday' }, '43': 'not an object' }))
+  it.each([
+    ['the flat version 1 map', { '42': { lastTriaged: '2024-01-01T00:00:00.000Z', summary: 'legacy summary' } }],
+    ['another version', { version: 3, items: {} }],
+    ['a list', []],
+  ])('warns and starts empty instead of reading %s', async (_name, contents) => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await withArtifactsDir((tempDir) => {
+      fs.writeFileSync(path.join(tempDir, DB_FILE), JSON.stringify(contents))
 
-      expect(loadDatabase(dbPath)).toEqual(EMPTY_DB)
+      expect(loadDatabase()).toEqual(EMPTY_DB)
+      expect(warnSpy).toHaveBeenCalledExactlyOnceWith("⚠️ triage-db.json isn't a version 2 triage database, so it's ignored and every item counts as new.")
     })
   })
 
-  it('migrates legacy flat databases to v2 and drops thoughts', async () => {
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json')
-      fs.writeFileSync(dbPath, JSON.stringify({
-        '42': {
-          lastTriaged: '2024-01-01T00:00:00.000Z',
-          summary: 'legacy summary',
-          thoughts: 'legacy thoughts',
-        },
-        '43': {
-          thoughts: 'drop me',
-        },
-        '44': {
-          summary: 'keep me',
-        },
-      }, null, 2))
-
-      expect(loadDatabase(dbPath)).toEqual({
-        version: 2,
-        items: {
-          '42': {
-            lastTriaged: '2024-01-01T00:00:00.000Z',
-            lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z',
-            summary: 'legacy summary',
-          },
-          '44': {
-            summary: 'keep me',
-          },
-        },
-      })
-    })
-  })
-
-  it('loads v2 databases from the items container', async () => {
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json')
-      fs.writeFileSync(dbPath, JSON.stringify({
+  it('loads the version 2 items, and ignores the summary that earlier versions wrote and any other unknown field', async () => {
+    await withArtifactsDir((tempDir) => {
+      fs.writeFileSync(path.join(tempDir, DB_FILE), JSON.stringify({
         version: 2,
         items: {
           '42': {
@@ -142,16 +102,17 @@ describe('loadDatabase', () => {
             summary: 'v2 summary',
             thoughts: 'ignored',
           },
+          '43': { summary: 'only a summary' },
+          '44': 'not an object',
         },
       }, null, 2))
 
-      expect(loadDatabase(dbPath)).toEqual({
+      expect(loadDatabase()).toEqual({
         version: 2,
         items: {
           '42': {
             lastTriaged: '2024-01-01T00:00:00.000Z',
             lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
-            summary: 'v2 summary',
           },
         },
       })
@@ -160,52 +121,25 @@ describe('loadDatabase', () => {
 })
 
 describe('saveDatabase', () => {
+  const db: TriageDb = {
+    version: 2,
+    items: { '42': { lastTriaged: '2024-01-01T00:00:00.000Z', lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z' } },
+  }
+
   it('does not write in dry-run mode', async () => {
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json')
+    await withArtifactsDir((tempDir) => {
+      saveDatabase(db, true)
 
-      saveDatabase({ version: 2, items: {} }, dbPath, true)
-
-      expect(fs.existsSync(dbPath)).toBe(false)
+      expect(fs.existsSync(path.join(tempDir, DB_FILE))).toBe(false)
     })
   })
 
-  it('creates missing parent directories', async () => {
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'nested', 'dir', 'triage-db.json')
+  it('writes triage-db.json in the working directory, which the next run loads', async () => {
+    await withArtifactsDir((tempDir) => {
+      saveDatabase(db, false)
 
-      saveDatabase({ version: 2, items: {} }, dbPath, false)
-
-      expect(JSON.parse(fs.readFileSync(dbPath, 'utf8'))).toEqual({ version: 2, items: {} })
-    })
-  })
-
-  it('writes the v2 schema to disk', async () => {
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json')
-      const db: TriageDb = {
-        version: 2,
-        items: {
-          '42': {
-            lastTriaged: '2024-01-01T00:00:00.000Z',
-            lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
-            summary: 'saved summary',
-          },
-        },
-      }
-
-      saveDatabase(db, dbPath, false)
-
-      expect(JSON.parse(fs.readFileSync(dbPath, 'utf8'))).toEqual({
-        version: 2,
-        items: {
-          '42': {
-            lastTriaged: '2024-01-01T00:00:00.000Z',
-            lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
-            summary: 'saved summary',
-          },
-        },
-      })
+      expect(JSON.parse(fs.readFileSync(path.join(tempDir, 'triage-db.json'), 'utf8'))).toEqual(db)
+      expect(loadDatabase()).toEqual(db)
     })
   })
 })

@@ -37,9 +37,10 @@ import { ConfigurationError } from '../src/failures';
 import { ModelError } from '../src/llm/chat';
 import { BUILTIN_LABEL_ONLY_PROMPT } from '../src/prompt';
 import { POLICY_PATH } from '../src/prompts';
+import { MAX_SWEEP_ITEMS } from '../src/autoDiscover';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { ItemRecord, RunStatistics } from '../src/stats';
-import { githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, makePullRequest, makeSameRepoWorkflowRunEvent, withTempDir } from './fixtures';
+import { githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, makePullRequest, makeSameRepoWorkflowRunEvent } from './fixtures';
 
 const baseConfig = makeConfig();
 const SHA = '0123456789abcdef0123456789abcdef01234567';
@@ -75,11 +76,20 @@ describe('listTargets', () => {
       cfg: { ...baseConfig, issueNumbers: [3, 5] },
       db: makeDb(),
       gh,
+      revisit: true,
       event: { name: 'issues', payload: { issue: { number: 99 } } },
     });
 
     expect(result).toEqual({ targets: [3, 5], autoDiscover: false });
     expect(gh.listOpenIssues).not.toHaveBeenCalled();
+  });
+
+  it('runs an explicit issues list in full, however much longer it is than a sweep', async () => {
+    const issueNumbers = Array.from({ length: MAX_SWEEP_ITEMS + 15 }, (_, i) => i + 1);
+
+    const result = await listTargets({ cfg: { ...baseConfig, issueNumbers }, db: makeDb(), gh: createGitHub(), revisit: true, event: { name: 'workflow_dispatch', payload: {} } });
+
+    expect(result).toEqual({ targets: issueNumbers, autoDiscover: false });
   });
 
   it('uses the event payload target when no explicit inputs were provided', async () => {
@@ -89,6 +99,7 @@ describe('listTargets', () => {
       cfg: baseConfig,
       db: makeDb(),
       gh,
+      revisit: true,
       event: { name: 'pull_request_target', payload: { pull_request: { number: 77 } } },
     });
 
@@ -99,7 +110,7 @@ describe('listTargets', () => {
   it('triages the pull request behind a workflow_run event and says how it was found, without sweeping', async () => {
     const gh = createGitHub();
 
-    const result = await listTargets({ cfg: baseConfig, db: makeDb(), gh, event: makeSameRepoWorkflowRunEvent(12) });
+    const result = await listTargets({ cfg: baseConfig, db: makeDb(), gh, revisit: true, event: makeSameRepoWorkflowRunEvent(12) });
 
     expect(result).toEqual({ targets: [12], autoDiscover: false, via: 'PR #12 (listed on the workflow run)' });
     expect(gh.listOpenIssues).not.toHaveBeenCalled();
@@ -108,7 +119,7 @@ describe('listTargets', () => {
   it('triages nothing for a push event instead of sweeping the backlog', async () => {
     const gh = createGitHub();
 
-    const result = await listTargets({ cfg: baseConfig, db: makeDb(), gh, event: { name: 'push', payload: { ref: 'refs/heads/main' } } });
+    const result = await listTargets({ cfg: baseConfig, db: makeDb(), gh, revisit: true, event: { name: 'push', payload: { ref: 'refs/heads/main' } } });
 
     expect(result).toEqual({ targets: [], autoDiscover: false, notice: expect.stringMatching(/^Nothing to triage for the push event/) });
     expect(gh.listOpenIssues).not.toHaveBeenCalled();
@@ -118,7 +129,7 @@ describe('listTargets', () => {
     ['a schedule event', { name: 'schedule', payload: { schedule: '23 8 * * *' } }],
     ['a workflow_dispatch event with blank issues', { name: 'workflow_dispatch', payload: { inputs: { issues: '' } } }],
     ['a local run with no event name', { name: undefined, payload: {} }],
-  ])('sweeps the backlog for %s, skipping unchanged items outside extended mode', async (_name, event) => {
+  ])('sweeps the backlog for %s, taking only new and changed items without a policy file', async (_name, event) => {
     const gh = createGitHub();
     gh.listOpenIssues.mockResolvedValue([
       makeIssue(5, '2024-04-05T00:00:00Z'),
@@ -128,13 +139,13 @@ describe('listTargets', () => {
       '4': { lastTriaged: '2024-04-02T00:00:00Z' },
     });
 
-    const result = await listTargets({ cfg: baseConfig, db, gh, event });
+    const result = await listTargets({ cfg: baseConfig, db, gh, revisit: false, event });
 
-    expect(result).toEqual({ targets: [5], autoDiscover: true });
+    expect(result).toEqual({ targets: [5], autoDiscover: true, leftForNextSweep: 0 });
     expect(gh.listRecentlyClosedIssues).not.toHaveBeenCalled();
   });
 
-  it('includes re-check candidates from recently closed issues in extended mode', async () => {
+  it('with a policy file, also revisits unchanged items and recently closed ones with new activity', async () => {
     const gh = createGitHub();
     gh.listOpenIssues.mockResolvedValue([
       makeIssue(5, '2024-04-01T00:00:00Z'),
@@ -147,15 +158,21 @@ describe('listTargets', () => {
       '5': { lastTriaged: '2024-04-02T00:00:00Z' },
     });
 
-    const result = await listTargets({
-      cfg: { ...baseConfig, extended: true },
-      db,
-      gh,
-      event: { name: 'schedule', payload: {} },
-    });
+    const result = await listTargets({ cfg: baseConfig, db, gh, revisit: true, event: { name: 'schedule', payload: {} } });
 
-    expect(result).toEqual({ targets: [4, 5], autoDiscover: true });
+    expect(result).toEqual({ targets: [4, 5], autoDiscover: true, leftForNextSweep: 0 });
     expect(gh.listRecentlyClosedIssues).toHaveBeenCalledOnce();
+  });
+
+  it('takes at most 30 items from the front of the sweep queue, and counts the rest', async () => {
+    const gh = createGitHub();
+    // Every item is new, so the queue keeps GitHub's most-recently-updated-first order.
+    gh.listOpenIssues.mockResolvedValue(Array.from({ length: 45 }, (_, i) => makeIssue(45 - i, '2024-04-05T00:00:00Z')));
+
+    const result = await listTargets({ cfg: baseConfig, db: makeDb(), gh, revisit: true, event: { name: 'schedule', payload: {} } });
+
+    expect(MAX_SWEEP_ITEMS).toBe(30);
+    expect(result).toEqual({ targets: Array.from({ length: 30 }, (_, i) => 45 - i), autoDiscover: true, leftForNextSweep: 15 });
   });
 });
 
@@ -293,82 +310,87 @@ describe('runAutoTriage', () => {
     expect(targetLines).toEqual(['▶️ Triaging 2 item(s): #5, #6']);
   });
 
-  it('logs the size of an auto-discovered backlog instead of every number', async () => {
-    await runAutoTriage({ cfg: baseConfig, db: makeDb(), gh: createGitHub() as any, model: createModel(), stats: createStats() });
-
-    const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
-    expect(targetLines).toEqual([`▶️ Discovered 1 item(s) from ${baseConfig.owner}/${baseConfig.repo} (extended: false)`]);
-  });
-
-  it('saves the database after processing the item that reaches max-pro-runs', async () => {
-    await withTempDir(async (tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json');
+  it('revisits unchanged items in a sweep only when the repository has a policy file, and logs the size of the backlog instead of every number', async () => {
+    async function sweep(policy: string | null) {
       const gh = createGitHub();
-      const model = createModel();
-      const stats = createStats();
+      gh.readRepoFile.mockImplementation(async (path: string) => (path === POLICY_PATH ? policy : '# Project'));
+      gh.listOpenIssues.mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z'), makeIssue(4, '2024-04-01T00:00:00Z')]);
+      processIssueMock.mockClear();
+      await runAutoTriage({ cfg: baseConfig, db: makeDb({ '4': { lastTriaged: '2024-04-02T00:00:00Z' } }), gh: gh as any, model: createModel(), stats: createStats() });
+      return { triaged: processIssueMock.mock.calls.map(([, options]) => options.issue.number), listedClosed: gh.listRecentlyClosedIssues.mock.calls.length };
+    }
 
-      await runAutoTriage({
-        cfg: { ...baseConfig, dbPath, dryRun: false, issueNumbers: [5], maxProRuns: 1 },
-        db: makeDb({ '5': { lastTriaged: '2024-04-01T00:00:00Z' } }),
-        gh: gh as any,
-        model,
-        stats,
-      });
-
-      expect(JSON.parse(fs.readFileSync(dbPath, 'utf8'))).toEqual({
-        version: 2,
-        items: {
-          '5': { lastTriaged: '2024-04-01T00:00:00Z' },
-        },
-      });
-    });
+    expect(await sweep('Label bugs.')).toEqual({ triaged: [5, 4], listedClosed: 1 });
+    expect(await sweep(null)).toEqual({ triaged: [5], listedClosed: 0 });
+    const targetLines = (logSpy.mock.calls as unknown[][]).map((call) => String(call[0])).filter((line) => line.startsWith('▶️'));
+    expect(targetLines).toEqual([
+      `▶️ Discovered 2 item(s) from ${baseConfig.owner}/${baseConfig.repo}: new, changed and unchanged items, because the repository has a policy file`,
+      `▶️ Discovered 1 item(s) from ${baseConfig.owner}/${baseConfig.repo}: new and changed items only, because the built-in policy applies`,
+    ]);
   });
 
-  it('logs remaining backlog items when max-pro-runs is reached, and lists them in the job summary without failing the job', async () => {
-    const gh = createGitHub();
-    const model = createModel();
-    const stats = createStats();
+  it('saves the database to triage-db.json in the working directory after each item of a live run', async () => {
+    const dbFile = path.join(artifactsRoot, 'triage-db.json');
+    const savedBefore: boolean[] = [];
+    processIssueMock.mockImplementation(async (_deps, { issue }) => {
+      savedBefore.push(fs.existsSync(dbFile));
+      return triaged(issue.number);
+    });
 
     await runAutoTriage({
-      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 },
-      db: makeDb(),
-      gh: gh as any,
-      model,
-      stats,
+      cfg: { ...baseConfig, dryRun: false, issueNumbers: [5, 6] },
+      db: makeDb({ '5': { lastTriaged: '2024-04-01T00:00:00Z' } }),
+      gh: createGitHub() as any,
+      model: createModel(),
+      stats: createStats(),
     });
 
-    expect(logSpy).toHaveBeenCalledWith('⏳ Reached max-pro-runs (1) with 2 item(s) remaining');
-    expect(summaryOf(stats).funnel.capReached).toBe(true);
-    expect(processIssueMock).toHaveBeenCalledOnce();
-    expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-pro-runs (1): ${issueLink(6)}, ${issueLink(7)}.`);
+    expect(savedBefore).toEqual([false, true]);
+    expect(JSON.parse(fs.readFileSync(dbFile, 'utf8'))).toEqual({ version: 2, items: { '5': { lastTriaged: '2024-04-01T00:00:00Z' } } });
+  });
+
+  it('leaves the database file alone in a dry run', async () => {
+    await run({ ...baseConfig, dryRun: true, issueNumbers: [5] });
+
+    expect(fs.existsSync(path.join(artifactsRoot, 'triage-db.json'))).toBe(false);
+  });
+
+  it('triages at most 30 items in a sweep, and says in the log and the job summary how many were left for the next sweep, without failing the job', async () => {
+    const gh = createGitHub();
+    gh.listOpenIssues.mockResolvedValue(Array.from({ length: 45 }, (_, i) => makeIssue(45 - i, '2024-04-05T00:00:00Z')));
+    const stats = createStats();
+
+    await run(baseConfig, { gh, stats });
+
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual(Array.from({ length: 30 }, (_, i) => 45 - i));
+    expect(logSpy).toHaveBeenCalledWith('⏳ A sweep triages at most 30 items, so 15 are left for the next sweep');
+    expect(summaryOf(stats).funnel).toMatchObject({ discovered: 45, processed: 30, triaged: 30, leftForNextSweep: 15 });
+    const summary = readJobSummary();
+    expect(summary).toContain('<p>⏳ A sweep triages at most 30 items, so 15 were left for the next sweep.</p>');
+    expect(summary).not.toContain('Not reached');
     expect(core.warning).not.toHaveBeenCalled();
     expect(core.setFailed).not.toHaveBeenCalled();
   });
 
-  it('does not spend max-pro-runs on an item that failed', async () => {
-    processIssueMock.mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 503: busy', 'capacity'));
+  it('runs an explicit issues list in full, past the 30 items a sweep takes', async () => {
+    const issueNumbers = Array.from({ length: 45 }, (_, i) => i + 1);
     const stats = createStats();
 
-    await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 1 }, { stats });
+    await run({ ...baseConfig, issueNumbers }, { stats });
 
-    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 6]);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1, capReached: true });
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual(issueNumbers);
+    expect(summaryOf(stats).funnel).toMatchObject({ discovered: 45, processed: 45, leftForNextSweep: 0 });
+    expect(readJobSummary()).not.toContain('left for the next sweep');
   });
 
-  it('counts a deferred item apart from triaged ones while spending max-pro-runs on it', async () => {
+  it('counts a deferred item apart from triaged ones', async () => {
     processIssueMock.mockResolvedValueOnce(deferred(5));
     const stats = createStats();
 
-    await runAutoTriage({
-      cfg: { ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 2 },
-      db: makeDb(),
-      gh: createGitHub() as any,
-      model: createModel(),
-      stats,
-    });
+    await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
 
     expect(processIssueMock).toHaveBeenCalledTimes(2);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, deferred: 1, capReached: true });
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, deferred: 1 });
     expect(logSpy).toHaveBeenCalledWith('  Total: ✅ 1 triaged ⏸️ 1 deferred');
   });
 
@@ -420,41 +442,30 @@ describe('runAutoTriage', () => {
     expect(core.setFailed).not.toHaveBeenCalled();
   });
 
-  it('counts both analyses of a re-analyzed item against max-pro-runs', async () => {
-    processIssueMock.mockResolvedValueOnce(changed(5));
+  it('counts a re-analyzed item as one of the 30 items a sweep takes', async () => {
+    const gh = createGitHub();
+    gh.listOpenIssues.mockResolvedValue(Array.from({ length: 31 }, (_, i) => makeIssue(31 - i, '2024-04-05T00:00:00Z')));
+    processIssueMock.mockResolvedValueOnce(changed(31));
     const stats = createStats();
 
-    await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 3 }, { stats });
+    await run(baseConfig, { gh, stats });
 
-    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, capReached: true });
-    expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-pro-runs (3): ${issueLink(7)}.`);
+    const analyzed = processIssueMock.mock.calls.map(([, options]) => options.issue.number);
+    expect(analyzed).toEqual([31, ...Array.from({ length: 30 }, (_, i) => 31 - i)]);
+    expect(summaryOf(stats).funnel).toMatchObject({ discovered: 31, processed: 30, leftForNextSweep: 1 });
   });
 
-  it('leaves a changed item deferred when max-pro-runs leaves no room to analyze it again', async () => {
-    processIssueMock.mockResolvedValueOnce(changed(5));
-    const stats = createStats();
-
-    await run({ ...baseConfig, issueNumbers: [5, 6], maxProRuns: 1 }, { stats });
-
-    expect(processIssueMock).toHaveBeenCalledOnce();
-    expect(logSpy).toHaveBeenCalledWith("⏳ #5 isn't analyzed again, because the run reached max-pro-runs (1)");
-    expect(summaryOf(stats).items).toEqual([expect.objectContaining({ number: 5, outcome: 'deferred' })]);
-    expect(warnings()).toEqual(["#5 deferred: It changed while it was being analyzed, so the plan wasn't applied."]);
-  });
-
-  it('records a failed re-analysis as a failed item, after spending the budget of the first analysis', async () => {
+  it('records a failed re-analysis as a failed item and goes on', async () => {
     processIssueMock
       .mockResolvedValueOnce(changed(5))
       .mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 503: busy', 'capacity'));
     const stats = createStats();
 
-    await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxProRuns: 2 }, { stats });
+    await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
 
     expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'failed', reanalyzed: true, failureReason: 'capacity' });
-    // The first analysis of #5 spent one run, so #6 spends the last one.
     expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1, capReached: true });
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1 });
     expect(warnings()).toEqual(['#5 failed: api.openai.com returned HTTP 503: busy']);
     expect(core.setFailed).not.toHaveBeenCalled();
   });

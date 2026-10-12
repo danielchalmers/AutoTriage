@@ -13,7 +13,7 @@ describe('buildAutoDiscoverQueue', () => {
       makeIssue(3, '2024-04-03T00:00:00Z'),
     ];
 
-    expect(buildAutoDiscoverQueue(issues, db)).toEqual([5, 3, 4]);
+    expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([5, 3, 4]);
   });
 
   it('keeps updated tracked issues in the prioritized portion', () => {
@@ -25,7 +25,7 @@ describe('buildAutoDiscoverQueue', () => {
       makeIssue(9, '2024-04-04T00:00:00Z'),
     ];
 
-    expect(buildAutoDiscoverQueue(issues, db)).toEqual([10, 9]);
+    expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([10, 9]);
   });
 
   it('appends unchanged tracked issues sorted by lastTriaged (oldest first)', () => {
@@ -39,7 +39,7 @@ describe('buildAutoDiscoverQueue', () => {
       makeIssue(1, '2024-04-01T00:00:00Z'),
     ];
 
-    expect(buildAutoDiscoverQueue(issues, db)).toEqual([1, 2, 3]);
+    expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([1, 2, 3]);
   });
 
   it('handles mixed prioritized and secondary issues correctly', () => {
@@ -56,7 +56,7 @@ describe('buildAutoDiscoverQueue', () => {
       makeIssue(2, '2024-04-01T00:00:00Z'),
     ];
 
-    expect(buildAutoDiscoverQueue(issues, db)).toEqual([6, 5, 2, 3, 4]);
+    expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([6, 5, 2, 3, 4]);
   });
 
   it('handles issues with missing lastTriaged in secondary bucket', () => {
@@ -69,11 +69,12 @@ describe('buildAutoDiscoverQueue', () => {
       makeIssue(2, '2024-04-01T00:00:00Z'),
     ];
 
-    expect(buildAutoDiscoverQueue(issues, db)).toEqual([2, 3]);
+    expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([2, 3]);
   });
 
-  describe('skipUnchanged parameter', () => {
-    it('excludes unchanged issues when skipUnchanged is true', () => {
+  // A sweep revisits unchanged items only when the repository has a policy file.
+  describe('revisitUnchanged', () => {
+    it('leaves unchanged issues out when not revisiting', () => {
       const db = makeDb({
         '4': { lastTriaged: '2024-04-04T00:00:00Z' },
         '3': { lastTriaged: '2024-04-03T00:00:00Z' },
@@ -84,10 +85,10 @@ describe('buildAutoDiscoverQueue', () => {
         makeIssue(3, '2024-04-01T00:00:00Z'),
       ];
 
-      expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([5]);
+      expect(buildAutoDiscoverQueue(issues, db, false)).toEqual([5]);
     });
 
-    it('includes unchanged issues when skipUnchanged is false', () => {
+    it('appends unchanged issues, oldest-triaged first, when revisiting', () => {
       const db = makeDb({
         '4': { lastTriaged: '2024-04-04T00:00:00Z' },
         '3': { lastTriaged: '2024-04-03T00:00:00Z' },
@@ -98,10 +99,10 @@ describe('buildAutoDiscoverQueue', () => {
         makeIssue(3, '2024-04-01T00:00:00Z'),
       ];
 
-      expect(buildAutoDiscoverQueue(issues, db, false)).toEqual([5, 3, 4]);
+      expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([5, 3, 4]);
     });
 
-    it('includes updated issues even when skipUnchanged is true', () => {
+    it('includes updated issues even when not revisiting', () => {
       const db = makeDb({
         '5': { lastTriaged: '2024-04-01T00:00:00Z' },
         '4': { lastTriaged: '2024-04-04T00:00:00Z' },
@@ -114,7 +115,7 @@ describe('buildAutoDiscoverQueue', () => {
         makeIssue(3, '2024-04-01T00:00:00Z'),
       ];
 
-      expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([6, 5]);
+      expect(buildAutoDiscoverQueue(issues, db, false)).toEqual([6, 5]);
     });
   });
 
@@ -129,7 +130,7 @@ describe('buildAutoDiscoverQueue', () => {
       makeIssue(7, '2024-04-06T00:00:00Z'),
     ];
 
-    expect(buildAutoDiscoverQueue(issues, db, true)).toEqual([7]);
+    expect(buildAutoDiscoverQueue(issues, db, false)).toEqual([7]);
   });
 });
 

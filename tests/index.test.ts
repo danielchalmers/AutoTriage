@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@actions/core', () => ({ setFailed: mocks.setFailed }));
 vi.mock('../src/env', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/env')>()), getConfig: mocks.getConfig }));
-vi.mock('../src/storage', () => ({ loadDatabase: mocks.loadDatabase }));
+vi.mock('../src/storage', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/storage')>()), loadDatabase: mocks.loadDatabase }));
 vi.mock('../src/runner', () => ({ runAutoTriage: mocks.runAutoTriage }));
 vi.mock('../src/github', () => ({
   GitHubClient: class {
@@ -35,10 +35,9 @@ const cfg = makeConfig({
   owner: 'octo',
   repo: 'demo',
   token: 'gh-token',
-  dbPath: 'triage-db.json',
   model: makeEndpoint('test-model', { isDefault: true }),
 });
-const db = makeDb({ '1': { summary: 'known' } });
+const db = makeDb({ '1': { lastTriaged: '2026-10-01T00:00:00Z' } });
 
 // Process-level handlers are captured instead of installed, so the test worker keeps its own crash handling.
 let handlers: Record<string, (...args: any[]) => void>;
@@ -71,7 +70,7 @@ describe('AutoTriage action entry point', () => {
   it('builds one model client from config and runs triage with it', async () => {
     await importEntryPoint();
 
-    expect(mocks.loadDatabase).toHaveBeenCalledWith('triage-db.json');
+    expect(mocks.loadDatabase).toHaveBeenCalledExactlyOnceWith();
     expect(mocks.githubArgs).toEqual([['gh-token', 'octo', 'demo']]);
     expect(mocks.chatArgs).toEqual([[cfg.model]]);
     expect(mocks.runAutoTriage).toHaveBeenCalledOnce();

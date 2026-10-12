@@ -12,9 +12,6 @@ on:
         description: 'Dry run (true = no writes)'
         type: boolean
         required: false
-      additional-instructions:
-        description: 'Additional instructions appended to the prompt'
-        required: false
 
 permissions:
   contents: read
@@ -42,8 +39,6 @@ jobs:
         with:
           issues: ${{ github.event.inputs.issues }}
           dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry-run || false }}
-          db-path: triage-db.json
-          additional-instructions: ${{ github.event.inputs.additional-instructions }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

@@ -12,7 +12,7 @@ import * as core from '@actions/core';
 import { buildAnalysisResultSchema } from '../src/analysis';
 import { ChatClient, ModelError } from '../src/llm/chat';
 import { buildRunContext, processIssue } from '../src/issueProcessor';
-import type { Config } from '../src/config';
+import { TIMELINE_EVENTS } from '../src/prompts';
 import { RunStatistics } from '../src/stats';
 import type { TriageDb } from '../src/storage';
 import { TimelineEvent } from '../src/github';
@@ -54,13 +54,6 @@ describe('buildRunContext', () => {
     ).toContain('the workflow explicitly asked for another review');
   });
 });
-
-function createConfig(overrides: Partial<Config> = {}): Config {
-  return makeConfig({
-    limits: { readmeChars: 0, issueBodyChars: 5000, timelineEvents: 10, timelineTextChars: 5000 },
-    ...overrides,
-  });
-}
 
 // The timeline read is identical across these tests; only the write methods and model replies vary.
 function createGitHub(overrides: Record<string, unknown> = {}) {
@@ -126,7 +119,7 @@ describe('processIssue', () => {
       const model = { generateJson: vi.fn().mockResolvedValueOnce(modelReply('Crash on save', [addBugLabel('policy')], 20)) } as any;
 
       const result = await processIssue(
-        { cfg: createConfig({ dryRun: false }), db, gh, model, stats },
+        { cfg: makeConfig({ dryRun: false }), db, gh, model, stats },
         processOptions()
       );
 
@@ -137,17 +130,15 @@ describe('processIssue', () => {
         outcome: 'triaged',
         plan: { kinds: ['add_labels'], labels: ['+bug'] },
       });
-      expect(gh.listTimelineEvents).toHaveBeenCalledWith(42, 10, false);
+      expect(gh.listTimelineEvents).toHaveBeenCalledWith(42, TIMELINE_EVENTS, false);
       expect(model.generateJson).toHaveBeenCalledOnce();
       const [request] = model.generateJson.mock.calls[0];
       expect(request).toMatchObject({ model: 'test-model', systemPrompt: 'system prompt' });
       expect(request.userPrompt).toMatch(/=== SECTION: ISSUE TIMELINE EVENTS \(JSON\) ===\n\[[\s\S]*"body": "Ping"[\s\S]*\]\n\n$/);
       expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
       expect((stats.toJSON() as any).actions).toEqual({ total: 1, byKind: { add_labels: 1 } });
-      expect(db.items['42']).toMatchObject({
-        summary: 'Crash on save',
-        lastSeenUpdatedAt: '2024-04-12T00:00:00Z',
-      });
+      // The database keeps when the item was triaged and the update it consumed, and no longer the model's summary.
+      expect(db.items['42']).toEqual({ lastTriaged: expect.any(String), lastSeenUpdatedAt: '2024-04-12T00:00:00Z' });
 
       const artifactsDir = path.join(tempDir, 'artifacts');
       expect(fs.readdirSync(artifactsDir).sort()).toEqual(['42-analysis.json', '42-operations.json', '42-prompt-user.md', '42-timeline.json']);
@@ -163,14 +154,14 @@ describe('processIssue', () => {
       const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Nothing to do', [], 10)) } as any;
 
       const result = await processIssue(
-        { cfg: createConfig({ dryRun: false }), db, gh, model, stats: new RunStatistics() },
+        { cfg: makeConfig({ dryRun: false }), db, gh, model, stats: new RunStatistics() },
         processOptions()
       );
 
       expect(result).toMatchObject({ outcome: 'triaged', plan: { kinds: [], labels: [] } });
       expect(gh.getIssue).not.toHaveBeenCalled();
       expect(gh.addLabels).not.toHaveBeenCalled();
-      expect(db.items['42']).toMatchObject({ summary: 'Nothing to do', lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
+      expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
       expect(fs.readdirSync(path.join(tempDir, 'artifacts'))).not.toContain('42-operations.json');
     });
   });
@@ -195,7 +186,7 @@ describe('processIssue', () => {
 
       try {
         const result = await processIssue(
-          { cfg: createConfig({ dryRun: false }), db, gh, model, stats },
+          { cfg: makeConfig({ dryRun: false }), db, gh, model, stats },
           processOptions()
         );
 
@@ -214,7 +205,7 @@ describe('processIssue', () => {
           '⚠️ #42 changed while it was being analyzed (updated at 2024-04-10T00:00:00Z, now 2024-04-12T00:00:00Z). Deferring its planned operations: state: not_planned.'
         );
         expect(db.items['42']).toBeUndefined();
-        expect(buildAutoDiscoverQueue([{ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }], db, true)).toEqual([42]);
+        expect(buildAutoDiscoverQueue([{ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }], db, false)).toEqual([42]);
       } finally {
         warnSpy.mockRestore();
       }
@@ -230,7 +221,6 @@ describe('processIssue', () => {
           '42': {
             lastTriaged: '2024-04-05T00:00:00Z',
             lastSeenUpdatedAt: '2024-04-05T00:00:00Z',
-            summary: 'Previous summary',
           },
         },
       };
@@ -242,7 +232,7 @@ describe('processIssue', () => {
 
       try {
         const result = await processIssue(
-          { cfg: createConfig({ dryRun: false }), db, gh, model, stats },
+          { cfg: makeConfig({ dryRun: false }), db, gh, model, stats },
           processOptions()
         );
 
@@ -250,9 +240,8 @@ describe('processIssue', () => {
         expect(db.items['42']).toEqual({
           lastTriaged: '2024-04-05T00:00:00Z',
           lastSeenUpdatedAt: '2024-04-05T00:00:00Z',
-          summary: 'Previous summary',
         });
-        expect(buildAutoDiscoverQueue([baseIssue], db, true)).toEqual([42]);
+        expect(buildAutoDiscoverQueue([baseIssue], db, false)).toEqual([42]);
         expect(result).toMatchObject({
           outcome: 'deferred',
           detail: "It couldn't be rechecked before applying the plan, so the plan wasn't applied: recheck failed",
@@ -275,7 +264,7 @@ describe('processIssue', () => {
       const reanalyze = async (current: typeof renamed) => {
         const gh = createGitHub({ getIssue: vi.fn().mockResolvedValue(current) });
         const result = await processIssue(
-          { cfg: createConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics() },
+          { cfg: makeConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics() },
           processOptions({ issue: renamed, reanalysis: true })
         );
         return { result, gh };
@@ -311,15 +300,12 @@ describe('processIssue', () => {
       } as any;
 
       await processIssue(
-        { cfg: createConfig({ dryRun: false }), db, gh, model, stats },
+        { cfg: makeConfig({ dryRun: false }), db, gh, model, stats },
         processOptions()
       );
 
       expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
-      expect(db.items['42']).toMatchObject({
-        summary: 'Summary',
-        lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
-      });
+      expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
     });
   });
 
@@ -333,7 +319,7 @@ describe('processIssue', () => {
       } as any;
 
       const result = await processIssue(
-        { cfg: createConfig({ dryRun: true }), db, gh, model, stats },
+        { cfg: makeConfig({ dryRun: true }), db, gh, model, stats },
         processOptions()
       );
 
@@ -349,7 +335,7 @@ describe('processIssue', () => {
     });
   });
 
-  it('retries a model reply without an operations array and falls back to the title for a non-string summary', async () => {
+  it('retries a model reply without an operations array, and triages with a non-string summary', async () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics();
@@ -357,10 +343,10 @@ describe('processIssue', () => {
       const model = new ChatClient(OPENAI, fetch);
       vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
 
-      await processIssue({ cfg: createConfig(), db, gh: createGitHub(), model, stats }, processOptions());
+      await processIssue({ cfg: makeConfig(), db, gh: createGitHub(), model, stats }, processOptions());
 
       expect(fetch).toHaveBeenCalledTimes(2);
-      expect(db.items['42']).toMatchObject({ summary: baseIssue.title });
+      expect(db.items['42']).toHaveProperty('lastTriaged');
     });
   });
 
@@ -371,7 +357,7 @@ describe('processIssue', () => {
       const model = new ChatClient(OPENAI, fetch);
 
       const error = await processIssue(
-        { cfg: createConfig(), db, gh: createGitHub(), model, stats: new RunStatistics() },
+        { cfg: makeConfig(), db, gh: createGitHub(), model, stats: new RunStatistics() },
         processOptions()
       ).catch((err: unknown) => err);
 
@@ -396,7 +382,7 @@ describe('processIssue', () => {
 
       try {
         await processIssue(
-          { cfg: createConfig({ dryRun: false }), db, gh, model: new ChatClient(OPENAI, fetch), stats },
+          { cfg: makeConfig({ dryRun: false }), db, gh, model: new ChatClient(OPENAI, fetch), stats },
           processOptions()
         );
 
@@ -414,7 +400,6 @@ describe('processIssue', () => {
         expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
         expect(gh.createComment).toHaveBeenCalledWith(42, `Thanks for the report.\n\n<!--\n${explanation}\n-->`);
         expect((stats.toJSON() as any).usage).toMatchObject({ calls: 1, inputTokens: 3050, outputTokens: 20, reasoningTokens: 60 });
-        expect(db.items['42']).toMatchObject({ summary: 'Crash on save' });
         // The raw artifact keeps what the model actually returned.
         const artifact = JSON.parse(fs.readFileSync(path.join(tempDir, 'artifacts', '42-analysis.json'), 'utf8'));
         expect(artifact).toEqual({ summary: 'Crash on save', operations });
@@ -431,7 +416,7 @@ describe('processIssue', () => {
       const readError = githubError(502, 'Bad Gateway');
       const planner = { generateJson: vi.fn().mockResolvedValue(modelReply('Summary', [addBugLabel('policy')], 20)) } as any;
       const run = (model: any, gh: ReturnType<typeof createGitHub>) => processIssue(
-        { cfg: createConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics() },
+        { cfg: makeConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics() },
         processOptions()
       ).catch((err: unknown) => err);
 

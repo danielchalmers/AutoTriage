@@ -45,6 +45,7 @@ Start with the smallest useful context:
 - `src/config.ts` and `src/env.ts` - action inputs and environment handling.
   `REMOVED_INPUTS` in `env.ts` lists every input AutoTriage no longer takes, with a migration hint, and passing one fails the run as a configuration error.
 - `src/runner.ts` and `src/issueProcessor.ts` - orchestration and per-item work.
+  A sweep takes at most `MAX_SWEEP_ITEMS` (30, in `autoDiscover.ts`) from its queue, and revisits unchanged and recently closed items only when the repository has a policy file. An explicit `issues` list runs in full.
 - `src/event.ts` - what the triggering event asks the run to triage, including the pull request behind a `workflow_run` event.
   Only `schedule`, `workflow_dispatch` and local runs sweep the backlog.
 - `src/failures.ts` - decides whether a failure fails the job or only warns.
@@ -56,8 +57,9 @@ Start with the smallest useful context:
   danielchalmers/Nuntia copies `src/llm/` and `tests/llm/` verbatim, so change them here first and copy them over in a paired PR.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` and `src/prompt.ts` - reading the policy and README, and prompt assembly.
-  `buildSystemPrompt` is a pure function of the policy text, README text, labels and limits.
+  `buildSystemPrompt` is a pure function of the policy text, README text and labels, and the context limits are constants there.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.
+  The triage DB is always `triage-db.json` in the working directory, loaded when present and saved after each item unless the run is a dry run.
 - `src/util.ts` - shared error-detail and timestamp helpers.
   `errorMessage` is imported straight from `src/llm/chat.ts`.
 - `tests/` - Vitest coverage and examples of expected behavior.

@@ -145,7 +145,8 @@ export class GitHubClient {
     return issues.map((issue: any) => this.buildMetadata(issue));
   }
 
-  async listRecentlyClosedIssues(limit: number = 100): Promise<Issue[]> {
+  // The 100 most recently updated closed items, from one page.
+  async listRecentlyClosedIssues(): Promise<Issue[]> {
     this.incrementApiCalls();
     const { data } = await this.octokit.rest.issues.listForRepo({
       owner: this.owner,
@@ -153,7 +154,7 @@ export class GitHubClient {
       state: 'closed',
       sort: 'updated',
       direction: 'desc',
-      per_page: Math.min(Math.max(limit, 1), 100),
+      per_page: 100,
       page: 1,
     });
     return data.map((issue: any) => this.buildMetadata(issue));

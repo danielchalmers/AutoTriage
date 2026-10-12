@@ -13,7 +13,7 @@ export type ModelOperation =
 /**
  * Narrow the model's parsed reply to the AnalysisResult shape.
  * A reply that isn't an object with an operations array throws, so the model call retries it like a parse error.
- * A non-string summary becomes '' so callers fall back to the issue title; each operation is still checked by planOperations.
+ * A non-string summary becomes '', which the plan's explanation shows as (none); each operation is still checked by planOperations.
  */
 export function parseAnalysisResult(data: unknown): AnalysisResult {
   const reply = data !== null && typeof data === 'object' ? data as { summary?: unknown; operations?: unknown } : {};

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { POLICY_PATH, buildSystemPrompt, readPromptSources } from '../src/prompts'
+import { POLICY_PATH, buildSystemPrompt, buildUserPrompt, readPromptSources } from '../src/prompts'
 import { BUILTIN_LABEL_ONLY_PROMPT } from '../src/prompt'
-import { githubError } from './fixtures'
+import { githubError, makeIssue } from './fixtures'
 
 const SHA = '0123456789abcdef0123456789abcdef01234567'
 
@@ -67,15 +67,15 @@ describe('readPromptSources', () => {
 describe('buildSystemPrompt', () => {
   const labels = [{ name: 'bug', description: 'Something is broken' }]
 
-  it('puts the policy text in the behavior policy section and the README, cut to its limit, in its own section', () => {
-    const readme = `# Project\n${'x'.repeat(100)}`
+  it('puts the policy text in the behavior policy section and the README, cut to 120,000 characters, in its own section', () => {
+    const readme = `# Project\n${'x'.repeat(130000)}`
 
-    const prompt = buildSystemPrompt('Label bugs.', readme, labels, undefined, { readmeChars: 20 })
+    const prompt = buildSystemPrompt('Label bugs.', readme, labels)
 
-    expect(prompt).toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY ===\nLabel bugs.\n')
+    expect(prompt).toContain('=== SECTION: ASSISTANT BEHAVIOR POLICY ===\nLabel bugs.\n\n=== SECTION: REPOSITORY LABELS (JSON) ===\n')
     expect(prompt).not.toContain(BUILTIN_LABEL_ONLY_PROMPT)
-    expect(prompt).toContain(`=== SECTION: PROJECT README (MARKDOWN) ===\n${readme.slice(0, 20)}\n`)
-    expect(prompt).not.toContain(readme.slice(0, 21))
+    expect(prompt).toContain(`=== SECTION: PROJECT README (MARKDOWN) ===\n${readme.slice(0, 120000)}\n`)
+    expect(prompt).not.toContain(readme.slice(0, 120001))
   })
 
   it('uses the built-in label-only policy for a null policy and leaves the README section out without a README', () => {
@@ -83,5 +83,19 @@ describe('buildSystemPrompt', () => {
 
     expect(prompt).toContain(`=== SECTION: ASSISTANT BEHAVIOR POLICY ===\n${BUILTIN_LABEL_ONLY_PROMPT}\n`)
     expect(prompt).not.toContain('PROJECT README (MARKDOWN)')
+  })
+})
+
+describe('buildUserPrompt', () => {
+  it('cuts the body to 20,000 characters and keeps the latest 40 timeline events, each cut to 4,000 characters', () => {
+    const issue = makeIssue(1, '2026-10-01T00:00:00Z', { body: 'b'.repeat(20001) })
+    const events = Array.from({ length: 41 }, (_, i) => ({ event: 'commented', body: `${i}:${'c'.repeat(4000)}` }))
+
+    const prompt = buildUserPrompt(issue, events, 'First review.', '2026-10-11T00:00:00.000Z')
+
+    expect(prompt).toContain(`"body": "${'b'.repeat(20000)}",`)
+    expect(prompt).not.toContain('"body": "0:')
+    expect(prompt).toContain(`"body": "1:${'c'.repeat(3998)}"`)
+    expect(prompt).toContain(`"body": "40:${'c'.repeat(3997)}"`)
   })
 })

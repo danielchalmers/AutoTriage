@@ -2,10 +2,15 @@ import type { GitHubClient, Issue, TimelineEvent } from './github';
 import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
 import type { RepoLabel } from './analysis';
 import { normalizeRepoLabels } from './analysis';
-import type { PromptLimits } from './config';
 
 // The policy always lives here, and it's read through the API at the run's commit rather than from a checkout.
 export const POLICY_PATH = '.github/AutoTriage.prompt';
+
+// How much context the prompts carry. Longer text is cut to these lengths, and only the latest timeline events are kept.
+const README_CHARS = 120000;
+const ISSUE_BODY_CHARS = 20000;
+export const TIMELINE_EVENTS = 40;
+const TIMELINE_TEXT_CHARS = 4000;
 
 // The README is the root file named README in any case, with no extension or .md, .markdown or .txt.
 const README_NAME = /^readme(\.(md|markdown|txt))?$/i;
@@ -40,25 +45,25 @@ export async function readPromptSources(gh: Pick<GitHubClient, 'listRootFiles' |
 }
 
 function clampText(value: string | null | undefined, maxChars: number): string {
-  if (!value || maxChars <= 0) return '';
+  if (!value) return '';
   return value.length > maxChars ? value.slice(0, maxChars) : value;
 }
 
-function applyIssueLimits(issue: Issue, limits: PromptLimits): Issue {
+function applyIssueLimits(issue: Issue): Issue {
   return {
     ...issue,
-    body: clampText(issue.body || '', limits.issueBodyChars),
+    body: clampText(issue.body || '', ISSUE_BODY_CHARS),
   };
 }
 
-function applyTimelineLimits(events: TimelineEvent[], limits: PromptLimits): TimelineEvent[] {
-  return (events || []).slice(-limits.timelineEvents).map((event) => {
+function applyTimelineLimits(events: TimelineEvent[]): TimelineEvent[] {
+  return (events || []).slice(-TIMELINE_EVENTS).map((event) => {
     const next = { ...event };
     if (next.message !== undefined) {
-      next.message = clampText(next.message, limits.timelineTextChars);
+      next.message = clampText(next.message, TIMELINE_TEXT_CHARS);
     }
     if (next.body !== undefined) {
-      next.body = clampText(next.body, limits.timelineTextChars);
+      next.body = clampText(next.body, TIMELINE_TEXT_CHARS);
     }
     return next;
   });
@@ -73,12 +78,9 @@ export function buildSystemPrompt(
   policy: string | null,
   readmeText: string | null,
   repoLabels: RepoLabel[],
-  additionalInstructions?: string,
-  limits?: Partial<PromptLimits>,
 ): string {
   const basePrompt = policy ?? BUILTIN_LABEL_ONLY_PROMPT;
-  const readmeLimit = limits?.readmeChars ?? Number.MAX_SAFE_INTEGER;
-  const readme = readmeLimit > 0 ? clampText(readmeText, readmeLimit) : '';
+  const readme = clampText(readmeText, README_CHARS);
   const normalizedRepoLabels = normalizeRepoLabels(repoLabels);
   return `
 === SECTION: PROMPT MAP ===
@@ -158,7 +160,7 @@ INSTRUCTION HIERARCHY & ENFORCEMENT:
 
 === SECTION: ASSISTANT BEHAVIOR POLICY ===
 ${basePrompt}
-${additionalInstructions ? `\n=== SECTION: ADDITIONAL INSTRUCTIONS ===\n${additionalInstructions}\n` : ''}
+
 === SECTION: REPOSITORY LABELS (JSON) ===
 ${JSON.stringify(normalizedRepoLabels, null, 2)}
 ${readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${readme}` : ''}
@@ -171,18 +173,11 @@ ${readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${readme}` : ''}
 export function buildUserPrompt(
   issue: Issue,
   timelineEvents: TimelineEvent[],
-  limits?: Partial<PromptLimits>,
   runContext?: string,
   runTimestamp?: string,
 ): string {
-  const resolvedLimits: PromptLimits = {
-    readmeChars: limits?.readmeChars ?? Number.MAX_SAFE_INTEGER,
-    issueBodyChars: limits?.issueBodyChars ?? Number.MAX_SAFE_INTEGER,
-    timelineEvents: limits?.timelineEvents ?? Number.MAX_SAFE_INTEGER,
-    timelineTextChars: limits?.timelineTextChars ?? Number.MAX_SAFE_INTEGER,
-  };
-  const promptIssue = applyIssueLimits(issue, resolvedLimits);
-  const promptTimelineEvents = applyTimelineLimits(timelineEvents, resolvedLimits);
+  const promptIssue = applyIssueLimits(issue);
+  const promptTimelineEvents = applyTimelineLimits(timelineEvents);
 
   return `
 === SECTION: TRIAGE TASK ===

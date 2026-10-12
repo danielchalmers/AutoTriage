@@ -30,7 +30,7 @@ try {
   process.exit(1);
 }
 console.log(describeModel(cfg.model));
-const db = loadDatabase(cfg.dbPath);
+const db = loadDatabase();
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
 const model = new ChatClient(cfg.model);
 const stats = new RunStatistics();

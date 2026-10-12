@@ -113,7 +113,7 @@ describe('writeJobSummary', () => {
     await writeJobSummary(
       makeConfig({ dryRun: false }),
       stats,
-      report({ notReached: { items: notReached, reason: 'the run reached max-pro-runs (20)' } })
+      report({ notReached: { items: notReached, reason: '3 items in a row failed' } })
     );
 
     const summary = read();
@@ -126,12 +126,24 @@ describe('writeJobSummary', () => {
     expect(summary).toContain('<tr><td><a href="https://github.com/owner/repo/pull/2">#2</a></td><td>Fix &#34;quotes&#34; in &#60;Button&#62;</td><td>labels: +bug, comment</td></tr>');
     expect(summary).toContain('<tr><td><a href="https://github.com/owner/repo/issues/3">#3</a></td><td>Failed</td><td>api.openai.com returned HTTP 500: &#60;html&#62;oops&#60;/html&#62;</td></tr>');
     expect(summary).toContain('<tr><td><a href="https://github.com/owner/repo/issues/4">#4</a></td><td>Deferred</td><td>It changed while it was being analyzed.</td></tr>');
-    expect(summary).toContain('⏳ Not reached because the run reached max-pro-runs (20): <a href="https://github.com/owner/repo/issues/10">#10</a>, ');
+    expect(summary).toContain('⏳ Not reached because 3 items in a row failed: <a href="https://github.com/owner/repo/issues/10">#10</a>, ');
     expect(summary).toContain('<a href="https://github.com/owner/repo/issues/59">#59</a> and 3 more.');
     expect(summary).not.toContain('issues/60"');
     expect(summary).toContain('Discovered 60 and processed 3: 1 triaged, 1 deferred and 1 failed.');
+    expect(summary).not.toContain('left for the next sweep');
     expect(summary).toContain('<tr><th>Model calls</th><th>Input tokens</th><th>Cached input</th><th>Output tokens</th><th>Reasoning tokens</th></tr>');
     expect(summary).toContain('<tr><td>1</td><td>12,345</td><td>2,000</td><td>50</td><td>700</td></tr>');
+  });
+
+  it('says how many items a sweep left for the next sweep', async () => {
+    const stats = new RunStatistics();
+    stats.setDiscovered(45, 15);
+
+    await writeJobSummary(makeConfig(), stats, report());
+
+    const summary = read();
+    expect(summary).toContain('<p>Discovered 45 and processed 0: 0 triaged, 0 deferred and 0 failed.</p>');
+    expect(summary).toContain('<p>⏳ A sweep triages at most 30 items, so 15 were left for the next sweep.</p>');
   });
 
   it('names the built-in policy and a missing README', async () => {

@@ -6,31 +6,13 @@ branding:
   icon: "git-pull-request"
 
 inputs:
-  additional-instructions:
-    description: "Extra prompt instructions for this run."
-    required: false
-  budget-scale:
-    description: "Multiplier for prompt context limits."
-    required: false
-    default: "1"
-  db-path:
-    description: "Path to the triage history JSON file."
-    required: false
   dry-run:
     description: "Log planned actions without applying changes. Must be true or false."
-    required: false
-    default: "false"
-  extended:
-    description: "Broaden backlog auto-discovery."
     required: false
     default: "false"
   issues:
     description: "Issue or PR numbers separated by spaces or commas, such as \"12, #34\"."
     required: false
-  max-pro-runs:
-    description: "Maximum model analyses per run."
-    required: false
-    default: "20"
   model:
     description: "Model to use. Blank uses the default for the API key you map."
     required: false

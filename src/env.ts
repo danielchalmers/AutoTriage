@@ -1,8 +1,10 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import type { Config, PromptLimits } from './config';
+import { MAX_SWEEP_ITEMS } from './autoDiscover';
+import type { Config } from './config';
 import { describeReasoning } from './llm/chat';
 import { describeEndpoint, resolveModel, type Endpoint, type ModelEnv, type ProviderId } from './llm/endpoint';
+import { DB_FILE } from './storage';
 
 // The model each key gets when the model input is blank.
 const DEFAULT_MODELS: Record<ProviderId, string> = {
@@ -10,8 +12,6 @@ const DEFAULT_MODELS: Record<ProviderId, string> = {
   anthropic: 'claude-haiku-5-5',
   openai: 'gpt-6-luna',
 };
-const DEFAULT_BUDGET_SCALE = 1;
-const DEFAULT_MAX_PRO_RUNS = 20;
 
 /**
  * Inputs that earlier versions took, each with what to do instead.
@@ -23,6 +23,11 @@ export const REMOVED_INPUTS: Readonly<Record<string, string>> = {
   'max-fast-runs': 'delete it',
   'strict-mode': 'delete it; runs fail only for configuration errors and bugs',
   'prompt-path': 'delete it; the policy is always .github/AutoTriage.prompt, read through the API at the event commit',
+  'max-pro-runs': `delete it; sweeps stop at ${MAX_SWEEP_ITEMS} items and explicit lists run in full`,
+  extended: 'delete it; with a policy file, sweeps revisit unchanged and recently closed items',
+  'budget-scale': 'delete it',
+  'additional-instructions': 'move the text into .github/AutoTriage.prompt',
+  'db-path': `delete it; the database is always ${DB_FILE} in the working directory, so keep that cache path`,
 };
 
 function normalizeInput(input?: string): string | undefined {
@@ -49,10 +54,6 @@ function parsePositiveInteger(input?: string): number | undefined {
   return parsed;
 }
 
-function parsePositiveIntegerInput(name: string, defaultValue: number): number {
-  return parsePositiveInteger(core.getInput(name)) ?? defaultValue;
-}
-
 // Any token that isn't an issue or PR number fails the run, so a typo can never turn an explicit list into a backlog sweep.
 function parseIssueNumbersInput(name: string): number[] | undefined {
   const normalized = normalizeInput(core.getInput(name));
@@ -65,18 +66,6 @@ function parseIssueNumbersInput(name: string): number[] | undefined {
     throw new Error(`The ${name} input takes issue or PR numbers separated by spaces or commas, such as "12, #34", but got ${named}.`);
   }
   return [...new Set(tokens.map((token) => Number(token.replace(/^#/, ''))))];
-}
-
-function parseBudgetScaleInput(name: string, defaultValue: number): number {
-  const normalized = normalizeInput(core.getInput(name));
-  if (!normalized) return defaultValue;
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
-}
-
-function parseOptionalInput(name: string): string | undefined {
-  return normalizeInput(core.getInput(name));
 }
 
 // GitHub exports each with: key as INPUT_<NAME> with its hyphens kept, such as INPUT_MODEL-PRO.
@@ -105,19 +94,6 @@ export function describeModel(endpoint: Endpoint): string {
   return `Model: ${describeEndpoint(endpoint)}, ${describeReasoning(endpoint.host)}.`;
 }
 
-function applyMultiplier(base: number, multiplier: number): number {
-  return Math.max(0, Math.floor(base * multiplier));
-}
-
-function scaleLimits(base: PromptLimits, multiplier: number): PromptLimits {
-  return {
-    readmeChars: applyMultiplier(base.readmeChars, multiplier),
-    issueBodyChars: applyMultiplier(base.issueBodyChars, multiplier),
-    timelineEvents: applyMultiplier(base.timelineEvents, multiplier),
-    timelineTextChars: applyMultiplier(base.timelineTextChars, multiplier),
-  };
-}
-
 /**
  * The repository the workflow runs in.
  * context.repo already falls back from GITHUB_REPOSITORY to the event payload, and throws when neither is available.
@@ -137,7 +113,7 @@ function resolveWorkflowRepository(): { owner: string; repo: string } {
 
 /**
  * Resolve runtime config.
- * Throws early with actionable messages if a removed input is passed, GITHUB_TOKEN is missing, no model API key is set or the model input is ambiguous, repo context is absent, or a boolean or issues input has an invalid value.
+ * Throws early with actionable messages if a removed input is passed, GITHUB_TOKEN is missing, no model API key is set or the model input is ambiguous, repo context is absent, or the dry-run or issues input has an invalid value.
  */
 export function getConfig(): Config {
   checkRemovedInputs();
@@ -150,28 +126,15 @@ export function getConfig(): Config {
 
   const dryRun = parseBooleanInput('dry-run');
   const sha = normalizeInput(github.context.sha);
-  const dbPath = parseOptionalInput('db-path');
-  const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
-  const limits = scaleLimits({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 }, multiplier);
-  const maxProRuns = parsePositiveIntegerInput('max-pro-runs', DEFAULT_MAX_PRO_RUNS);
   const issueNumbers = parseIssueNumbersInput('issues');
-  const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
-  const additionalInstructions = parseOptionalInput('additional-instructions');
-  const extended = parseBooleanInput('extended');
 
   return {
     owner,
     repo,
     token,
     dryRun,
-    ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
     ...(sha ? { sha } : {}),
-    ...(dbPath ? { dbPath } : {}),
     model,
-    limits,
-    maxProRuns,
-    ...(additionalInstructions ? { additionalInstructions } : {}),
-    extended,
   };
 }

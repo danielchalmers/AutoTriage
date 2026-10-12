@@ -48,8 +48,6 @@ export interface ItemRecord {
 
 export interface RunConfigSnapshot {
   dryRun: boolean;
-  extended: boolean;
-  maxProRuns: number;
 }
 
 function countKey(counts: Record<string, number>, key: string): void {
@@ -119,7 +117,7 @@ export class RunStatistics {
   private repo = '';
   private model = '';
   private discovered = 0;
-  private capReached = false;
+  private leftForNextSweep = 0;
   private items = new Map<number, ItemRecord>();
   private runConfig: RunConfigSnapshot | null = null;
   private promptHash: string | null = null;
@@ -141,12 +139,10 @@ export class RunStatistics {
     this.actionsPerformed.push(action);
   }
 
-  setDiscovered(count: number): void {
+  // How many items the run found, and how many of those a sweep left for the next sweep.
+  setDiscovered(count: number, leftForNextSweep = 0): void {
     this.discovered = count;
-  }
-
-  setCapReached(): void {
-    this.capReached = true;
+    this.leftForNextSweep = leftForNextSweep;
   }
 
   setRunConfig(config: RunConfigSnapshot): void {
@@ -238,6 +234,9 @@ export class RunStatistics {
     if (actionParts.length > 0) {
       console.log(`  Total: ${actionParts.join(' ')}`);
     }
+    if (this.leftForNextSweep > 0) {
+      console.log(`  Left for the next sweep: ${this.leftForNextSweep}`);
+    }
 
     if (this.actionsPerformed.length > 0) {
       console.log('\n' + chalk.bold('🎬 Actions Performed:'));
@@ -306,7 +305,7 @@ export class RunStatistics {
         discovered: this.discovered,
         processed: records.length,
         ...this.countOutcomes(),
-        capReached: this.capReached,
+        leftForNextSweep: this.leftForNextSweep,
       },
       usage: this.summarizeRuns(this.modelRuns),
       actions: {

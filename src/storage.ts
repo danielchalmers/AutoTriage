@@ -2,10 +2,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { errorMessage } from './llm/chat';
 
+// The triage history always lives in this file in the working directory, where a workflow's cache step restores and saves it.
+export const DB_FILE = 'triage-db.json';
+
 export interface TriageDbEntry {
   lastTriaged?: string;   // ISO timestamp of when triage was completed
   lastSeenUpdatedAt?: string; // GitHub updated_at watermark already consumed
-  summary?: string;       // One-line summary from analysis
 }
 
 export interface TriageDb {
@@ -20,35 +22,41 @@ function createEmptyDatabase(): TriageDb {
   };
 }
 
-export function loadDatabase(dbPath?: string): TriageDb {
-  if (!dbPath) return createEmptyDatabase();
+function dbPath(): string {
+  return path.join(process.cwd(), DB_FILE);
+}
 
+// Loads the triage history if the working directory has one, and otherwise starts empty, so every item counts as new.
+export function loadDatabase(): TriageDb {
+  const file = dbPath();
   try {
-    if (!fs.existsSync(dbPath)) return createEmptyDatabase();
+    if (!fs.existsSync(file)) return createEmptyDatabase();
 
-    const contents = fs.readFileSync(dbPath, 'utf8');
-    const parsed = contents ? JSON.parse(contents) : createEmptyDatabase();
-    const db = isV2Database(parsed)
-      ? normalizeV2Database(parsed)
-      : migrateLegacyDatabase(parsed);
-    console.info(`📊 Loaded ${dbPath} with ${Object.keys(db.items).length} entries`);
+    const contents = fs.readFileSync(file, 'utf8');
+    if (!contents) return createEmptyDatabase();
+    const parsed: unknown = JSON.parse(contents);
+    if (!isV2Database(parsed)) {
+      console.warn(`⚠️ ${DB_FILE} isn't a version 2 triage database, so it's ignored and every item counts as new.`);
+      return createEmptyDatabase();
+    }
+    const db = normalizeV2Database(parsed);
+    console.info(`📊 Loaded ${DB_FILE} with ${Object.keys(db.items).length} entries`);
     return db;
   } catch (err) {
     const message = errorMessage(err);
-    console.error(`⚠️ Failed to load ${dbPath}: ${message}. Starting with empty database.`);
+    console.error(`⚠️ Failed to load ${DB_FILE}: ${message}. Starting with empty database.`);
     return createEmptyDatabase();
   }
 }
 
-export function saveDatabase(db: TriageDb, dbPath?: string, dryRun?: boolean): void {
-  if (!dbPath || dryRun) return;
+export function saveDatabase(db: TriageDb, dryRun: boolean): void {
+  if (dryRun) return;
 
   try {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+    fs.writeFileSync(dbPath(), JSON.stringify(db, null, 2));
   } catch (err) {
     const message = errorMessage(err);
-    console.error(`⚠️ Failed to save ${dbPath}: ${message}`);
+    console.error(`⚠️ Failed to save ${DB_FILE}: ${message}`);
   }
 }
 
@@ -56,22 +64,12 @@ export function getDbEntry(db: TriageDb, issueNumber: number): TriageDbEntry {
   return db.items[String(issueNumber)] || {};
 }
 
-export function updateDbEntry(
-  db: TriageDb,
-  issueNumber: number,
-  summary: string,
-  options: {
-    lastSeenUpdatedAt?: string | undefined;
-  } = {}
-): void {
+// Records that the item was triaged now, and the GitHub updated_at it consumed, keeping the previous watermark when there is none.
+export function updateDbEntry(db: TriageDb, issueNumber: number, lastSeenUpdatedAt?: string): void {
   const key = String(issueNumber);
-  const existing = db.items[key] || {};
-  const entry: TriageDbEntry = { ...existing };
-
-  entry.summary = summary;
-  entry.lastTriaged = new Date().toISOString();
-  if (options.lastSeenUpdatedAt) {
-    entry.lastSeenUpdatedAt = options.lastSeenUpdatedAt;
+  const entry: TriageDbEntry = { ...db.items[key], lastTriaged: new Date().toISOString() };
+  if (lastSeenUpdatedAt) {
+    entry.lastSeenUpdatedAt = lastSeenUpdatedAt;
   }
 
   db.items[key] = entry;
@@ -81,58 +79,20 @@ function isV2Database(value: unknown): value is TriageDb {
   return isRecord(value) && value.version === 2 && isRecord(value.items);
 }
 
-// Both readers walk a raw item map and keep only entries that yielded at least one recognized field.
-function collectEntries(source: object, toEntry: (raw: Record<string, unknown>) => TriageDbEntry): TriageDb {
-  const items: Record<string, TriageDbEntry> = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (!isRecord(value)) continue;
-    const entry = toEntry(value);
-    if (Object.keys(entry).length > 0) {
-      items[key] = entry;
-    }
-  }
-
-  return {
-    version: 2,
-    items,
-  };
-}
-
+// Keeps only the recognized fields, such as dropping the summary that earlier versions wrote, and only the entries that have one.
 function normalizeV2Database(db: TriageDb): TriageDb {
-  return collectEntries(db.items, value => {
+  const items: Record<string, TriageDbEntry> = {};
+  for (const [key, value] of Object.entries(db.items)) {
+    if (!isRecord(value)) continue;
     const entry: TriageDbEntry = {};
     if (typeof value.lastTriaged === 'string') entry.lastTriaged = value.lastTriaged;
     if (typeof value.lastSeenUpdatedAt === 'string') entry.lastSeenUpdatedAt = value.lastSeenUpdatedAt;
-    if (typeof value.summary === 'string') entry.summary = value.summary;
-    return entry;
-  });
+    if (Object.keys(entry).length > 0) items[key] = entry;
+  }
+  return { version: 2, items };
 }
 
-function migrateLegacyDatabase(value: unknown): TriageDb {
-  if (!isRecord(value)) return createEmptyDatabase();
-
-  return collectEntries(value, legacyEntry => {
-    const entry: TriageDbEntry = {};
-    // Legacy rows had no separate watermark, so the triage time doubles as one.
-    // Any parseable date counts, including pre-1970 ones, so keep the finite check rather than a positive-value test.
-    const lastTriaged = typeof legacyEntry.lastTriaged === 'string' && Number.isFinite(Date.parse(legacyEntry.lastTriaged))
-      ? legacyEntry.lastTriaged
-      : undefined;
-
-    if (lastTriaged) {
-      entry.lastTriaged = lastTriaged;
-      entry.lastSeenUpdatedAt = lastTriaged;
-    }
-
-    if (typeof legacyEntry.summary === 'string') {
-      entry.summary = legacyEntry.summary;
-    }
-
-    return entry;
-  });
-}
-
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
