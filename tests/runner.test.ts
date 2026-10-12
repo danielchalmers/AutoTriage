@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const processIssueMock = vi.hoisted(() => vi.fn());
 const githubContextMock = vi.hoisted(() => ({
-  payload: {},
+  eventName: '',
+  payload: {} as unknown,
   serverUrl: 'https://github.com',
 }));
 
@@ -10,11 +11,12 @@ vi.mock('@actions/github', () => ({
   context: githubContextMock,
 }));
 
-// setFailed and warning would otherwise print ::error:: and ::warning:: commands, which annotate the test job on GitHub, and setFailed would set process.exitCode for the test worker.
+// setFailed, warning and notice would otherwise print ::error::, ::warning:: and ::notice:: commands, which annotate the test job on GitHub, and setFailed would set process.exitCode for the test worker.
 vi.mock('@actions/core', async (importActual) => ({
   ...(await importActual<typeof import('@actions/core')>()),
   setFailed: vi.fn(),
   warning: vi.fn(),
+  notice: vi.fn(),
 }));
 
 vi.mock('../src/issueProcessor', async () => {
@@ -35,7 +37,7 @@ import { ModelError } from '../src/llm/chat';
 import { PassError } from '../src/issueProcessor';
 import { listTargets, runAutoTriage } from '../src/runner';
 import { ItemRecord, RunStatistics } from '../src/stats';
-import { bothPasses, githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, withTempDir } from './fixtures';
+import { bothPasses, githubError, makeClosedIssue, makeConfig, makeDb, makeIssue, makePullRequest, makeSameRepoWorkflowRunEvent, withTempDir } from './fixtures';
 
 const baseConfig = makeConfig();
 
@@ -56,17 +58,24 @@ function changed(issueNumber: number, overrides: Partial<ItemRecord> = {}): Item
 }
 
 describe('listTargets', () => {
-  it('uses explicit issue inputs before any other source', async () => {
-    const gh = {
-      listOpenIssues: vi.fn(),
-      listRecentlyClosedIssues: vi.fn(),
+  function createGitHub() {
+    return {
+      listOpenIssues: vi.fn().mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z')]),
+      listRecentlyClosedIssues: vi.fn().mockResolvedValue([]),
+      getPullRequest: vi.fn(async (n: number) => makePullRequest(n)),
+      listOpenPullRequestsByHead: vi.fn().mockResolvedValue([]),
+      getLastReadyForReview: vi.fn().mockResolvedValue(undefined),
     };
+  }
+
+  it('uses explicit issue inputs before any other source', async () => {
+    const gh = createGitHub();
 
     const result = await listTargets({
       cfg: { ...baseConfig, issueNumbers: [3, 5] },
       db: makeDb(),
       gh,
-      payload: { issue: { number: 99 } },
+      event: { name: 'issues', payload: { issue: { number: 99 } } },
     });
 
     expect(result).toEqual({ targets: [3, 5], autoDiscover: false });
@@ -74,54 +83,65 @@ describe('listTargets', () => {
   });
 
   it('uses the event payload target when no explicit inputs were provided', async () => {
-    const gh = {
-      listOpenIssues: vi.fn(),
-      listRecentlyClosedIssues: vi.fn(),
-    };
+    const gh = createGitHub();
 
     const result = await listTargets({
       cfg: baseConfig,
       db: makeDb(),
       gh,
-      payload: { pull_request: { number: 77 } },
+      event: { name: 'pull_request_target', payload: { pull_request: { number: 77 } } },
     });
 
     expect(result).toEqual({ targets: [77], autoDiscover: false });
     expect(gh.listOpenIssues).not.toHaveBeenCalled();
   });
 
-  it('falls back to auto-discovery and skips unchanged items outside extended mode', async () => {
-    const gh = {
-      listOpenIssues: vi.fn().mockResolvedValue([
-        makeIssue(5, '2024-04-05T00:00:00Z'),
-        makeIssue(4, '2024-04-01T00:00:00Z'),
-      ]),
-      listRecentlyClosedIssues: vi.fn(),
-    };
+  it('triages the pull request behind a workflow_run event and says how it was found, without sweeping', async () => {
+    const gh = createGitHub();
+
+    const result = await listTargets({ cfg: baseConfig, db: makeDb(), gh, event: makeSameRepoWorkflowRunEvent(12) });
+
+    expect(result).toEqual({ targets: [12], autoDiscover: false, via: 'PR #12 (listed on the workflow run)' });
+    expect(gh.listOpenIssues).not.toHaveBeenCalled();
+  });
+
+  it('triages nothing for a push event instead of sweeping the backlog', async () => {
+    const gh = createGitHub();
+
+    const result = await listTargets({ cfg: baseConfig, db: makeDb(), gh, event: { name: 'push', payload: { ref: 'refs/heads/main' } } });
+
+    expect(result).toEqual({ targets: [], autoDiscover: false, notice: expect.stringMatching(/^Nothing to triage for the push event/) });
+    expect(gh.listOpenIssues).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a schedule event', { name: 'schedule', payload: { schedule: '23 8 * * *' } }],
+    ['a workflow_dispatch event with blank issues', { name: 'workflow_dispatch', payload: { inputs: { issues: '' } } }],
+    ['a local run with no event name', { name: undefined, payload: {} }],
+  ])('sweeps the backlog for %s, skipping unchanged items outside extended mode', async (_name, event) => {
+    const gh = createGitHub();
+    gh.listOpenIssues.mockResolvedValue([
+      makeIssue(5, '2024-04-05T00:00:00Z'),
+      makeIssue(4, '2024-04-01T00:00:00Z'),
+    ]);
     const db = makeDb({
       '4': { lastTriaged: '2024-04-02T00:00:00Z' },
     });
 
-    const result = await listTargets({
-      cfg: baseConfig,
-      db,
-      gh,
-      payload: {},
-    });
+    const result = await listTargets({ cfg: baseConfig, db, gh, event });
 
     expect(result).toEqual({ targets: [5], autoDiscover: true });
     expect(gh.listRecentlyClosedIssues).not.toHaveBeenCalled();
   });
 
   it('includes re-check candidates from recently closed issues in extended mode', async () => {
-    const gh = {
-      listOpenIssues: vi.fn().mockResolvedValue([
-        makeIssue(5, '2024-04-01T00:00:00Z'),
-      ]),
-      listRecentlyClosedIssues: vi.fn().mockResolvedValue([
-        makeClosedIssue(4, '2024-04-02T00:00:00Z', '2024-04-03T00:00:00Z'),
-      ]),
-    };
+    const gh = createGitHub();
+    gh.listOpenIssues.mockResolvedValue([
+      makeIssue(5, '2024-04-01T00:00:00Z'),
+    ]);
+    gh.listRecentlyClosedIssues.mockResolvedValue([
+      makeClosedIssue(4, '2024-04-02T00:00:00Z', '2024-04-03T00:00:00Z'),
+    ]);
     const db = makeDb({
       '4': { lastTriaged: '2024-04-01T00:00:00Z' },
       '5': { lastTriaged: '2024-04-02T00:00:00Z' },
@@ -131,7 +151,7 @@ describe('listTargets', () => {
       cfg: { ...baseConfig, extended: true },
       db,
       gh,
-      payload: {},
+      event: { name: 'schedule', payload: {} },
     });
 
     expect(result).toEqual({ targets: [4, 5], autoDiscover: true });
@@ -158,6 +178,7 @@ describe('runAutoTriage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    githubContextMock.eventName = '';
     githubContextMock.payload = {};
     processIssueMock.mockReset();
     processIssueMock.mockImplementation(async (_deps, { issue }) => triaged(issue.number));
@@ -192,6 +213,9 @@ describe('runAutoTriage', () => {
       listOpenIssues: vi.fn().mockResolvedValue([makeIssue(5, '2024-04-05T00:00:00Z')]),
       listRecentlyClosedIssues: vi.fn().mockResolvedValue([]),
       getIssue: vi.fn(async (issueNumber: number) => makeIssue(issueNumber, '2024-04-05T00:00:00Z')),
+      getPullRequest: vi.fn(async (n: number) => makePullRequest(n)),
+      listOpenPullRequestsByHead: vi.fn().mockResolvedValue([]),
+      getLastReadyForReview: vi.fn().mockResolvedValue(undefined),
       getApiCallCount: vi.fn().mockReturnValue(0),
     };
   }
@@ -226,6 +250,38 @@ describe('runAutoTriage', () => {
     const [first, second] = processIssueMock.mock.calls.map(([, options]) => options.schema);
     expect(second).toBe(first);
     expect(first).toEqual(buildAnalysisResultSchema([{ name: 'bug' }, { name: 'question' }]));
+  });
+
+  it('triages nothing for a push event, leaving a notice and a green run without reading labels or the backlog', async () => {
+    githubContextMock.eventName = 'push';
+    githubContextMock.payload = { ref: 'refs/heads/main' };
+    const gh = createGitHub();
+    const stats = createStats();
+
+    await run(baseConfig, { gh, stats });
+
+    const notice = 'Nothing to triage for the push event, because it names no issue or pull request and only schedule and workflow_dispatch events sweep the backlog.';
+    expect(core.notice).toHaveBeenCalledExactlyOnceWith(notice);
+    expect(gh.listRepoLabels).not.toHaveBeenCalled();
+    expect(gh.listOpenIssues).not.toHaveBeenCalled();
+    expect(processIssueMock).not.toHaveBeenCalled();
+    expect(summaryOf(stats).funnel).toMatchObject({ discovered: 0, processed: 0 });
+    expect(readJobSummary()).toContain(`<p>ℹ️ ${notice}</p>`);
+    expect(core.warning).not.toHaveBeenCalled();
+    expect(core.setFailed).not.toHaveBeenCalled();
+  });
+
+  it('triages the pull request behind a workflow_run event and names it in the log and the job summary', async () => {
+    const event = makeSameRepoWorkflowRunEvent(12);
+    githubContextMock.eventName = 'workflow_run';
+    githubContextMock.payload = event.payload;
+
+    await run(baseConfig);
+
+    expect(processIssueMock.mock.calls.map(([, options]) => [options.issue.number, options.autoDiscover])).toEqual([[12, false]]);
+    expect(logSpy).toHaveBeenCalledWith('🔗 workflow_run event: PR #12 (listed on the workflow run)');
+    expect(readJobSummary()).toContain('<li>Workflow run: PR #12 (listed on the workflow run)</li>');
+    expect(core.notice).not.toHaveBeenCalled();
   });
 
   it('logs an explicit target list once', async () => {

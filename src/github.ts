@@ -1,4 +1,5 @@
 import * as github from '@actions/github';
+import { parseTimestamp } from './util';
 
 // A request without a version header gets API version 2022-11-28, which marks issue edits as deprecated and due for removal on 2028-03-10 because version 2026-03-10 drops their singular assignee field.
 // Octokit logs that notice as a warning on every title or state edit, and AutoTriage never sends assignee, so its edits ask for the newer version.
@@ -50,6 +51,19 @@ export type TimelineEvent = {
   merged?: boolean;
   milestone?: string | null;
 };
+
+// What a workflow_run event needs to know about a pull request before it triages it.
+export type PullRequestSummary = {
+  number: number;
+  state: string;
+  draft: boolean;
+  created_at: string;
+  head_sha: string;
+};
+
+function summarizePullRequest(pr: { number: number; state: string; draft?: boolean; created_at: string; head: { sha: string } }): PullRequestSummary {
+  return { number: pr.number, state: pr.state, draft: pr.draft === true, created_at: pr.created_at, head_sha: pr.head.sha };
+}
 
 export class GitHubClient {
   private octokit;
@@ -137,6 +151,45 @@ export class GitHubClient {
       page: 1,
     });
     return data.map((issue: any) => this.buildMetadata(issue));
+  }
+
+  async getPullRequest(pull_number: number): Promise<PullRequestSummary> {
+    this.incrementApiCalls();
+    const { data } = await this.octokit.rest.pulls.get({ owner: this.owner, repo: this.repo, pull_number });
+    return summarizePullRequest(data);
+  }
+
+  // The open pull requests into this repository from a head given as owner:branch, which also finds them when the head is a fork.
+  async listOpenPullRequestsByHead(head: string): Promise<PullRequestSummary[]> {
+    this.incrementApiCalls();
+    const pulls = await this.octokit.paginate(this.octokit.rest.pulls.list, {
+      owner: this.owner,
+      repo: this.repo,
+      state: 'open',
+      head,
+      per_page: 100,
+    });
+    return pulls.map(summarizePullRequest);
+  }
+
+  // When the pull request was last marked ready for review, or undefined if it never was.
+  async getLastReadyForReview(pull_number: number): Promise<string | undefined> {
+    this.incrementApiCalls();
+    const events: unknown[] = await this.octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', {
+      owner: this.owner,
+      repo: this.repo,
+      issue_number: pull_number,
+      per_page: 100,
+    });
+    let latest: string | undefined;
+    for (const event of events) {
+      if (typeof event !== 'object' || event === null) continue;
+      const { event: name, created_at: createdAt } = event as { event?: unknown; created_at?: unknown };
+      if (name === 'ready_for_review' && typeof createdAt === 'string' && parseTimestamp(createdAt) > parseTimestamp(latest)) {
+        latest = createdAt;
+      }
+    }
+    return latest;
   }
 
   async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {

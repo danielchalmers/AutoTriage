@@ -59,9 +59,11 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 
 The examples share one job-level `concurrency` group with `queue: max`, so a burst of runs waits its turn instead of being cancelled. Only the backlog sweep saves the triage history cache, because GitHub gives `issues`, `pull_request_target` and `issue_comment` runs read-only cache access. The comments example restores it to see when an item was last triaged.
 
+**What each event triages.** An `issues`, `issue_comment`, `pull_request` or `pull_request_target` event triages the item it names. A `workflow_run` event triages the pull request behind the run it reports, so a small signal workflow on `pull_request` can stand in for `pull_request_target`, fork PRs included. Run the triage job only when `github.event.workflow_run.conclusion == 'success'`. AutoTriage finds the PR itself, and skips drafts, closed PRs and trigger runs that weren't created within 10 minutes of the PR being opened or marked ready for review. Only `schedule` and `workflow_dispatch` runs sweep the backlog. Any other event, such as `push`, triages nothing and leaves a notice. A non-blank `issues` input overrides all of these.
+
 ## How it works
 
-For each item — the triggering issue/PR, an explicit `issues` list, or auto-discovered backlog — AutoTriage gathers the body, full timeline, repository labels, and your policy. If `model-fast` is set, a cheap model screens the item first and clear no-ops stop there. The review model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
+For each item — the triggering issue/PR, an explicit `issues` list, or the backlog on a schedule or dispatch run — AutoTriage gathers the body, full timeline, repository labels, and your policy. If `model-fast` is set, a cheap model screens the item first and clear no-ops stop there. The review model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
 
 Just before applying a plan, AutoTriage checks that the item hasn't changed since it was read. If it has, the item is analyzed once more with its latest state, which counts against `max-fast-runs` and `max-pro-runs`. That plan is applied unless the item changed yet again, in which case the item is deferred and the job summary lists it.
 
@@ -110,7 +112,7 @@ Set one model API key as a secret and map it in the step's `env`. AutoTriage tal
 | `db-path` | Path to the triage history JSON file. | — |
 | `dry-run` | Log planned actions without applying changes. Must be `true` or `false`. | `"false"` |
 | `extended` | Broaden backlog auto-discovery. | `"false"` |
-| `issues` | Issue or PR numbers separated by spaces or commas, such as `12, #34`. | event target or backlog |
+| `issues` | Issue or PR numbers separated by spaces or commas, such as `12, #34`. | the event's item, or the backlog on `schedule` or `workflow_dispatch` |
 | `max-fast-runs` | Maximum fast-model analyses per run. | `100` |
 | `max-pro-runs` | Maximum review-model analyses per run. | `20` |
 | `model-fast` | Fast-pass model. Leave blank to skip. | `""` (skip) |
@@ -124,6 +126,8 @@ A `dry-run` or `extended` value other than true or false, or an `issues` value t
 Once its configuration checks out, every run writes a job summary to its page on GitHub. It shows:
 
 - the mode, each pass's model, the policy file (or the built-in policy) and the prompt hashes;
+- for a `workflow_run` event, the pull request it led to and how AutoTriage found it, such as `PR #12 (fork lookup by pat:fix-typo, head SHA matched)`;
+- a notice when the event had nothing to triage, and why;
 - the items the run acted on, or would have in a dry run, with their operations;
 - each failed or deferred item, and any items a run cap or an early stop left out, with the reason;
 - the item counts and each pass's token counts.
@@ -137,7 +141,7 @@ Each failed or deferred item also gets a warning annotation. GitHub shows up to 
 - a GitHub error that means the token or the workflow's permissions are wrong: HTTP 401, or a 403 that isn't a rate limit;
 - an unexpected error, which points to a bug in AutoTriage.
 
-Everything else only warns, so a provider's bad day doesn't turn your runs red. That covers model overloads, rate limits and timeouts, replies that are malformed, refused or cut off, deferred items, GitHub outages, rate limits and network errors, and a run that stops after three items in a row fail.
+Everything else only warns, so a provider's bad day doesn't turn your runs red. That covers model overloads, rate limits and timeouts, replies that are malformed, refused or cut off, deferred items, GitHub outages, rate limits and network errors, and a run that stops after three items in a row fail. An event with nothing to triage ends the run green with a notice.
 
 ## Run summary
 

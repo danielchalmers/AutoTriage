@@ -42,6 +42,8 @@ Start with the smallest useful context:
 - `src/index.ts` - action entry point.
 - `src/config.ts` and `src/env.ts` - action inputs and environment handling.
 - `src/runner.ts` and `src/issueProcessor.ts` - orchestration and per-item work.
+- `src/event.ts` - what the triggering event asks the run to triage, including the pull request behind a `workflow_run` event.
+  Only `schedule`, `workflow_dispatch` and local runs sweep the backlog.
 - `src/failures.ts` - decides whether a failure fails the job or only warns.
 - `src/summary.ts` - the job summary and the warning annotations.
 - `src/github.ts` - GitHub API boundary.

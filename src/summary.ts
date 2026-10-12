@@ -16,11 +16,15 @@ const LINKED_NOT_REACHED = 50;
 export interface RunReport {
   // The policy file, or null when the built-in label-only policy stood in for a missing one.
   policy: string | null;
+  // The pull request behind a workflow_run event, and how it was found.
+  workflowRun?: string;
   // The targets the run stopped before, and why.
   notReached?: { items: number[]; reason: string } | undefined;
-  // Each failure has already failed the job, and each warning has already been annotated.
+  // Each failure has already failed the job, and each warning and notice has already been annotated.
   failures: string[];
   warnings: string[];
+  // Why the run had nothing to triage.
+  notices: string[];
 }
 
 function escapeHtml(text: string): string {
@@ -89,12 +93,14 @@ export async function writeJobSummary(
     `Fast pass: ${cfg.models.fast ? code(describeEndpoint(cfg.models.fast)) : 'skipped'}`,
     `Review pass: ${code(describeEndpoint(cfg.models.pro))}`,
     `Policy: ${report.policy ? code(report.policy) : 'the built-in label-only policy, because no policy file was found'}`,
+    ...(report.workflowRun ? [`Workflow run: ${escapeHtml(report.workflowRun)}`] : []),
     ...(run.promptHash
       ? [`Prompt hashes: ${run.promptHash.fast ? `fast ${code(run.promptHash.fast)}, ` : ''}review ${code(run.promptHash.pro)}`]
       : []),
   ]);
   for (const message of report.failures) paragraph(`❌ ${escapeHtml(message)}`);
   for (const message of report.warnings) paragraph(`⚠️ ${escapeHtml(message)}`);
+  for (const message of report.notices) paragraph(`ℹ️ ${escapeHtml(message)}`);
 
   const actions = [...stats.getActionDetails()].sort(([a], [b]) => a - b);
   if (actions.length > 0) {

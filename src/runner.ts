@@ -1,5 +1,4 @@
 import * as core from '@actions/core';
-import * as github from '@actions/github';
 import { createHash } from 'node:crypto';
 import { buildAnalysisResultSchema, normalizeRepoLabels } from './analysis';
 import { buildSystemPrompt } from './prompts';
@@ -9,6 +8,7 @@ import {
 } from './autoDiscover';
 import { ModelError } from './llm/chat';
 import { GitHubClient, Issue } from './github';
+import { EventGitHub, TriggerEvent, currentEvent, resolveEventTarget } from './event';
 import { IssueProcessorDeps, PassError, processIssue } from './issueProcessor';
 import type { ItemRecord, RunStatistics } from './stats';
 import type { Config } from './config';
@@ -22,8 +22,18 @@ export type AutoTriageDeps = IssueProcessorDeps;
 export interface ListTargetsDeps {
   cfg: Config;
   db: TriageDb;
-  gh: Pick<GitHubClient, 'listOpenIssues' | 'listRecentlyClosedIssues'>;
-  payload?: any;
+  gh: Pick<GitHubClient, 'listOpenIssues' | 'listRecentlyClosedIssues'> & EventGitHub;
+  // The event from the workflow's context when left out.
+  event?: TriggerEvent;
+}
+
+export interface Targets {
+  targets: number[];
+  autoDiscover: boolean;
+  // How the pull request behind a workflow_run event was found, such as "PR #12 (listed on the workflow run)".
+  via?: string;
+  // Why the run has nothing to triage.
+  notice?: string;
 }
 
 // After this many items in a row fail, the cause is most likely an outage, so the run stops.
@@ -47,6 +57,11 @@ function warn(report: RunReport, message: string): void {
   core.warning(message);
 }
 
+function note(report: RunReport, message: string): void {
+  report.notices.push(message);
+  core.notice(message);
+}
+
 
 // Truncated content hash so run summaries can be segmented by prompt version.
 function hashPrompt(text: string): string {
@@ -59,11 +74,11 @@ function hashPrompt(text: string): string {
  */
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   const { cfg, gh, stats } = deps;
-  const report: RunReport = { policy: hasPromptFile(cfg.promptPath) ? cfg.promptPath : null, failures: [], warnings: [] };
+  const report: RunReport = { policy: hasPromptFile(cfg.promptPath) ? cfg.promptPath : null, failures: [], warnings: [], notices: [] };
   try {
     await triageTargets(deps, report);
   } catch (err) {
-    // Only a failure outside an item gets here, such as listing the repository's labels or its backlog.
+    // Only a failure outside an item gets here, such as finding the event's pull request or listing the repository's labels or its backlog.
     const failure = classifyFailure(err);
     if (failure === 'external') {
       warn(report, `Triage didn't start: ${describeFailure(err)}`);
@@ -85,9 +100,18 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
 
 async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<void> {
   const { cfg, db, gh, models, stats } = deps;
-  const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
-  const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
+  const { targets, autoDiscover, via, notice } = await listTargets({ cfg, db, gh });
   stats.setDiscovered(targets.length);
+  if (via) {
+    console.log(`🔗 workflow_run event: ${via}`);
+    report.workflowRun = via;
+  }
+  // An event with nothing to triage ends the run here, green, before it reads the labels or the policy.
+  if (notice) {
+    note(report, notice);
+    return;
+  }
+  const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const runTimestamp = new Date().toISOString();
   let triagesPerformed = 0;
   let fastRunsPerformed = 0;
@@ -225,16 +249,18 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
   }
 }
 
-export async function listTargets(
-  deps: ListTargetsDeps
-): Promise<{ targets: number[]; autoDiscover: boolean }> {
+/**
+ * The run's targets: a non-blank issues input, else the item the event names, else the pull request behind a workflow_run event, else a backlog sweep on schedule, workflow_dispatch or a local run.
+ * Any other event triages nothing and says so in a notice.
+ */
+export async function listTargets(deps: ListTargetsDeps): Promise<Targets> {
   const { cfg, db, gh } = deps;
   const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
   if (fromInput.length > 0) return { targets: fromInput, autoDiscover: false };
 
-  const payload = deps.payload ?? github.context.payload;
-  const payloadNumber = payload?.issue?.number || payload?.pull_request?.number;
-  if (payloadNumber) return { targets: [Number(payloadNumber)], autoDiscover: false };
+  const target = await resolveEventTarget(deps.event ?? currentEvent(), gh);
+  if (target.kind === 'none') return { targets: [], autoDiscover: false, notice: target.notice };
+  if (target.kind === 'item') return { targets: [target.number], autoDiscover: false, ...(target.via ? { via: target.via } : {}) };
 
   const issues = await gh.listOpenIssues();
   const recentlyClosedIssues = cfg.extended ? await gh.listRecentlyClosedIssues() : [];

@@ -19,7 +19,7 @@ function failed(issueNumber: number, detail = 'api.openai.com returned HTTP 503:
 }
 
 function report(overrides: Partial<RunReport> = {}): RunReport {
-  return { policy: '.github/AutoTriage.prompt', failures: [], warnings: [], ...overrides };
+  return { policy: '.github/AutoTriage.prompt', failures: [], warnings: [], notices: [], ...overrides };
 }
 
 function warnings(): string[] {
@@ -146,6 +146,17 @@ describe('writeJobSummary', () => {
     expect(summary).toContain('<p>❌ Stopped the run at #5: &#60;bad key&#62;</p>');
     expect(summary).toContain('<p>⚠️ Triage didn&#39;t start</p>');
     expect(summary).not.toContain('Prompt hashes');
+  });
+
+  it('names the pull request behind a workflow_run event, and shows why a run had nothing to triage, escaped', async () => {
+    await writeJobSummary(makeConfig(), new RunStatistics(), report({
+      workflowRun: 'PR #12 (fork lookup by pat:<fix>, head SHA matched)',
+      notices: ['PR #12 is a draft, so the workflow_run event has nothing to triage.'],
+    }));
+
+    const summary = read();
+    expect(summary).toContain('<li>Workflow run: PR #12 (fork lookup by pat:&#60;fix&#62;, head SHA matched)</li>');
+    expect(summary).toContain('<p>ℹ️ PR #12 is a draft, so the workflow_run event has nothing to triage.</p>');
   });
 
   it('writes nothing outside GitHub Actions', async () => {

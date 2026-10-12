@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   issuesGet: vi.fn(),
   pullsListFiles: vi.fn(),
   pullsListReviewComments: vi.fn(),
+  pullsGet: vi.fn(),
+  pullsList: vi.fn(),
   paginate: vi.fn(),
   issuesListForRepo: vi.fn(),
   issuesListLabelsForRepo: vi.fn(),
@@ -54,7 +56,7 @@ beforeEach(() => {
         createComment: mocks.issuesCreateComment,
         update: mocks.issuesUpdate,
       },
-      pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments },
+      pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments, get: mocks.pullsGet, list: mocks.pullsList },
     },
     paginate: mocks.paginate,
   });
@@ -207,6 +209,71 @@ describe('GitHubClient listing', () => {
       { name: 'question', description: null },
       { name: 'wontfix', description: null },
     ]);
+  });
+});
+
+describe('GitHubClient pull request lookups for a workflow_run event', () => {
+  // Shaped like GitHub's pull request payload, trimmed to the fields around the ones AutoTriage reads.
+  function pullPayload(number: number, overrides: Record<string, unknown> = {}) {
+    return {
+      number,
+      state: 'open',
+      draft: false,
+      title: 'Fix typo',
+      user: { login: 'pat', type: 'User' },
+      created_at: '2026-10-11T12:00:00Z',
+      updated_at: '2026-10-11T12:05:00Z',
+      head: { label: 'pat:fix-typo', ref: 'fix-typo', sha: 'abc123', repo: { id: 2002, full_name: 'pat/repo' } },
+      base: { label: 'owner:main', ref: 'main', sha: 'def456', repo: { id: 1001, full_name: 'owner/repo' } },
+      ...overrides,
+    };
+  }
+
+  it('reads one pull request', async () => {
+    mocks.pullsGet.mockResolvedValue({ data: pullPayload(12, { draft: true }) });
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.getPullRequest(12)).toEqual({ number: 12, state: 'open', draft: true, created_at: '2026-10-11T12:00:00Z', head_sha: 'abc123' });
+    expect(mocks.pullsGet).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', pull_number: 12 });
+    expect(client.getApiCallCount()).toBe(1);
+  });
+
+  it('lists the open pull requests from an owner:branch head', async () => {
+    mocks.paginate.mockResolvedValue([pullPayload(12), pullPayload(13, { head: { sha: 'f00' } })]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.listOpenPullRequestsByHead('pat:fix-typo')).toEqual([
+      { number: 12, state: 'open', draft: false, created_at: '2026-10-11T12:00:00Z', head_sha: 'abc123' },
+      { number: 13, state: 'open', draft: false, created_at: '2026-10-11T12:00:00Z', head_sha: 'f00' },
+    ]);
+    expect(mocks.paginate).toHaveBeenCalledWith(mocks.pullsList, { owner: 'owner', repo: 'repo', state: 'open', head: 'pat:fix-typo', per_page: 100 });
+    expect(client.getApiCallCount()).toBe(1);
+  });
+
+  it('finds when a pull request was last marked ready for review', async () => {
+    mocks.paginate.mockResolvedValue([
+      { event: 'ready_for_review', actor: { login: 'pat' }, created_at: '2026-10-11T12:00:00Z' },
+      { event: 'convert_to_draft', actor: { login: 'pat' }, created_at: '2026-10-11T12:30:00Z' },
+      { event: 'ready_for_review', actor: { login: 'pat' }, created_at: '2026-10-11T13:00:00Z' },
+      { event: 'commented', actor: { login: 'pat' }, created_at: '2026-10-11T14:00:00Z' },
+      { event: 'ready_for_review' },
+    ]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.getLastReadyForReview(12)).toBe('2026-10-11T13:00:00Z');
+    expect(mocks.paginate).toHaveBeenCalledWith('GET /repos/{owner}/{repo}/issues/{issue_number}/timeline', { owner: 'owner', repo: 'repo', issue_number: 12, per_page: 100 });
+    expect(client.getApiCallCount()).toBe(1);
+  });
+
+  it('finds no ready-for-review time for a pull request that was never a draft', async () => {
+    mocks.paginate.mockResolvedValue([{ event: 'labeled', created_at: '2026-10-11T12:00:00Z' }]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.getLastReadyForReview(12)).toBeUndefined();
   });
 });
 
