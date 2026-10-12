@@ -229,7 +229,7 @@ export function buildRunContext(
   autoDiscover: boolean
 ): string {
   if (!lastTriagedAt) {
-    return 'This item has no previous triage record, so treat this as the first review.';
+    return "There's no triage record for this item. Check the timeline for this bot's earlier labels or comments before treating anything as a first review.";
   }
 
   const latestUpdateMs = latestActivityMs(issue, timelineEvents);
