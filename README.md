@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   triage:
-    # Pull requests from anyone except drafts, and everything else only from people, so the bot's own comments don't trigger another run.
+    # Skip draft PRs, and issues and comments from bots.
     if: >-
       (github.event_name == 'pull_request_target' && !github.event.pull_request.draft) ||
       (github.event_name != 'pull_request_target' && github.event.sender.type != 'Bot')
