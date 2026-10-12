@@ -59,6 +59,10 @@ For event-specific workflows, start from the examples in [`examples/workflows`](
 
 The examples share one job-level `concurrency` group with `queue: max`, so a burst of runs waits its turn instead of being cancelled. Only the backlog sweep saves the triage history cache, because GitHub gives `issues`, `pull_request_target` and `issue_comment` runs read-only cache access. The comments example restores it to see when an item was last triaged.
 
+## Labels
+
+AutoTriage only adds labels that already exist in the repository, and the model chooses them by name and description. Without a policy file, the descriptions are all it has to go on. So give each label a description that says when it applies, such as "Reports or fixes something that is broken" for `bug`. GitHub's default descriptions are vague, and a label without one is easy to misapply.
+
 ## How it works
 
 For each item — the triggering issue/PR, an explicit `issues` list, or auto-discovered backlog — AutoTriage gathers the body, full timeline, repository labels, and your policy. If `model-fast` is set, a cheap model screens the item first and clear no-ops stop there. The review model then plans operations, each citing its authorizing policy clause, and they're applied through the GitHub API (or only logged in dry-run).
