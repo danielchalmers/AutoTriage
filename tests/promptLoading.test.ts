@@ -86,6 +86,26 @@ describe('buildSystemPrompt', () => {
   })
 })
 
+describe('BUILTIN_LABEL_ONLY_PROMPT', () => {
+  it('only adds labels, and never removes or corrects them', () => {
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- You may only emit `add_labels` operations. Never emit `remove_labels`, `comment`, `set_state`, or `set_title` operations.\n')
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- Never remove, replace, or "correct" existing labels.\n')
+  })
+
+  it('gives every item exactly one kind label whoever opened it, recognizing kinds by description', () => {
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('Recognize kind labels by their description, or by their name when they have none')
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- Every issue and pull request MUST end up with exactly one kind label, whoever opened it. A maintainer, owner or bot author changes nothing')
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- If the item already has a kind label, add no other kind label.\n')
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('a pull request that fixes broken behavior is a defect fix whatever its title says')
+  })
+
+  it('holds other labels to their descriptions, and leaves out language, ecosystem and tool labels', () => {
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- Add any other label only when the item itself, or a maintainer\'s comment on it, clearly meets that label\'s description.')
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- Do not add a label that only names a programming language, ecosystem or tool')
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toMatch(/- If no label should be added, return an empty operations array\.$/)
+  })
+})
+
 describe('buildUserPrompt', () => {
   it('cuts the body to 20,000 characters and keeps the latest 40 timeline events, each cut to 4,000 characters', () => {
     const issue = makeIssue(1, '2026-10-01T00:00:00Z', { body: 'b'.repeat(20001) })

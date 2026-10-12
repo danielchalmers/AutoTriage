@@ -112,6 +112,16 @@ export async function writeJobSummary(
     ]);
   }
 
+  const dropped = items.filter((item) => (item.droppedLabels?.length ?? 0) > 0);
+  if (dropped.length > 0) {
+    summary.addHeading('Dropped labels', 3);
+    paragraph('The model planned these label changes, but the repository doesn\'t have the labels or has archived them, so they were left out. If the policy relies on one, create it or unarchive it.');
+    summary.addTable([
+      header('Item', 'Title', 'Labels'),
+      ...dropped.map((item) => [link(item.issueNumber), escapeHtml(item.title ?? ''), escapeHtml((item.droppedLabels ?? []).join(', '))]),
+    ]);
+  }
+
   const problems = unfinished(items);
   const notReached = report.notReached?.items ?? [];
   if (problems.length > 0 || notReached.length > 0) {

@@ -166,6 +166,46 @@ describe('processIssue', () => {
     });
   });
 
+  it('applies the labels the repository has, and names the dropped ones in the log and the record without a warning', async () => {
+    await withArtifactsDir(async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const gh = createGitHub({ getIssue: vi.fn().mockResolvedValue(baseIssue) });
+      const operations = [{ kind: 'add_labels', labels: ['bug', 'stale'], authorization: 'policy' }];
+      const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Old crash', operations, 20)) } as any;
+
+      try {
+        const result = await processIssue(
+          { cfg: makeConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics() },
+          processOptions()
+        );
+
+        expect(gh.addLabels).toHaveBeenCalledExactlyOnceWith(42, ['bug']);
+        expect(result).toMatchObject({ outcome: 'triaged', plan: { kinds: ['add_labels'], labels: ['+bug'] }, droppedLabels: ['+stale'] });
+        expect(log.mock.calls.map(call => String(call[0]))).toContainEqual(expect.stringContaining("🏷️ Dropped labels that the repository doesn't have or has archived: +stale"));
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        log.mockRestore();
+        warn.mockRestore();
+      }
+    });
+  });
+
+  it('adds no label when the repository has none', async () => {
+    await withArtifactsDir(async () => {
+      const gh = createGitHub({ getIssue: vi.fn() });
+      const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Crash', [addBugLabel('policy')], 20)) } as any;
+
+      const result = await processIssue(
+        { cfg: makeConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics() },
+        processOptions({ repoLabels: [], schema: buildAnalysisResultSchema([]) })
+      );
+
+      expect(gh.addLabels).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ outcome: 'triaged', plan: { kinds: [], labels: [] }, droppedLabels: ['+bug'] });
+    });
+  });
+
   it('defers operations, logs them and retains the analyzed watermark when the thread changes during analysis', async () => {
     await withArtifactsDir(async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { explainPlan, planOperations } from '../src/triage';
+import { explainPlan, findDroppedLabels, planOperations } from '../src/triage';
 import type { AnalysisResult } from '../src/analysis';
 
 describe('planOperations', () => {
@@ -42,15 +42,27 @@ describe('planOperations', () => {
     ]);
   });
 
-  it('allows any label when the repository label list is unavailable', () => {
+  it('allows any label when no repository label list is given', () => {
     const analysis: AnalysisResult = {
       summary: 's',
       operations: [{ kind: 'add_labels', labels: ['brand-new', 'bug'], authorization: 'policy allows labels' }],
     };
 
-    expect(planOperations(baseIssue, analysis, [])).toEqual([
+    expect(planOperations(baseIssue, analysis, undefined)).toEqual([
       { kind: 'add_labels', labels: ['brand-new'], authorization: 'policy allows labels' },
     ]);
+  });
+
+  it('allows no label when the repository has none', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [
+        { kind: 'add_labels', labels: ['brand-new'], authorization: 'policy allows labels' },
+        { kind: 'remove_labels', labels: ['bug'], authorization: 'policy allows cleanup' },
+      ],
+    };
+
+    expect(planOperations(baseIssue, analysis, [])).toEqual([]);
   });
 
   it('drops blank and non-string labels from the model output', () => {
@@ -237,6 +249,34 @@ describe('planOperations', () => {
     } as unknown as AnalysisResult;
 
     expect(planOperations(baseIssue, analysis, ['feature'])).toEqual([]);
+  });
+});
+
+describe('findDroppedLabels', () => {
+  it('names each label change dropped for a label the repository lacks, signed, once', () => {
+    const analysis = {
+      summary: 's',
+      operations: [
+        { kind: 'add_labels', labels: ['BUG', 'stale', 'stale', ''], authorization: 'policy marks stale items' },
+        { kind: 'remove_labels', labels: ['needs: info', 'help wanted'], authorization: 'policy clears needs: info' },
+        { kind: 'add_labels', labels: ['stale', 'Docs'], authorization: 'policy marks stale items' },
+        { kind: 'add_labels', labels: ['ghost'], authorization: '' },
+        { kind: 'comment', body: 'Hi', authorization: 'policy thanks reporters' },
+      ],
+    } as unknown as AnalysisResult;
+
+    expect(findDroppedLabels(analysis, ['bug', 'help wanted', 'docs', 'DOCS'])).toEqual(['+stale', '-needs: info', '+Docs']);
+  });
+
+  it('drops every label when the repository has none, and none when no repository label list is given', () => {
+    const analysis: AnalysisResult = {
+      summary: 's',
+      operations: [{ kind: 'add_labels', labels: ['bug'], authorization: 'policy labels bugs' }],
+    };
+
+    expect(findDroppedLabels(analysis, [])).toEqual(['+bug']);
+    expect(findDroppedLabels(analysis, undefined)).toEqual([]);
+    expect(findDroppedLabels(analysis, ['bug'])).toEqual([]);
   });
 });
 

@@ -27,6 +27,7 @@ Preserve these invariants:
 - Default runtime prompt: with no `.github/AutoTriage.prompt` at the run's
   commit, the built-in label-only prompt (`src/prompt.ts`) is used. The
   `examples/AutoTriage.prompt` file is a copy-paste starting point, not bundled.
+  The built-in prompt gives every item exactly one kind label whoever opened it, and recognizes kind labels by their descriptions, so it doesn't depend on any repository's label names.
 - Policy source: the policy and README are read through the GitHub API at `GITHUB_SHA` (the default branch on a local run), never from the workspace, so consumer workflows need no checkout.
   A transient failure reading them stops the run with a warning instead of falling back to the built-in prompt.
 - Unit tests must not require real GitHub or model API credentials, or any network
@@ -51,11 +52,13 @@ Start with the smallest useful context:
 - `src/failures.ts` - decides whether a failure fails the job or only warns.
 - `src/summary.ts` - the job summary and the warning annotations.
 - `src/github.ts` - GitHub API boundary, including the contents reads for the policy and README.
+  `listRepoLabels` leaves out archived labels, because GitHub won't add them.
 - `src/llm/` - the model API boundary, with no SDK.
   `endpoint.ts` picks the Chat Completions endpoint and key for a model input.
   `chat.ts` is the one client every provider goes through, with its retries, per-call deadline, error classification, and undici fetch.
   danielchalmers/Nuntia copies `src/llm/` and `tests/llm/` verbatim, so change them here first and copy them over in a paired PR.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
+  An empty repository label list allows no label, while an undefined one filters nothing, and `findDroppedLabels` names the planned labels the repository lacks for the log and the job summary.
 - `src/prompts.ts` and `src/prompt.ts` - reading the policy and README, and prompt assembly.
   `buildSystemPrompt` is a pure function of the policy text, README text and labels, and the context limits are constants there.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.

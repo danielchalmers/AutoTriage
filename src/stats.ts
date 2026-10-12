@@ -41,6 +41,8 @@ export interface ItemRecord {
   changedDuringAnalysis?: boolean | undefined;
   // What the model planned. A failed item has none.
   plan?: PlanSummary | undefined;
+  // The planned label changes that were dropped because the repository has no such label or has archived it, signed like the plan's labels, for the job summary.
+  droppedLabels?: string[] | undefined;
   failureReason?: FailureReason | undefined;
   // One line on why a failed or deferred item didn't finish, for the job summary and the item's warning.
   detail?: string | undefined;

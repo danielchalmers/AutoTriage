@@ -110,18 +110,24 @@ export async function executeOperations(
   }
 }
 
+// The distinct non-blank label names an operation lists.
+function namedLabels(labels: unknown): string[] {
+  if (!Array.isArray(labels)) return [];
+  return [...new Set(labels.filter((label): label is string => typeof label === 'string' && label.trim().length > 0))];
+}
+
+// An exact match wins; otherwise take the repository's spelling when exactly one label matches ignoring case.
+function resolveLabel(label: string, repoLabels: string[]): string | undefined {
+  if (repoLabels.includes(label)) return label;
+  const matches = repoLabels.filter(name => name.toLowerCase() === label.toLowerCase());
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+// An undefined repository label list filters nothing, while an empty one leaves no label to use.
 function filterLabels(labels: unknown, repoLabels: string[] | undefined): string[] {
-  if (!Array.isArray(labels) || labels.length === 0) return [];
-  const unique = [...new Set(labels.filter((label): label is string => typeof label === 'string' && label.trim().length > 0))];
-  if (!repoLabels || repoLabels.length === 0) return unique;
-  const allowed = new Set(repoLabels);
-  // An exact match wins; otherwise take the repository's spelling when exactly one label matches ignoring case.
-  const resolved = unique.flatMap(label => {
-    if (allowed.has(label)) return [label];
-    const matches = [...allowed].filter(name => name.toLowerCase() === label.toLowerCase());
-    return matches.length === 1 ? matches : [];
-  });
-  return [...new Set(resolved)];
+  const unique = namedLabels(labels);
+  if (!repoLabels) return unique;
+  return [...new Set(unique.flatMap(label => resolveLabel(label, repoLabels) ?? []))];
 }
 
 function hasAuthorization(op: unknown): op is ModelOperation {
@@ -129,6 +135,21 @@ function hasAuthorization(op: unknown): op is ModelOperation {
   const { kind, authorization } = op as { kind?: unknown; authorization?: unknown };
   return OPERATION_KINDS.includes(kind as ModelOperation['kind'])
     && typeof authorization === 'string' && authorization.trim().length > 0;
+}
+
+/**
+ * The label changes that planOperations drops because the repository has no such label, or has archived it, signed like `+stale`.
+ * The log and the job summary name them, so a policy that relies on a missing label doesn't fail silently.
+ */
+export function findDroppedLabels(analysis: AnalysisResult, repoLabels?: string[]): string[] {
+  if (!repoLabels) return [];
+  const operations: unknown[] = Array.isArray(analysis.operations) ? analysis.operations : [];
+  const dropped = operations.filter(hasAuthorization).flatMap(op => {
+    if (op.kind !== 'add_labels' && op.kind !== 'remove_labels') return [];
+    const sign = op.kind === 'add_labels' ? '+' : '-';
+    return namedLabels(op.labels).filter(label => resolveLabel(label, repoLabels) === undefined).map(label => `${sign}${label}`);
+  });
+  return [...new Set(dropped)];
 }
 
 // Explains a plan from its summary and the policy clause each operation cites.

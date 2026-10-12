@@ -211,6 +211,22 @@ describe('GitHubClient listing', () => {
       { name: 'wontfix', description: null },
     ]);
   });
+
+  it('leaves out archived labels, which GitHub won\'t add to an item', async () => {
+    mocks.paginate.mockResolvedValue([
+      { name: 'bug', description: 'Something is broken', archived_at: null },
+      { name: 'hacktoberfest', description: 'Hacktoberfest contribution', archived_at: '2026-10-01T00:00:00Z' },
+      { name: 'legendary', description: null, archived_at: '2025-01-15T12:00:00Z' },
+      { name: 'question', description: 'Asks how to use it' },
+    ]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+
+    expect(await client.listRepoLabels()).toEqual([
+      { name: 'bug', description: 'Something is broken' },
+      { name: 'question', description: 'Asks how to use it' },
+    ]);
+  });
 });
 
 describe('GitHubClient pull request lookups for a workflow_run event', () => {

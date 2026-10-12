@@ -91,7 +91,7 @@ AutoTriage keeps its triage history, which is when it last triaged each item and
 
 ## Policy and README
 
-AutoTriage reads your policy from `.github/AutoTriage.prompt` and your README from the repository root, where it's the file named README in any case, with no extension or `.md`, `.markdown` or `.txt`. Without a policy file, the built-in label-only policy applies, and the README is optional. Both are read through the GitHub API at the commit the run is for (`GITHUB_SHA`), never from a checkout, so the workflow needs `contents: read` but no checkout step. That commit depends on the event:
+AutoTriage reads your policy from `.github/AutoTriage.prompt` and your README from the repository root, where it's the file named README in any case, with no extension or `.md`, `.markdown` or `.txt`. Without a policy file, the [built-in label-only policy](#built-in-policy) applies, and the README is optional. Both are read through the GitHub API at the commit the run is for (`GITHUB_SHA`), never from a checkout, so the workflow needs `contents: read` but no checkout step. That commit depends on the event:
 
 - `issues`, `issue_comment`, `schedule` and `workflow_run`: the head of the default branch.
 - `workflow_dispatch`: the head of the branch you run it from, which is the default branch unless you pick another.
@@ -102,6 +102,19 @@ AutoTriage reads your policy from `.github/AutoTriage.prompt` and your README fr
 So under every event except `pull_request`, a pull request can't change the policy that triages it.
 
 The log and the job summary name both sources, such as `Policy: .github/AutoTriage.prompt at 1a2b3c4` or `Policy: built-in`, and `README: README.md at 1a2b3c4` or `README: none`. AutoTriage first lists the repository's root files, which also finds the README's real name. If GitHub refuses that listing, the token can't read the repository's contents, so the run fails and asks for `contents: read`. A private repository answers such a token with a 404. A GitHub outage or rate limit while reading either file stops the run with a warning before anything is triaged, rather than triaging with the built-in policy in place of yours.
+
+## Built-in policy
+
+Without a policy file, AutoTriage only adds labels. It never removes or replaces a label, comments, retitles or closes.
+
+- **One kind label per item.** Every issue and pull request gets exactly one kind label, whoever opened it, so items from maintainers and bots get one too. A kind label says what sort of item it is: a defect, a new feature or improvement, documentation, a question, a dependency update, or maintenance such as CI, tests or refactoring. Kind labels are recognized by their descriptions, or by their names when they have none, so GitHub's default labels such as `bug` and `enhancement` work. An item that already has a kind label gets no other one, and a pull request that fixes broken behavior counts as a defect fix whatever its title says.
+- **Other labels** are added only when the item, or a maintainer's comment on it, clearly meets the label's description. Labels that only name a language, ecosystem or tool, such as Dependabot's `javascript`, are never added, and neither are labels without a description whose meaning is unclear.
+
+## Labels
+
+The model sees each label's name and description, never its color, so give every label a description that says when it applies, such as "Reports or fixes something that is broken" for `bug`. Under the built-in policy, the description is what makes a label a kind label.
+
+Archived labels are hidden from the model, because GitHub won't add them to an item, and a repository with no labels gets none added. When the model plans a label the repository doesn't have or has archived, the log and the job summary name it as dropped, and the rest of the plan still applies.
 
 ## Models
 
@@ -144,6 +157,7 @@ Once its configuration checks out, every run writes a job summary to its page on
 - for a `workflow_run` event, the pull request it led to and how AutoTriage found it, such as `PR #12 (fork lookup by pat:fix-typo, head SHA matched)`;
 - a notice when the event had nothing to triage, and why;
 - the items the run acted on, or would have in a dry run, with their operations;
+- the labels the model planned that the repository doesn't have or has archived, which were dropped from the plan;
 - each failed or deferred item, and any items an early stop left out, with the reason;
 - the item counts, how many items a sweep left for the next sweep, and the model's token counts.
 

@@ -31,10 +31,11 @@ beforeEach(() => {
 });
 
 describe('annotateItems', () => {
-  it('warns once for each failed or deferred item, and not for finished ones', () => {
+  it('warns once for each failed or deferred item, and not for finished ones, even with dropped labels', () => {
     annotateItems([
       failed(3),
       { issueNumber: 4, outcome: 'triaged' },
+      { issueNumber: 5, outcome: 'triaged', droppedLabels: ['+stale'] },
       { issueNumber: 6, outcome: 'deferred', detail: 'It changed while it was being analyzed.' },
       { issueNumber: 7, outcome: 'failed', failureReason: 'other', detail: 'GitHub returned HTTP 404: Not Found' },
     ], 0);
@@ -131,8 +132,22 @@ describe('writeJobSummary', () => {
     expect(summary).not.toContain('issues/60"');
     expect(summary).toContain('Discovered 60 and processed 3: 1 triaged, 1 deferred and 1 failed.');
     expect(summary).not.toContain('left for the next sweep');
+    expect(summary).not.toContain('Dropped labels');
     expect(summary).toContain('<tr><th>Model calls</th><th>Input tokens</th><th>Cached input</th><th>Output tokens</th><th>Reasoning tokens</th></tr>');
     expect(summary).toContain('<tr><td>1</td><td>12,345</td><td>2,000</td><td>50</td><td>700</td></tr>');
+  });
+
+  it("names the labels each item's plan dropped, escaped", async () => {
+    const stats = new RunStatistics();
+    stats.recordItem({ issueNumber: 6, type: 'issue', title: 'Old <crash>', outcome: 'triaged', droppedLabels: ['+stale', '-needs: <info>'] });
+    stats.recordItem({ issueNumber: 7, type: 'pull request', title: 'Fix typo', outcome: 'triaged', plan: { kinds: ['add_labels'], labels: ['+bug'] } });
+
+    await writeJobSummary(makeConfig(), stats, report());
+
+    const summary = read();
+    expect(summary).toContain('<h3>Dropped labels</h3>');
+    expect(summary).toContain('<tr><th>Item</th><th>Title</th><th>Labels</th></tr><tr><td><a href="https://github.com/owner/repo/issues/6">#6</a></td><td>Old &#60;crash&#62;</td><td>+stale, -needs: &#60;info&#62;</td></tr></table>');
+    expect(summary).not.toContain('pull/7');
   });
 
   it('says how many items a sweep left for the next sweep', async () => {

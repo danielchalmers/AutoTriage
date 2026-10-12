@@ -199,6 +199,7 @@ export class GitHubClient {
     return latest;
   }
 
+  // The labels that can be added to an item. GitHub won't add an archived label, so those are left out and the model never sees them.
   async listRepoLabels(): Promise<Array<{ name: string; description?: string | null }>> {
     this.incrementApiCalls();
     const labels = await this.octokit.paginate(this.octokit.rest.issues.listLabelsForRepo, {
@@ -209,7 +210,7 @@ export class GitHubClient {
     return (labels as any[])
       .map((l: any) => {
         const name: string | undefined = typeof l?.name === 'string' ? l.name : undefined;
-        if (!name) return null;
+        if (!name || l.archived_at != null) return null;
         return {
           name,
           description: typeof l?.description === 'string' && l.description.trim().length > 0 ? l.description : null,

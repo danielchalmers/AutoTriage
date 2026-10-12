@@ -5,7 +5,7 @@ import { TIMELINE_EVENTS, buildUserPrompt } from './prompts';
 import { errorMessage, type ChatClient, type JsonRequest } from './llm/chat';
 import { GitHubClient, Issue, TimelineEvent } from './github';
 import { ItemRecord, RunStatistics, describeModelRun, summarizePlan } from './stats';
-import { PlannedOperation, describeOperation, executeOperations, explainPlan, planOperations } from './triage';
+import { PlannedOperation, describeOperation, executeOperations, explainPlan, findDroppedLabels, planOperations } from './triage';
 import type { Config } from './config';
 import { TriageDb, getDbEntry, saveArtifact, updateDbEntry } from './storage';
 import { parseTimestamp } from './util';
@@ -65,7 +65,7 @@ export async function processIssue(
       { db, gh },
       { issue, autoDiscover }
     );
-    const operations = await analyze(
+    const { operations, droppedLabels } = await analyze(
       { cfg, model, stats },
       { issue, repoLabels, schema, systemPrompt, runTimestamp, context }
     );
@@ -74,7 +74,14 @@ export async function processIssue(
       { issue, operations, reanalysis }
     );
 
-    const item = { issueNumber: issue.number, type: issue.type, title: issue.title, ...(reanalysis ? { reanalyzed: true } : {}), plan: summarizePlan(operations) };
+    const item = {
+      issueNumber: issue.number,
+      type: issue.type,
+      title: issue.title,
+      ...(reanalysis ? { reanalyzed: true } : {}),
+      plan: summarizePlan(operations),
+      ...(droppedLabels.length > 0 ? { droppedLabels } : {}),
+    };
     if (deferral) {
       return { ...item, outcome: 'deferred', detail: deferral.detail, ...(deferral.changed ? { changedDuringAnalysis: true } : {}) };
     }
@@ -138,7 +145,7 @@ async function analyze(
   options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'schema' | 'systemPrompt' | 'runTimestamp'> & {
     context: IssueContext;
   }
-): Promise<PlannedOperation[]> {
+): Promise<{ operations: PlannedOperation[]; droppedLabels: string[] }> {
   const { cfg, model, stats } = deps;
   const { issue, repoLabels, schema, systemPrompt, runTimestamp, context } = options;
 
@@ -150,7 +157,7 @@ async function analyze(
   );
   saveArtifact(issue.number, 'prompt-user.md', userPrompt);
 
-  const { ops: operations } = await generateAnalysis(
+  const { ops: operations, droppedLabels } = await generateAnalysis(
     { model, stats },
     {
       issue,
@@ -162,7 +169,7 @@ async function analyze(
     }
   );
 
-  return operations;
+  return { operations, droppedLabels };
 }
 
 // Applies the plan, or returns why it was deferred instead.
@@ -255,7 +262,7 @@ export function buildRunContext(
 export async function generateAnalysis(
   deps: { model: ModelClient; stats: RunStatistics },
   options: GenerateAnalysisOptions
-): Promise<{ data: AnalysisResult; ops: PlannedOperation[] }> {
+): Promise<{ data: AnalysisResult; ops: PlannedOperation[]; droppedLabels: string[] }> {
   const { stats } = deps;
   const { issue, model, systemPrompt, userPrompt, repoLabels, schema } = options;
   const request: JsonRequest = { model, systemPrompt, userPrompt, schema };
@@ -273,6 +280,12 @@ export async function generateAnalysis(
   console.log(chalk.magenta(explanation));
   saveArtifact(issue.number, 'analysis.json', JSON.stringify(data, null, 2));
 
-  const ops = planOperations(issue, data, repoLabels.map((label) => label.name), explanation);
-  return { data, ops };
+  const labelNames = repoLabels.map((label) => label.name);
+  const ops = planOperations(issue, data, labelNames, explanation);
+  // Dropped labels go to the log and the job summary but not to a warning annotation, because the rest of the plan still applies.
+  const droppedLabels = findDroppedLabels(data, labelNames);
+  if (droppedLabels.length > 0) {
+    console.log(chalk.yellow(`🏷️ Dropped labels that the repository doesn't have or has archived: ${droppedLabels.join(', ')}`));
+  }
+  return { data, ops, droppedLabels };
 }
