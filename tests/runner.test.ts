@@ -299,14 +299,18 @@ describe('runAutoTriage', () => {
     expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-runs (50): ${issueLink(51)}, ${issueLink(52)}.`);
   });
 
-  it('does not spend max-runs on an item that failed', async () => {
-    processIssueMock.mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 503: busy', 'capacity'));
+  it('spends max-runs on an item that failed, so failures between successes cannot stretch the run', async () => {
+    processIssueMock
+      .mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 400: flagged', 'permanent'))
+      .mockResolvedValueOnce(triaged(6))
+      .mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 400: flagged', 'permanent'));
     const stats = createStats();
 
-    await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxRuns: 1 }, { stats });
+    await run({ ...baseConfig, issueNumbers: [5, 6, 7, 8, 9], maxRuns: 3 }, { stats });
 
-    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 6]);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1, capReached: true });
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 6, 7]);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 3, triaged: 1, failed: 2, capReached: true });
+    expect(readJobSummary()).toContain(`⏳ Not reached because the run reached max-runs (3): ${issueLink(8)}, ${issueLink(9)}.`);
   });
 
   it('counts a deferred item apart from triaged ones while spending max-runs on it', async () => {
@@ -397,7 +401,7 @@ describe('runAutoTriage', () => {
     expect(warnings()).toEqual(["#5 deferred: It changed while it was being analyzed, so the plan wasn't applied."]);
   });
 
-  it('records a failed re-analysis as a failed item, after spending max-runs on the first analysis', async () => {
+  it('records a failed re-analysis as a failed item, after spending max-runs on both analyses', async () => {
     processIssueMock
       .mockResolvedValueOnce(changed(5))
       .mockRejectedValueOnce(new ModelError('api.openai.com returned HTTP 503: busy', 'capacity'));
@@ -406,9 +410,9 @@ describe('runAutoTriage', () => {
     await run({ ...baseConfig, issueNumbers: [5, 6, 7], maxRuns: 2 }, { stats });
 
     expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'failed', reanalyzed: true, failureReason: 'capacity' });
-    // The first analysis of #5 spent one run, so #6 spends the last one.
-    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
-    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 1, failed: 1, capReached: true });
+    // Both analyses of #5 spent a run, so #6 isn't reached.
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5]);
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 1, triaged: 0, failed: 1, capReached: true });
     expect(warnings()).toEqual(['#5 failed: api.openai.com returned HTTP 503: busy']);
     expect(core.setFailed).not.toHaveBeenCalled();
   });

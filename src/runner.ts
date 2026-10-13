@@ -116,10 +116,11 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
   for (const [index, issueNumber] of targets.entries()) {
     let issue: Issue | undefined;
     let reanalyzed = false;
+    // Every attempt spends max-runs, a failed one too, so items that fail between successes can't stretch a run past it.
+    runsPerformed++;
     try {
       issue = await gh.getIssue(issueNumber);
       let record = await processIssue(itemDeps, { ...itemOptions, issue });
-      runsPerformed++;
       // An item that changed during analysis gets one more analysis with its latest state, if max-runs allows it.
       // It runs from here so that the first analysis's log group is closed, because log groups don't nest.
       if (record.changedDuringAnalysis) {
@@ -128,13 +129,14 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
         } else {
           console.log(`🔁 Analyzing #${issueNumber} again, because it changed while it was being analyzed`);
           reanalyzed = true;
+          runsPerformed++;
           issue = await gh.getIssue(issueNumber);
           record = await processIssue(itemDeps, { ...itemOptions, issue, reanalysis: true });
-          runsPerformed++;
         }
       }
       stats.recordItem(record);
       consecutiveFailures = 0;
+      saveDatabase(db, cfg.dbPath, cfg.dryRun);
     } catch (err) {
       // Any per-item failure is recorded and skipped so one bad item can't abort the remaining backlog.
       // A configuration error, such as a rejected key or a missing permission, would fail every later item too, so it stops the run and fails the job at once.
@@ -169,10 +171,7 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
         report.notReached = { items: remaining, reason: `${consecutiveFailures} items in a row failed` };
         break;
       }
-      continue;
     }
-
-    saveDatabase(db, cfg.dbPath, cfg.dryRun);
 
     if (runsPerformed >= cfg.maxRuns) {
       const remaining = targets.slice(index + 1);

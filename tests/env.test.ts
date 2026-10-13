@@ -184,10 +184,10 @@ describe('getConfig integer and list inputs', () => {
     expect(getConfig().maxRuns).toBe(50);
   });
 
-  it.each(['0', '-3', '1.5', 'lots'])('falls back to the default for max-runs %j', (value) => {
+  it.each(['0', '-3', '1.5', 'lots'])('fails on max-runs %j instead of quietly using the default', (value) => {
     setInputs({ 'max-runs': value });
 
-    expect(getConfig().maxRuns).toBe(50);
+    expect(() => getConfig()).toThrow(`The max-runs input must be a whole number above 0, not '${value}'.`);
   });
 
   it('uses a provided positive max-runs', () => {
@@ -252,17 +252,17 @@ describe('getConfig model input', () => {
     expect(getConfig().limits).toEqual({ readmeChars: 0, issueBodyChars: 0, timelineEvents: 0, timelineTextChars: 0 });
   });
 
-  it('uses a valid budget scale and falls back for invalid values', () => {
+  it('uses a valid budget scale', () => {
     expect(getConfig().limits).toEqual({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 });
 
     setInputs({ 'budget-scale': '1.5' });
     expect(getConfig().limits.timelineEvents).toBe(60);
+  });
 
-    setInputs({ 'budget-scale': '-2' });
-    expect(getConfig().limits.timelineEvents).toBe(40);
+  it.each(['-2', 'lots'])('fails on budget-scale %j instead of quietly using the default', (value) => {
+    setInputs({ 'budget-scale': value });
 
-    setInputs({ 'budget-scale': 'lots' });
-    expect(getConfig().limits.timelineEvents).toBe(40);
+    expect(() => getConfig()).toThrow(`The budget-scale input must be a number of 0 or more, not '${value}'.`);
   });
 
   it('always uses README.md for README context', () => {

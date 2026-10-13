@@ -254,13 +254,14 @@ export class GitHubClient {
     });
     const timelineEvents = mapped.filter((ev): ev is TimelineEvent => ev !== null);
     const reviewComments = isPullRequest ? await this.listReviewComments(issue_number) : [];
-    const filtered = timelineEvents.concat(reviewComments)
+    const sorted = timelineEvents.concat(reviewComments)
       .sort((a, b) => {
         const aTs = Date.parse(a.created_at ?? '');
         const bTs = Date.parse(b.created_at ?? '');
         return (Number.isNaN(aTs) ? Number.MAX_SAFE_INTEGER : aTs) - (Number.isNaN(bTs) ? Number.MAX_SAFE_INTEGER : bTs);
-      })
-      .slice(-limit);
+      });
+    // slice(-0) would keep every event, so a limit of 0, from budget-scale 0, has to be its own case.
+    const filtered = limit > 0 ? sorted.slice(-limit) : [];
 
     return {
       raw: events,

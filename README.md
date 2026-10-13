@@ -95,7 +95,7 @@ To do more, such as asking for details, retitling or closing stale items, write 
 | `dry-run` | Log planned actions without applying them. Must be `true` or `false`. | `"false"` |
 | `issues` | Issue or PR numbers, separated by spaces or commas, such as `12, #34`. | the triggering item, or a sweep |
 | `model` | Model to use. Blank uses your key's default. | `""` |
-| `max-runs` | Maximum items to analyze per run. | `50` |
+| `max-runs` | Maximum items to analyze per run, counting ones that fail. | `50` |
 | `prompt-path` | Path to the policy. Without the default file, the built-in label-only policy is used, but any other path must exist. | `.github/AutoTriage.prompt` |
 | `db-path` | Path to the triage history file, for sweeps. | — |
 | `additional-instructions` | Extra policy text for this run. | — |

@@ -39,8 +39,13 @@ function parsePositiveInteger(input?: string): number | undefined {
   return parsed;
 }
 
+// A value that isn't valid fails the run, as dry-run does, rather than quietly running with the default.
 function parsePositiveIntegerInput(name: string, defaultValue: number): number {
-  return parsePositiveInteger(core.getInput(name)) ?? defaultValue;
+  const normalized = normalizeInput(core.getInput(name));
+  if (!normalized) return defaultValue;
+  const parsed = parsePositiveInteger(normalized);
+  if (parsed === undefined) throw new Error(`The ${name} input must be a whole number above 0, not '${normalized}'.`);
+  return parsed;
 }
 
 // Any token that isn't an issue or PR number fails the run, so a typo can never turn an explicit list into a backlog sweep.
@@ -62,7 +67,8 @@ function parseBudgetScaleInput(name: string, defaultValue: number): number {
   if (!normalized) return defaultValue;
 
   const parsed = Number(normalized);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`The ${name} input must be a number of 0 or more, not '${normalized}'.`);
+  return parsed;
 }
 
 function parseInputOrDefault(name: string, defaultValue: string): string {
