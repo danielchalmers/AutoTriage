@@ -290,6 +290,16 @@ describe('GitHubClient.listTimelineEvents', () => {
     expect(filtered.map(event => event.body)).toEqual(['second', 'third', 'undated']);
   });
 
+  it('keeps no events at a limit of 0, as budget-scale 0 asks', async () => {
+    mocks.paginate.mockResolvedValueOnce([{ event: 'commented', body: 'first', created_at: at(1) }]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const { raw, filtered } = await client.listTimelineEvents(42, 0);
+
+    expect(filtered).toEqual([]);
+    expect(raw).toHaveLength(1);
+  });
+
   it('dates commits and reviews so they sort among comments instead of crowding them out', async () => {
     const maintainer = { login: 'maintainer', id: 2, type: 'User', url: 'https://api.github.com/users/maintainer' };
     const contributor = { login: 'pat', id: 3, type: 'User', url: 'https://api.github.com/users/pat' };
