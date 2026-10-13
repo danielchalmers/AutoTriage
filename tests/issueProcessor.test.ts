@@ -144,10 +144,7 @@ describe('processIssue', () => {
       expect(request.userPrompt).toMatch(/=== SECTION: ISSUE TIMELINE EVENTS \(JSON\) ===\n\[[\s\S]*"body": "Ping"[\s\S]*\]\n$/);
       expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
       expect((stats.toJSON() as any).actions).toEqual({ total: 1, byKind: { add_labels: 1 } });
-      expect(db.items['42']).toMatchObject({
-        summary: 'Crash on save',
-        lastSeenUpdatedAt: '2024-04-12T00:00:00Z',
-      });
+      expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-04-12T00:00:00Z' });
 
       const artifactsDir = path.join(tempDir, 'artifacts');
       expect(fs.readdirSync(artifactsDir).sort()).toEqual(['42-analysis.json', '42-operations.json', '42-prompt-user.md', '42-timeline.json']);
@@ -170,7 +167,7 @@ describe('processIssue', () => {
       expect(result).toMatchObject({ outcome: 'triaged', plan: { kinds: [], labels: [] } });
       expect(gh.getIssue).not.toHaveBeenCalled();
       expect(gh.addLabels).not.toHaveBeenCalled();
-      expect(db.items['42']).toMatchObject({ summary: 'Nothing to do', lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
+      expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
       expect(fs.readdirSync(path.join(tempDir, 'artifacts'))).not.toContain('42-operations.json');
     });
   });
@@ -229,7 +226,6 @@ describe('processIssue', () => {
           '42': {
             lastTriaged: '2024-04-05T00:00:00Z',
             lastSeenUpdatedAt: '2024-04-05T00:00:00Z',
-            summary: 'Previous summary',
           },
         },
       };
@@ -249,7 +245,6 @@ describe('processIssue', () => {
         expect(db.items['42']).toEqual({
           lastTriaged: '2024-04-05T00:00:00Z',
           lastSeenUpdatedAt: '2024-04-05T00:00:00Z',
-          summary: 'Previous summary',
         });
         expect(result).toMatchObject({
           outcome: 'deferred',
@@ -314,10 +309,7 @@ describe('processIssue', () => {
       );
 
       expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
-      expect(db.items['42']).toMatchObject({
-        summary: 'Summary',
-        lastSeenUpdatedAt: '2024-04-10T00:00:00Z',
-      });
+      expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
     });
   });
 
@@ -347,7 +339,7 @@ describe('processIssue', () => {
     });
   });
 
-  it('retries a model reply without an operations array and falls back to the title for a non-string summary', async () => {
+  it('retries a model reply without an operations array, and accepts a non-string summary', async () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
       const stats = new RunStatistics(makeConfig());
@@ -358,7 +350,7 @@ describe('processIssue', () => {
       await processIssue({ cfg: createConfig(), db, gh: createGitHub(), model, stats }, processOptions());
 
       expect(fetch).toHaveBeenCalledTimes(2);
-      expect(db.items['42']).toMatchObject({ summary: baseIssue.title });
+      expect(db.items['42']).toBeDefined();
     });
   });
 
@@ -412,7 +404,6 @@ describe('processIssue', () => {
         expect(gh.addLabels).toHaveBeenCalledWith(42, ['bug']);
         expect(gh.createComment).toHaveBeenCalledWith(42, `Thanks for the report.\n\n<!--\n${explanation}\n-->`);
         expect((stats.toJSON() as any).usage).toMatchObject({ calls: 1, inputTokens: 3050, outputTokens: 20, reasoningTokens: 60 });
-        expect(db.items['42']).toMatchObject({ summary: 'Crash on save' });
         // The raw artifact keeps what the model actually returned.
         const artifact = JSON.parse(fs.readFileSync(path.join(tempDir, 'artifacts', '42-analysis.json'), 'utf8'));
         expect(artifact).toEqual({ summary: 'Crash on save', operations });

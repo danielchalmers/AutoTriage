@@ -38,7 +38,7 @@ const cfg = makeConfig({
   dbPath: 'triage-db.json',
   model: makeEndpoint('test-model', { isDefault: true }),
 });
-const db = makeDb({ '1': { summary: 'known' } });
+const db = makeDb({ '1': { lastTriaged: '2024-01-01T00:00:00Z' } });
 
 // Process-level handlers are captured instead of installed, so the test worker keeps its own crash handling.
 let handlers: Record<string, (...args: any[]) => void>;

@@ -29,27 +29,24 @@ describe('saveArtifact', () => {
 })
 
 describe('updateDbEntry', () => {
-  it('writes summary, completion time, and consumed GitHub watermark', () => {
+  it('writes the completion time and the consumed GitHub watermark', () => {
     const db: TriageDb = { version: 2, items: {} }
 
-    updateDbEntry(db, 42, 'summary', { lastSeenUpdatedAt: '2024-04-02T00:00:00.000Z' })
+    updateDbEntry(db, 42, '2024-04-02T00:00:00.000Z')
 
-    expect(db.items['42']).toMatchObject({
-      summary: 'summary',
-      lastSeenUpdatedAt: '2024-04-02T00:00:00.000Z',
-    })
+    expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-04-02T00:00:00.000Z' })
     expect(db.items['42']?.lastTriaged).toEqual(expect.any(String))
   })
 
   it('keeps the previous watermark when no new one is supplied', () => {
     const db: TriageDb = {
       version: 2,
-      items: { '42': { lastTriaged: '2024-01-01T00:00:00.000Z', lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z', summary: 'old' } },
+      items: { '42': { lastTriaged: '2024-01-01T00:00:00.000Z', lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z' } },
     }
 
-    updateDbEntry(db, 42, 'new')
+    updateDbEntry(db, 42, undefined)
 
-    expect(db.items['42']).toMatchObject({ summary: 'new', lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z' })
+    expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z' })
     expect(db.items['42']?.lastTriaged).not.toBe('2024-01-01T00:00:00.000Z')
   })
 })
@@ -88,45 +85,12 @@ describe('loadDatabase', () => {
     })
   })
 
-  it('drops legacy entries whose lastTriaged is not a date', async () => {
+  it('starts empty from a database without version 2', async () => {
     await withTempDir((tempDir) => {
       const dbPath = path.join(tempDir, 'triage-db.json')
-      fs.writeFileSync(dbPath, JSON.stringify({ '42': { lastTriaged: 'yesterday' }, '43': 'not an object' }))
+      fs.writeFileSync(dbPath, JSON.stringify({ '42': { lastTriaged: '2024-01-01T00:00:00.000Z' } }))
 
       expect(loadDatabase(dbPath)).toEqual(EMPTY_DB)
-    })
-  })
-
-  it('migrates legacy flat databases to v2 and drops thoughts', async () => {
-    await withTempDir((tempDir) => {
-      const dbPath = path.join(tempDir, 'triage-db.json')
-      fs.writeFileSync(dbPath, JSON.stringify({
-        '42': {
-          lastTriaged: '2024-01-01T00:00:00.000Z',
-          summary: 'legacy summary',
-          thoughts: 'legacy thoughts',
-        },
-        '43': {
-          thoughts: 'drop me',
-        },
-        '44': {
-          summary: 'keep me',
-        },
-      }, null, 2))
-
-      expect(loadDatabase(dbPath)).toEqual({
-        version: 2,
-        items: {
-          '42': {
-            lastTriaged: '2024-01-01T00:00:00.000Z',
-            lastSeenUpdatedAt: '2024-01-01T00:00:00.000Z',
-            summary: 'legacy summary',
-          },
-          '44': {
-            summary: 'keep me',
-          },
-        },
-      })
     })
   })
 
@@ -139,8 +103,7 @@ describe('loadDatabase', () => {
           '42': {
             lastTriaged: '2024-01-01T00:00:00.000Z',
             lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
-            summary: 'v2 summary',
-            thoughts: 'ignored',
+            summary: 'ignored',
           },
         },
       }, null, 2))
@@ -151,7 +114,6 @@ describe('loadDatabase', () => {
           '42': {
             lastTriaged: '2024-01-01T00:00:00.000Z',
             lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
-            summary: 'v2 summary',
           },
         },
       })
@@ -189,7 +151,6 @@ describe('saveDatabase', () => {
           '42': {
             lastTriaged: '2024-01-01T00:00:00.000Z',
             lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
-            summary: 'saved summary',
           },
         },
       }
@@ -202,7 +163,6 @@ describe('saveDatabase', () => {
           '42': {
             lastTriaged: '2024-01-01T00:00:00.000Z',
             lastSeenUpdatedAt: '2024-01-02T00:00:00.000Z',
-            summary: 'saved summary',
           },
         },
       })
