@@ -7,9 +7,6 @@ import { RunStatistics } from './stats';
 import { runAutoTriage } from './runner';
 import type { Config } from './config';
 import { errorDetail } from './util';
-import chalk from 'chalk';
-
-chalk.level = 3;
 
 // Surface otherwise-silent crashes (e.g. floating promise rejections) so a failed run always leaves a diagnosable ::error:: line instead of a bare non-zero exit code.
 process.on('unhandledRejection', (reason) => {
@@ -33,9 +30,7 @@ console.log(describeModel(cfg.model));
 const db = loadDatabase(cfg.dbPath);
 const gh = new GitHubClient(cfg.token, cfg.owner, cfg.repo);
 const model = new ChatClient(cfg.model);
-const stats = new RunStatistics();
-stats.setRepository(cfg.owner, cfg.repo);
-stats.setModel(cfg.model.model);
+const stats = new RunStatistics(cfg);
 
 // The runner reports model, GitHub and configuration failures itself, so anything that gets here is a bug.
 runAutoTriage({ cfg, db, gh, model, stats }).catch((err) => {

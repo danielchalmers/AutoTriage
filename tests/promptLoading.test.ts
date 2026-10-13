@@ -1,49 +1,20 @@
-import { afterEach, describe, it, expect, vi } from 'vitest'
-import { hasPromptFile, loadPrompt } from '../src/storage'
+import { describe, it, expect } from 'vitest'
+import { readPolicy } from '../src/storage'
 import { BUILTIN_LABEL_ONLY_PROMPT } from '../src/prompt'
 import { withTempFiles } from './fixtures'
 import * as path from 'path'
 
-afterEach(() => {
-  vi.restoreAllMocks()
+describe('readPolicy', () => {
+  it('reads the policy file, or returns undefined when the workspace lacks it', () => {
+    withTempFiles({ 'prompt.txt': 'Custom test prompt' }, (file) => {
+      expect(readPolicy(file('prompt.txt'))).toBe('Custom test prompt')
+    })
+    expect(readPolicy(path.join(__dirname, 'does-not-exist.txt'))).toBeUndefined()
+  })
 })
 
-describe('prompt loading', () => {
-  it('loads custom prompt when file exists', async () => {
-
-    withTempFiles({ 'prompt.txt': 'Custom test prompt' }, (file) => {
-      expect(loadPrompt(file('prompt.txt'))).toBe('Custom test prompt')
-    })
-  })
-
-  it('uses the built-in label-only prompt when no path is provided', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    const result = await loadPrompt('')
-
-    expect(result).toBe(BUILTIN_LABEL_ONLY_PROMPT)
-    expect(warn).toHaveBeenCalledWith('⚠️ No AutoTriage prompt found (no prompt path configured); using built-in label-only prompt.')
-  })
-
-  it('uses the built-in label-only prompt when the custom prompt is missing', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const missing = path.join(__dirname, 'does-not-exist.txt')
-
-    const result = await loadPrompt(missing)
-
-    expect(result).toBe(BUILTIN_LABEL_ONLY_PROMPT)
-    expect(warn).toHaveBeenCalledWith(`⚠️ No AutoTriage prompt found (custom path '${missing}'); using built-in label-only prompt.`)
-  })
-
+describe('built-in policy', () => {
   it('asks for every label the item strongly supports, since a policy that only allows labels leaves Haiku skipping obvious ones', () => {
     expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- Add every repository label that the item\'s main request, status, or content strongly supports, judging each label by its name and description.')
-  })
-
-  it('reports whether a policy file exists, so the job summary can name the policy in use', () => {
-    withTempFiles({ 'prompt.txt': 'Custom test prompt' }, (file) => {
-      expect(hasPromptFile(file('prompt.txt'))).toBe(true)
-    })
-    expect(hasPromptFile(path.join(__dirname, 'does-not-exist.txt'))).toBe(false)
-    expect(hasPromptFile('')).toBe(false)
   })
 })

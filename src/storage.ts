@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
 import { errorMessage } from './llm/chat';
 
 export interface TriageDbEntry {
@@ -162,33 +161,18 @@ function resolveFromCwd(filePath: string): string {
   return path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
 }
 
-export function loadReadme(readmePath?: string): string {
-  if (!readmePath) return '';
-
+export function loadReadme(): string {
   try {
-    const resolved = resolveFromCwd(readmePath);
-    if (!fs.existsSync(resolved)) return '';
-    return fs.readFileSync(resolved, 'utf8');
+    const resolved = resolveFromCwd('README.md');
+    return fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : '';
   } catch (err) {
-    const message = errorMessage(err);
-    console.warn(`⚠️ Failed to read README at '${readmePath}': ${message}`);
+    console.warn(`⚠️ Failed to read README.md: ${errorMessage(err)}`);
     return '';
   }
 }
 
-// Without a policy file, loadPrompt falls back to the built-in label-only prompt.
-export function hasPromptFile(promptPath?: string): boolean {
-  return !!promptPath && fs.existsSync(resolveFromCwd(promptPath));
-}
-
-export function loadPrompt(promptPath?: string): string {
-  const resolvedPath = promptPath ? resolveFromCwd(promptPath) : undefined;
-
-  if (resolvedPath && fs.existsSync(resolvedPath)) {
-    return fs.readFileSync(resolvedPath, 'utf8');
-  }
-
-  const missing = resolvedPath ? `custom path '${promptPath}'` : 'no prompt path configured';
-  console.warn(`⚠️ No AutoTriage prompt found (${missing}); using built-in label-only prompt.`);
-  return BUILTIN_LABEL_ONLY_PROMPT;
+// The policy file's text, or undefined when the workspace doesn't have it.
+export function readPolicy(promptPath: string): string | undefined {
+  const resolved = resolveFromCwd(promptPath);
+  return fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : undefined;
 }

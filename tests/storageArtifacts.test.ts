@@ -215,14 +215,13 @@ describe('loadReadme', () => {
     await withArtifactsDir((tempDir) => {
       fs.writeFileSync(path.join(tempDir, 'README.md'), '# Project')
 
-      expect(loadReadme('README.md')).toBe('# Project')
+      expect(loadReadme()).toBe('# Project')
     })
   })
 
   it('returns an empty string when there is no README', async () => {
     await withArtifactsDir(() => {
-      expect(loadReadme('README.md')).toBe('')
-      expect(loadReadme('')).toBe('')
+      expect(loadReadme()).toBe('')
     })
   })
 })

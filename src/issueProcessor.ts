@@ -1,6 +1,6 @@
+import { color } from './util';
 import * as core from '@actions/core';
-import chalk from 'chalk';
-import { AnalysisResult, RepoLabel, parseAnalysisResult } from './analysis';
+import { RepoLabel, parseAnalysisResult } from './analysis';
 import { buildUserPrompt } from './prompts';
 import { errorMessage, type ChatClient, type JsonRequest } from './llm/chat';
 import { GitHubClient, Issue, TimelineEvent } from './github';
@@ -32,25 +32,6 @@ export interface ProcessIssueOptions {
   reanalysis?: boolean;
 }
 
-export interface GenerateAnalysisOptions {
-  issue: Issue;
-  model: string;
-  systemPrompt: string;
-  userPrompt: string;
-  repoLabels: RepoLabel[];
-  schema: JsonRequest['schema'];
-}
-
-interface IssueContext {
-  timelineEvents: TimelineEvent[];
-  runContext: string;
-}
-
-interface Analysis {
-  analysis: AnalysisResult;
-  operations: PlannedOperation[];
-}
-
 interface Deferral {
   // True when the item changed during analysis, rather than when it couldn't be rechecked.
   changed: boolean;
@@ -66,19 +47,27 @@ export async function processIssue(
   const { issue, repoLabels, schema, autoDiscover, systemPrompt, runTimestamp, reanalysis = false } = options;
 
   return core.group(`🤖 #${issue.number} ${issue.title}${reanalysis ? ' (re-analysis)' : ''}`, async (): Promise<ItemRecord> => {
-    const context = await loadIssueContext(
-      { cfg, db, gh },
-      { issue, autoDiscover }
-    );
-    const { analysis, operations } = await analyze(
-      { cfg, model, stats },
-      { issue, repoLabels, schema, systemPrompt, runTimestamp, context }
-    );
-    const deferral = await executePlannedOperations(
-      { cfg, gh, stats },
-      { issue, operations, reanalysis }
-    );
+    const { raw, filtered } = await gh.listTimelineEvents(issue.number, cfg.limits.timelineEvents, issue.type === 'pull request');
+    saveArtifact(issue.number, 'timeline.json', JSON.stringify(raw, null, 2));
+    const runContext = buildRunContext(issue, raw, getDbEntry(db, issue.number).lastTriaged, autoDiscover);
+    const userPrompt = buildUserPrompt(issue, filtered, cfg.limits, runContext, runTimestamp);
+    saveArtifact(issue.number, 'prompt-user.md', userPrompt);
 
+    // It says "asking" rather than "thinking", because some providers report no reasoning.
+    console.log(color('blue', `💭 Asking ${cfg.model.model}...`));
+    const startTime = Date.now();
+    const { data: analysis, ...usage } = await model.generateJson({ model: cfg.model.model, systemPrompt, userPrompt, schema }, parseAnalysisResult);
+    const modelRun = { startTime, endTime: Date.now(), ...usage, issueNumber: issue.number };
+    console.log(color('blue', describeModelRun(modelRun)));
+    stats.trackModelRun(modelRun);
+
+    // The plan's summary and the policy clause each operation cites say why, in the log and the hidden comment block.
+    const explanation = explainPlan(analysis);
+    console.log(color('magenta', explanation));
+    saveArtifact(issue.number, 'analysis.json', JSON.stringify(analysis, null, 2));
+    const operations = planOperations(issue, analysis, repoLabels.map((label) => label.name), explanation);
+
+    const deferral = await executePlannedOperations({ cfg, gh, stats }, { issue, operations, reanalysis });
     const item = { issueNumber: issue.number, type: issue.type, title: issue.title, ...(reanalysis ? { reanalyzed: true } : {}), plan: summarizePlan(operations) };
     if (deferral) {
       return { ...item, outcome: 'deferred', detail: deferral.detail, ...(deferral.changed ? { changedDuringAnalysis: true } : {}) };
@@ -92,9 +81,8 @@ export async function processIssue(
   });
 }
 
-
 async function resolveConsumedIssue(
-  gh: Pick<IssueProcessorDeps, 'gh'>['gh'],
+  gh: GitHubClient,
   dryRun: boolean,
   issue: Issue,
   operations: PlannedOperation[]
@@ -118,45 +106,6 @@ function getConsumedUpdatedAt(issue: Pick<Issue, 'updated_at' | 'created_at'>): 
   return issue.updated_at || issue.created_at;
 }
 
-async function loadIssueContext(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'db' | 'gh'>,
-  options: Pick<ProcessIssueOptions, 'issue' | 'autoDiscover'>
-): Promise<IssueContext> {
-  const { cfg, db, gh } = deps;
-  const { issue, autoDiscover } = options;
-  const dbEntry = getDbEntry(db, issue.number);
-  const { raw: rawTimelineEvents, filtered: timelineEvents } = await gh.listTimelineEvents(
-    issue.number,
-    cfg.limits.timelineEvents,
-    issue.type === 'pull request'
-  );
-  const runContext = buildRunContext(issue, rawTimelineEvents, dbEntry.lastTriaged, autoDiscover);
-
-  saveArtifact(issue.number, 'timeline.json', JSON.stringify(rawTimelineEvents, null, 2));
-
-  return { timelineEvents, runContext };
-}
-
-async function analyze(
-  deps: Pick<IssueProcessorDeps, 'cfg' | 'model' | 'stats'>,
-  options: Pick<ProcessIssueOptions, 'issue' | 'repoLabels' | 'schema' | 'systemPrompt' | 'runTimestamp'> & {
-    context: IssueContext;
-  }
-): Promise<Analysis> {
-  const { cfg, model, stats } = deps;
-  const { issue, repoLabels, schema, systemPrompt, runTimestamp, context } = options;
-
-  const userPrompt = buildUserPrompt(issue, context.timelineEvents, cfg.limits, context.runContext, runTimestamp);
-  saveArtifact(issue.number, 'prompt-user.md', userPrompt);
-
-  const { data: analysis, ops: operations } = await generateAnalysis(
-    { model, stats },
-    { issue, model: cfg.model.model, systemPrompt, userPrompt, repoLabels, schema }
-  );
-
-  return { analysis, operations };
-}
-
 // Applies the plan, or returns why it was deferred instead.
 async function executePlannedOperations(
   deps: Pick<IssueProcessorDeps, 'cfg' | 'gh' | 'stats'>,
@@ -170,7 +119,7 @@ async function executePlannedOperations(
   const { issue, operations, reanalysis } = options;
 
   if (operations.length === 0) {
-    console.log(chalk.yellow('The model planned no operations.'));
+    console.log(color('yellow', 'The model planned no operations.'));
     return undefined;
   }
 
@@ -242,29 +191,4 @@ export function buildRunContext(
       : 'the workflow explicitly asked for another review';
 
   return `This item was triaged before at ${lastTriagedAt}; it is being triaged again because ${selectionReason}. Review the current state and timeline, not as a first-time triage.`;
-}
-
-export async function generateAnalysis(
-  deps: { model: ModelClient; stats: RunStatistics },
-  options: GenerateAnalysisOptions
-): Promise<{ data: AnalysisResult; ops: PlannedOperation[] }> {
-  const { stats } = deps;
-  const { issue, model, systemPrompt, userPrompt, repoLabels, schema } = options;
-  const request: JsonRequest = { model, systemPrompt, userPrompt, schema };
-
-  // It says "asking" rather than "thinking", because some providers report no reasoning.
-  console.log(chalk.blue(`💭 Asking ${model}...`));
-  const startTime = Date.now();
-  const { data, ...usage } = await deps.model.generateJson(request, parseAnalysisResult);
-  const modelRunStats = { startTime, endTime: Date.now(), ...usage, issueNumber: issue.number };
-  console.log(chalk.blue(describeModelRun(modelRunStats)));
-  stats.trackModelRun(modelRunStats);
-
-  // The plan's summary and the policy clause each operation cites say why, in the log and the hidden comment block.
-  const explanation = explainPlan(data);
-  console.log(chalk.magenta(explanation));
-  saveArtifact(issue.number, 'analysis.json', JSON.stringify(data, null, 2));
-
-  const ops = planOperations(issue, data, repoLabels.map((label) => label.name), explanation);
-  return { data, ops };
 }

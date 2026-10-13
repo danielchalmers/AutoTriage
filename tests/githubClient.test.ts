@@ -179,18 +179,14 @@ describe('GitHubClient listing', () => {
     }));
   });
 
-  it.each([
-    [0, 1],
-    [50, 50],
-    [500, 100],
-  ])('requests a single page of recently closed issues for limit %i (per_page %i)', async (limit, perPage) => {
+  it('requests one page of the most recently updated closed issues', async () => {
     mocks.issuesListForRepo.mockResolvedValue({ data: [baseIssuePayload(3)] });
 
     const client = new GitHubClient('token', 'owner', 'repo');
-    const issues = await client.listRecentlyClosedIssues(limit);
+    const issues = await client.listRecentlyClosedIssues();
 
     expect(issues.map(issue => issue.number)).toEqual([3]);
-    expect(mocks.issuesListForRepo).toHaveBeenCalledWith(expect.objectContaining({ state: 'closed', per_page: perPage, page: 1 }));
+    expect(mocks.issuesListForRepo).toHaveBeenCalledWith(expect.objectContaining({ state: 'closed', sort: 'updated', per_page: 100 }));
   });
 
   it('leaves out archived labels', async () => {

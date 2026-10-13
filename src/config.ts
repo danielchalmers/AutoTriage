@@ -12,10 +12,8 @@ export interface Config {
   repo: string;
   token: string;
   dryRun: boolean;
-  issueNumber?: number;
   issueNumbers?: number[];
   promptPath: string;
-  readmePath: string;
   dbPath?: string;
   model: Endpoint;
   limits: PromptLimits;

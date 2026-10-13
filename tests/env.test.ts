@@ -91,7 +91,6 @@ describe('getConfig path and text inputs', () => {
     expect(cfg).not.toHaveProperty('dbPath');
     expect(cfg).not.toHaveProperty('additionalInstructions');
     expect(cfg).not.toHaveProperty('issueNumbers');
-    expect(cfg).not.toHaveProperty('issueNumber');
   });
 
   it('trims provided paths and instructions', () => {
@@ -142,18 +141,8 @@ describe('getConfig boolean inputs', () => {
 describe('getConfig integer and list inputs', () => {
   it('parses issue numbers separated by spaces or commas, with or without #', () => {
     setInputs({ issues: ' 12, #34  56,#78\n90 ' });
-    const cfg = getConfig();
 
-    expect(cfg.issueNumbers).toEqual([12, 34, 56, 78, 90]);
-    expect(cfg.issueNumber).toBeUndefined();
-  });
-
-  it('sets issueNumber for a single issue', () => {
-    setInputs({ issues: '#27' });
-    const cfg = getConfig();
-
-    expect(cfg.issueNumbers).toEqual([27]);
-    expect(cfg.issueNumber).toBe(27);
+    expect(getConfig().issueNumbers).toEqual([12, 34, 56, 78, 90]);
   });
 
   it('triages a repeated issue number once', () => {
@@ -263,14 +252,6 @@ describe('getConfig model input', () => {
     setInputs({ 'budget-scale': value });
 
     expect(() => getConfig()).toThrow(`The budget-scale input must be a number of 0 or more, not '${value}'.`);
-  });
-
-  it('always uses README.md for README context', () => {
-    setInputs({ 'readme-path': 'docs/README.md' });
-
-    const cfg = getConfig();
-
-    expect(cfg.readmePath).toBe('README.md');
   });
 });
 
