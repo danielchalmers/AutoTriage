@@ -168,7 +168,8 @@ describe('processIssue', () => {
       expect(gh.getIssue).not.toHaveBeenCalled();
       expect(gh.addLabels).not.toHaveBeenCalled();
       expect(db.items['42']).toMatchObject({ lastSeenUpdatedAt: '2024-04-10T00:00:00Z' });
-      expect(fs.readdirSync(path.join(tempDir, 'artifacts'))).not.toContain('42-operations.json');
+      // An empty plan is still saved, so it replaces any plan an earlier analysis of the item deferred.
+      expect(fs.readFileSync(path.join(tempDir, 'artifacts', '42-operations.json'), 'utf8')).toBe('[]');
     });
   });
 
@@ -203,7 +204,7 @@ describe('processIssue', () => {
           outcome: 'deferred',
           changedDuringAnalysis: true,
           plan: { kinds: ['set_state'], labels: [] },
-          detail: "It changed while it was being analyzed, so the plan wasn't applied.",
+          detail: "It changed while it was being analyzed, so its plan wasn't applied. Re-run the job to triage it now. The plan was: state: not_planned.",
         });
         expect(gh.updateIssueState).not.toHaveBeenCalled();
         expect(gh.getIssue).toHaveBeenCalledWith(42);
@@ -284,9 +285,29 @@ describe('processIssue', () => {
         outcome: 'deferred',
         reanalyzed: true,
         changedDuringAnalysis: true,
-        detail: "It changed again while it was being re-analyzed, so the plan wasn't applied.",
+        detail: "It changed again while it was being re-analyzed, so its plan wasn't applied. Re-run the job to triage it now. The plan was: labels: +bug.",
       });
       expect(changedAgain.gh.addLabels).not.toHaveBeenCalled();
+    });
+  });
+
+  it("replaces a deferred plan's artifact when the re-analysis plans nothing", async () => {
+    await withArtifactsDir(async (tempDir) => {
+      const operationsFile = path.join(tempDir, 'artifacts', '42-operations.json');
+      const analyze = async (operations: unknown[], current: typeof baseIssue) => {
+        const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Summary', operations, 20)) } as any;
+        const gh = createGitHub({ getIssue: vi.fn().mockResolvedValue(current) });
+        return processIssue(
+          { cfg: createConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics(makeConfig()) },
+          processOptions()
+        );
+      };
+
+      await analyze([addBugLabel('policy')], { ...baseIssue, updated_at: '2024-04-12T00:00:00Z' });
+      expect(fs.readFileSync(operationsFile, 'utf8')).toContain('"kind": "add_labels"');
+
+      await analyze([], baseIssue);
+      expect(fs.readFileSync(operationsFile, 'utf8')).toBe('[]');
     });
   });
 

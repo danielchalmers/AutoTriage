@@ -116,15 +116,17 @@ async function executePlannedOperations(
   const { cfg, gh, stats } = deps;
   const { issue, operations, reanalysis } = options;
 
+  // Saved even when empty, so a re-analysis that plans nothing replaces the plan an earlier analysis deferred.
+  saveArtifact(issue.number, 'operations.json', JSON.stringify(operations, null, 2));
   if (operations.length === 0) {
     console.log(color('yellow', 'The model planned no operations.'));
     return undefined;
   }
 
-  saveArtifact(issue.number, 'operations.json', JSON.stringify(operations, null, 2));
   if (!cfg.dryRun) {
+    const plan = operations.map(describeOperation).join(', ');
     // The deferred plan is logged, because a re-analysis replaces the item's artifacts.
-    const deferring = `Deferring its planned operations: ${operations.map(describeOperation).join(', ')}.`;
+    const deferring = `Deferring its planned operations: ${plan}.`;
     try {
       const currentIssue = await gh.getIssue(issue.number);
       const analyzedUpdatedAt = getConsumedUpdatedAt(issue);
@@ -133,11 +135,11 @@ async function executePlannedOperations(
         console.warn(
           `⚠️ #${issue.number} changed while it was being analyzed (updated at ${analyzedUpdatedAt}, now ${currentUpdatedAt}). ${deferring}`
         );
+        // The summary says how to recover and what was skipped, because an event run has no sweep to pick the item up later.
+        // The plan goes last, since the summary truncates long reasons.
         return {
           changed: true,
-          detail: reanalysis
-            ? 'It changed again while it was being re-analyzed, so the plan wasn\'t applied.'
-            : 'It changed while it was being analyzed, so the plan wasn\'t applied.',
+          detail: `${reanalysis ? 'It changed again while it was being re-analyzed' : 'It changed while it was being analyzed'}, so its plan wasn't applied. Re-run the job to triage it now. The plan was: ${plan}.`,
         };
       }
     } catch (err) {
