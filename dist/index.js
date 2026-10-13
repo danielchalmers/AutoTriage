@@ -73,7 +73,7 @@ JSON OUTPUT CONTRACT:
 - String values are plain text; Markdown is allowed only inside comment operation body values.
 
 FIELD CATALOG:
-- summary (required, internal): one sentence that captures the issue's problem, context, and effort so duplicates are easy to spot.
+- summary (required, internal): a few sentences: what the item is, the facts the policy's rules turn on for it (such as dates and the days since them, labels, and who did what), and what follows from them. The operations must match it.
 - operations (required, action plan): array of executable operations. Use [] when no public action is authorized.
 
 OPERATION CATALOG:
