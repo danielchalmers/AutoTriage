@@ -35,6 +35,10 @@ describe('prompt loading', () => {
     expect(warn).toHaveBeenCalledWith(`⚠️ No AutoTriage prompt found (custom path '${missing}'); using built-in label-only prompt.`)
   })
 
+  it('asks for every label the item strongly supports, since a policy that only allows labels leaves Haiku skipping obvious ones', () => {
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- Add every repository label that the item\'s main request, status, or content strongly supports, judging each label by its name and description.')
+  })
+
   it('reports whether a policy file exists, so the job summary can name the policy in use', () => {
     withTempFiles({ 'prompt.txt': 'Custom test prompt' }, (file) => {
       expect(hasPromptFile(file('prompt.txt'))).toBe(true)
