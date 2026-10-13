@@ -24,7 +24,7 @@ inputs:
     description: "Issue or PR numbers separated by spaces or commas, such as \"12, #34\"."
     required: false
   max-runs:
-    description: "Maximum items to analyze per run, counting ones that fail."
+    description: "Maximum items to analyze per run."
     required: false
     default: "50"
   model:
