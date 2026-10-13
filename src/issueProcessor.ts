@@ -74,9 +74,7 @@ export async function processIssue(
     }
 
     const consumedIssue = await resolveConsumedIssue(gh, cfg.dryRun, issue, operations);
-    updateDbEntry(db, issue.number, analysis.summary || issue.title, {
-      lastSeenUpdatedAt: getConsumedUpdatedAt(consumedIssue),
-    });
+    updateDbEntry(db, issue.number, getConsumedUpdatedAt(consumedIssue));
     return { ...item, outcome: 'triaged' };
   });
 }
