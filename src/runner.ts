@@ -2,7 +2,7 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { createHash } from 'node:crypto';
 import { buildAnalysisResultSchema, normalizeRepoLabels } from './analysis';
-import { buildSystemPrompt } from './prompts';
+import { BUILTIN_LABEL_ONLY_PROMPT, buildSystemPrompt } from './prompts';
 import {
   buildAutoDiscoverQueue,
   filterPreviouslyTriagedClosedIssuesWithNewActivity,
@@ -11,8 +11,7 @@ import { ModelError } from './llm/chat';
 import { GitHubClient, Issue } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import type { Config } from './config';
-import { TriageDb, readPolicy, saveDatabase, saveRunArtifact } from './storage';
-import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
+import { TriageDb, readWorkspaceFile, saveDatabase, saveRunArtifact } from './storage';
 import { classifyFailure, configurationHint, describeFailure } from './failures';
 import { RunReport, annotateItems, writeJobSummary } from './summary';
 import { errorDetail } from './util';
@@ -53,20 +52,22 @@ function hashPrompt(text: string): string {
  */
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   const { cfg, gh, stats } = deps;
-  const policy = readPolicy(cfg.promptPath);
-  const report: RunReport = { policy: policy === undefined ? null : cfg.promptPath, failures: [], warnings: [] };
+  const report: RunReport = { policy: null, failures: [], warnings: [] };
   try {
-    if (!report.policy) {
+    // A checked-out file wins, so a job can still supply its own. Otherwise the file is read at the run's commit, which is what a checkout would have given.
+    const ref = github.context.sha || undefined;
+    const policy = readWorkspaceFile(cfg.promptPath) ?? await gh.readFile(cfg.promptPath, ref);
+    if (policy === undefined) {
       if (cfg.promptPath !== DEFAULT_PROMPT_PATH) {
-        fail(report, `Triage didn't start: prompt-path '${cfg.promptPath}' isn't in the workspace. Check the path, and that the job runs actions/checkout before AutoTriage.`);
+        fail(report, `Triage didn't start: prompt-path '${cfg.promptPath}' isn't in the repository. Check the path.`);
         return;
       }
-      console.log(`📜 Using the built-in label-only policy, because the workspace has no ${DEFAULT_PROMPT_PATH}`);
-      if (await gh.hasFile(DEFAULT_PROMPT_PATH)) {
-        warn(report, `This run used the built-in label-only policy, because the repository has ${DEFAULT_PROMPT_PATH} but the workspace doesn't. Add actions/checkout before AutoTriage.`);
-      }
+      console.log(`📜 Using the built-in label-only policy, because the repository has no ${DEFAULT_PROMPT_PATH}`);
+    } else {
+      report.policy = cfg.promptPath;
     }
-    await triageTargets(deps, report, policy ?? BUILTIN_LABEL_ONLY_PROMPT);
+    const readme = readWorkspaceFile('README.md') ?? await gh.readReadme(ref);
+    await triageTargets(deps, report, policy ?? BUILTIN_LABEL_ONLY_PROMPT, readme);
   } catch (err) {
     // Only a failure outside an item gets here, such as listing the repository's labels or its backlog.
     const failure = classifyFailure(err);
@@ -88,7 +89,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   }
 }
 
-async function triageTargets(deps: AutoTriageDeps, report: RunReport, policy: string): Promise<void> {
+async function triageTargets(deps: AutoTriageDeps, report: RunReport, policy: string, readme: string): Promise<void> {
   const { cfg, db, gh, model, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
@@ -104,7 +105,7 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport, policy: st
     : `▶️ Triaging ${targets.length} item(s): ${targets.map((n) => `#${n}`).join(', ')}`);
   console.log(`⏳ Runs limited to ${cfg.maxRuns} item(s)`);
 
-  const systemPrompt = buildSystemPrompt(policy, repoLabels, cfg.additionalInstructions, cfg.limits);
+  const systemPrompt = buildSystemPrompt(policy, readme, repoLabels, cfg.additionalInstructions, cfg.limits);
   saveRunArtifact('prompt-system.md', systemPrompt);
 
   stats.setPromptHash(hashPrompt(systemPrompt));

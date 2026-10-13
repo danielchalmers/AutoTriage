@@ -64,6 +64,12 @@ describe.each(triageWorkflows)('%s', (_name, workflow) => {
   });
 });
 
+it('leaves actions/checkout out of the examples, since AutoTriage reads its files through the API', () => {
+  for (const [name, workflow] of triageWorkflows.filter(([name]) => name !== '.github/workflows/autotriage.yml')) {
+    expect(workflow, name).not.toContain('actions/checkout');
+  }
+});
+
 it('shows the event example as the quick start', () => {
   expect(quickStart).toBe(read('examples/workflows/autotriage.yml'));
 });

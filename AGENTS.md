@@ -25,7 +25,7 @@ Preserve these invariants:
 - Source of truth: TypeScript under `src/`.
 - Generated bundle: `dist/` is committed, but never edited manually.
 - Default runtime prompt: with no `.github/AutoTriage.prompt` configured, the
-  built-in label-only prompt (`src/prompt.ts`) is used. The
+  built-in label-only prompt (`src/prompts.ts`) is used. The
   `examples/AutoTriage.prompt` file is a copy-paste starting point, not bundled.
 - Unit tests must not require real GitHub or model API credentials, or any network
   beyond localhost.
@@ -50,7 +50,7 @@ Start with the smallest useful context:
   `chat.ts` is the one client every provider goes through, with its retries, per-call deadline, error classification, and undici fetch.
   danielchalmers/Nuntia copies `src/llm/` and `tests/llm/` verbatim, so change them here first and copy them over in a paired PR.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
-- `src/prompts.ts` and `src/prompt.ts` - prompt loading and prompt assembly.
+- `src/prompts.ts` - the built-in policy and prompt assembly.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.
 - `src/util.ts` - shared error-detail and timestamp helpers.
   `errorMessage` is imported straight from `src/llm/chat.ts`.

@@ -45,8 +45,6 @@ jobs:
       group: autotriage
       queue: max
     steps:
-      - uses: actions/checkout@v7
-
       - uses: danielchalmers/AutoTriage@v5
         with:
           issues: ${{ inputs.issues }}
@@ -72,6 +70,7 @@ To do more, such as asking for details, retitling or closing stale items, write 
 
 - A run triages the triggering issue or PR, the numbers in `issues`, or, with neither, a backlog sweep. A sweep takes new and changed items first, then the rest, longest since triaged first, plus recently closed items with new activity.
 - A run analyzes at most `max-runs` items. A sweep tells what changed from the triage history at `db-path`, which the [backlog example](./examples/workflows/autotriage-backlog.yml) caches between runs.
+- The policy and README are read from the repository at the run's commit, so the job needs no checkout. A checked-out file is used instead when there is one.
 - Just before applying a plan, AutoTriage checks the item again. If it changed, the item is analyzed once more.
 - Overloads and rate limits are waited out for a few minutes per call. A used-up daily quota, such as the Gemini free tier's, isn't waited out, so the run stops early with a warning.
 

@@ -29,8 +29,6 @@ jobs:
       group: autotriage
       queue: max
     steps:
-      - uses: actions/checkout@v7
-
       - uses: danielchalmers/AutoTriage@v5
         with:
           issues: ${{ inputs.issues }}
