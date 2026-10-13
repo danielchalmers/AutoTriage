@@ -99,7 +99,7 @@ describe('writeJobSummary', () => {
   const read = () => fs.readFileSync(summaryFile, 'utf8');
 
   it('lists what was acted on, what didn\'t finish and why, and the counts', async () => {
-    const stats = new RunStatistics();
+    const stats = new RunStatistics(makeConfig());
     stats.setDiscovered(60);
     stats.setPromptHash('sha256:0123456789abcdef');
     stats.recordItem({ issueNumber: 2, type: 'pull request', title: 'Fix "quotes" in <Button>', outcome: 'triaged' });
@@ -134,7 +134,7 @@ describe('writeJobSummary', () => {
   });
 
   it('shows the run\'s failures and warnings, escaped', async () => {
-    await writeJobSummary(makeConfig(), new RunStatistics(), report({
+    await writeJobSummary(makeConfig(), new RunStatistics(makeConfig()), report({
       policy: null,
       failures: ['Stopped the run at #5: <bad key>'],
       warnings: ['Triage didn\'t start'],
@@ -151,7 +151,7 @@ describe('writeJobSummary', () => {
   it('writes nothing outside GitHub Actions', async () => {
     vi.stubEnv('GITHUB_STEP_SUMMARY', '');
 
-    await writeJobSummary(makeConfig(), new RunStatistics(), report());
+    await writeJobSummary(makeConfig(), new RunStatistics(makeConfig()), report());
 
     expect(read()).toBe('');
   });

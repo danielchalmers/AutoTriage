@@ -11,7 +11,8 @@ import { ModelError } from './llm/chat';
 import { GitHubClient, Issue } from './github';
 import { IssueProcessorDeps, processIssue } from './issueProcessor';
 import type { Config } from './config';
-import { TriageDb, hasPromptFile, saveDatabase, saveRunArtifact } from './storage';
+import { TriageDb, readPolicy, saveDatabase, saveRunArtifact } from './storage';
+import { BUILTIN_LABEL_ONLY_PROMPT } from './prompt';
 import { classifyFailure, configurationHint, describeFailure } from './failures';
 import { RunReport, annotateItems, writeJobSummary } from './summary';
 import { errorDetail } from './util';
@@ -52,18 +53,20 @@ function hashPrompt(text: string): string {
  */
 export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   const { cfg, gh, stats } = deps;
-  const report: RunReport = { policy: hasPromptFile(cfg.promptPath) ? cfg.promptPath : null, failures: [], warnings: [] };
+  const policy = readPolicy(cfg.promptPath);
+  const report: RunReport = { policy: policy === undefined ? null : cfg.promptPath, failures: [], warnings: [] };
   try {
     if (!report.policy) {
       if (cfg.promptPath !== DEFAULT_PROMPT_PATH) {
         fail(report, `Triage didn't start: prompt-path '${cfg.promptPath}' isn't in the workspace. Check the path, and that the job runs actions/checkout before AutoTriage.`);
         return;
       }
+      console.log(`📜 Using the built-in label-only policy, because the workspace has no ${DEFAULT_PROMPT_PATH}`);
       if (await gh.hasFile(DEFAULT_PROMPT_PATH)) {
         warn(report, `This run used the built-in label-only policy, because the repository has ${DEFAULT_PROMPT_PATH} but the workspace doesn't. Add actions/checkout before AutoTriage.`);
       }
     }
-    await triageTargets(deps, report);
+    await triageTargets(deps, report, policy ?? BUILTIN_LABEL_ONLY_PROMPT);
   } catch (err) {
     // Only a failure outside an item gets here, such as listing the repository's labels or its backlog.
     const failure = classifyFailure(err);
@@ -77,7 +80,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
     }
   } finally {
     // Emit run telemetry even when the run aborts, so failed runs remain researchable.
-    stats.incrementGithubApiCalls(gh.getApiCallCount());
+    stats.setGithubApiCalls(gh.getApiCallCount());
     stats.printSummary();
     saveRunArtifact('run-summary.json', JSON.stringify(stats.toJSON(), null, 2));
     annotateItems(stats.getItems(), report.warnings.length);
@@ -85,7 +88,7 @@ export async function runAutoTriage(deps: AutoTriageDeps): Promise<void> {
   }
 }
 
-async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<void> {
+async function triageTargets(deps: AutoTriageDeps, report: RunReport, policy: string): Promise<void> {
   const { cfg, db, gh, model, stats } = deps;
   const repoLabels = normalizeRepoLabels(await gh.listRepoLabels());
   const { targets, autoDiscover } = await listTargets({ cfg, db, gh });
@@ -101,13 +104,9 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport): Promise<v
     : `▶️ Triaging ${targets.length} item(s): ${targets.map((n) => `#${n}`).join(', ')}`);
   console.log(`⏳ Runs limited to ${cfg.maxRuns} item(s)`);
 
-  const systemPrompt = buildSystemPrompt(cfg.promptPath, cfg.readmePath, repoLabels, cfg.additionalInstructions, cfg.limits);
+  const systemPrompt = buildSystemPrompt(policy, repoLabels, cfg.additionalInstructions, cfg.limits);
   saveRunArtifact('prompt-system.md', systemPrompt);
 
-  stats.setRunConfig({
-    dryRun: cfg.dryRun,
-    maxRuns: cfg.maxRuns,
-  });
   stats.setPromptHash(hashPrompt(systemPrompt));
 
   const itemDeps = { cfg, db, gh, model, stats };
@@ -191,8 +190,7 @@ export async function listTargets(
   deps: ListTargetsDeps
 ): Promise<{ targets: number[]; autoDiscover: boolean }> {
   const { cfg, db, gh } = deps;
-  const fromInput = cfg.issueNumbers || (cfg.issueNumber ? [cfg.issueNumber] : []);
-  if (fromInput.length > 0) return { targets: fromInput, autoDiscover: false };
+  if (cfg.issueNumbers) return { targets: cfg.issueNumbers, autoDiscover: false };
 
   const payload = deps.payload ?? github.context.payload;
   const payloadNumber = payload?.issue?.number || payload?.pull_request?.number;

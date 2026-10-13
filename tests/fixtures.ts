@@ -107,7 +107,6 @@ export function makeConfig(overrides: Partial<Config> = {}): Config {
     dryRun: true,
     // Absolute, so tests that point process.cwd() at a temp directory still load the example prompt.
     promptPath: path.join(__dirname, '..', 'examples', 'AutoTriage.prompt'),
-    readmePath: 'README.md',
     model: makeEndpoint('test-model'),
     limits: { readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 },
     maxRuns: 50,

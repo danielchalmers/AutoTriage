@@ -5,7 +5,6 @@ import { describeReasoning } from './llm/chat';
 import { describeEndpoint, resolveModel, type Endpoint, type ModelEnv, type ProviderId } from './llm/endpoint';
 
 export const DEFAULT_PROMPT_PATH = '.github/AutoTriage.prompt';
-const DEFAULT_README_PATH = 'README.md';
 // The model each key gets when the model input is blank.
 const DEFAULT_MODELS: Record<ProviderId, string> = {
   gemini: 'gemini-3.5-flash-lite',
@@ -139,13 +138,11 @@ export function getConfig(): Config {
 
   const dryRun = parseBooleanInput('dry-run');
   const promptPath = parseInputOrDefault('prompt-path', DEFAULT_PROMPT_PATH);
-  const readmePath = DEFAULT_README_PATH;
   const dbPath = parseOptionalInput('db-path');
   const multiplier = parseBudgetScaleInput('budget-scale', DEFAULT_BUDGET_SCALE);
   const limits = scaleLimits({ readmeChars: 120000, issueBodyChars: 20000, timelineEvents: 40, timelineTextChars: 4000 }, multiplier);
   const maxRuns = parsePositiveIntegerInput('max-runs', DEFAULT_MAX_RUNS);
   const issueNumbers = parseIssueNumbersInput('issues');
-  const issueNumber = issueNumbers?.length === 1 ? issueNumbers[0] : undefined;
   const additionalInstructions = parseOptionalInput('additional-instructions');
 
   return {
@@ -153,10 +150,8 @@ export function getConfig(): Config {
     repo,
     token,
     dryRun,
-    ...(issueNumber !== undefined ? { issueNumber } : {}),
     ...(issueNumbers ? { issueNumbers } : {}),
     promptPath,
-    readmePath,
     ...(dbPath ? { dbPath } : {}),
     model,
     limits,

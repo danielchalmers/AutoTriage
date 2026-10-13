@@ -1,5 +1,6 @@
-import chalk from 'chalk';
+import { color } from './util';
 import type { FailureKind } from './llm/chat';
+import type { Config } from './config';
 
 export interface ModelRunStats {
   startTime: number;
@@ -46,15 +47,6 @@ export interface ItemRecord {
   detail?: string | undefined;
 }
 
-export interface RunConfigSnapshot {
-  dryRun: boolean;
-  maxRuns: number;
-}
-
-function countKey(counts: Record<string, number>, key: string): void {
-  counts[key] = (counts[key] ?? 0) + 1;
-}
-
 function groupByIssue<T>(actions: ActionDetail[], select: (action: ActionDetail) => T): Map<number, T[]> {
   const grouped = new Map<number, T[]>();
   for (const action of actions) {
@@ -81,6 +73,12 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor(ms / 60000);
   const seconds = Math.floor((ms % 60000) / 1000);
   return `${minutes}m${seconds}s`;
+}
+
+function formatPercent(value: number): string {
+  const percent = Math.max(0, Math.min(100, value * 100));
+  const rounded = Math.round(percent);
+  return Math.abs(percent - rounded) < 0.05 ? `${rounded}%` : `${percent.toFixed(1)}%`;
 }
 
 function formatTokens(count: number): string {
@@ -110,27 +108,19 @@ export function summarizePlan(operations: Array<{ kind: string; labels?: string[
   };
 }
 
+// What a run summary needs to know about the run's settings.
+type RunSettings = Pick<Config, 'owner' | 'repo' | 'model' | 'dryRun' | 'maxRuns'>;
+
 export class RunStatistics {
   private modelRuns: ModelRunStats[] = [];
   private actionsPerformed: ActionDetail[] = [];
   private githubApiCalls = 0;
-  private owner = '';
-  private repo = '';
-  private model = '';
   private discovered = 0;
   private capReached = false;
   private items = new Map<number, ItemRecord>();
-  private runConfig: RunConfigSnapshot | null = null;
   private promptHash: string | null = null;
 
-  setRepository(owner: string, repo: string): void {
-    this.owner = owner;
-    this.repo = repo;
-  }
-
-  setModel(model: string): void {
-    this.model = model;
-  }
+  constructor(private readonly settings: RunSettings) {}
 
   trackModelRun(stats: ModelRunStats): void {
     this.modelRuns.push(stats);
@@ -148,12 +138,12 @@ export class RunStatistics {
     this.capReached = true;
   }
 
-  setRunConfig(config: RunConfigSnapshot): void {
-    this.runConfig = config;
-  }
-
   setPromptHash(hash: string): void {
     this.promptHash = hash;
+  }
+
+  setGithubApiCalls(count: number): void {
+    this.githubApiCalls = count;
   }
 
   recordItem(record: ItemRecord): void {
@@ -165,13 +155,37 @@ export class RunStatistics {
     return [...this.items.values()].sort((a, b) => a.issueNumber - b.issueNumber);
   }
 
-  // The log's description of each operation, by item.
-  getActionDetails(): Map<number, string[]> {
-    return groupByIssue(this.actionsPerformed, action => action.details);
+  // The log's description of each operation, by item, in issue order.
+  getActionDetails(): Array<[number, string[]]> {
+    return [...groupByIssue(this.actionsPerformed, action => action.details)].sort(([a], [b]) => a - b);
   }
 
-  incrementGithubApiCalls(count: number = 1): void {
-    this.githubApiCalls += count;
+  printSummary(): void {
+    const { github, usage, funnel } = this.toJSON();
+    console.log('\n' + color('bold', '📊 Run Statistics:'));
+    if (github.calls > 0) console.log(`  GitHub API: ${github.calls} calls`);
+
+    if (usage.calls > 0) {
+      console.log(color('cyan', `  Model (${this.settings.model.model})`));
+      console.log(`    Total: ${formatDuration(usage.totalMs)} • Avg: ${formatDuration(usage.avgMs)} • p95: ${formatDuration(usage.p95Ms)}`);
+      console.log(`    Tokens: ${describeTokens(usage)}`);
+      if (usage.cachedInputTokens > 0) {
+        const reusedPercent = usage.inputTokens > 0 ? ` (${formatPercent(usage.cachedInputTokens / usage.inputTokens)})` : '';
+        console.log(`    Cache: ${formatTokens(usage.cachedInputTokens)}${reusedPercent} reused`);
+      }
+    }
+
+    const outcomes: string[] = [];
+    if (funnel.triaged > 0) outcomes.push(`✅ ${funnel.triaged} triaged`);
+    if (funnel.deferred > 0) outcomes.push(`⏸️ ${funnel.deferred} deferred`);
+    if (funnel.failed > 0) outcomes.push(`❌ ${funnel.failed} failed`);
+    if (outcomes.length > 0) console.log(`  Total: ${outcomes.join(' ')}`);
+
+    const actions = this.getActionDetails();
+    if (actions.length > 0) {
+      console.log('\n' + color('bold', '🎬 Actions Performed:'));
+      for (const [issueNumber, details] of actions) console.log(`  #${issueNumber}: ${details.join(', ')}`);
+    }
   }
 
   private countOutcomes(): Record<ItemOutcome, number> {
@@ -180,80 +194,14 @@ export class RunStatistics {
     return counts;
   }
 
-  private formatPercent(value: number): string {
-    const percent = Math.max(0, Math.min(100, value * 100));
-    const rounded = Math.round(percent);
-    if (Math.abs(percent - rounded) < 0.05) return `${rounded}%`;
-    return `${percent.toFixed(1)}%`;
-  }
-
-  private calculateStats(runs: ModelRunStats[]) {
-    const durations = runs.map(r => r.endTime - r.startTime);
-    const total = durations.reduce((sum, d) => sum + d, 0);
-    const sorted = [...durations].sort((a, b) => a - b);
-    const p95Index = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
-
-    return {
-      total,
-      avg: runs.length > 0 ? total / runs.length : 0,
-      p95: sorted[p95Index] ?? 0,
-      ...sumTokens(runs),
-    };
-  }
-
-  private printModelSummary(): void {
-    if (this.modelRuns.length === 0) return;
-
-    const stats = this.calculateStats(this.modelRuns);
-    console.log(chalk.cyan(`  Model${this.model ? ` (${this.model})` : ''}`));
-    console.log(
-      `    Total: ${formatDuration(stats.total)} • ` +
-      `Avg: ${formatDuration(stats.avg)} • ` +
-      `p95: ${formatDuration(stats.p95)}`
-    );
-    console.log(`    Tokens: ${describeTokens(stats)}`);
-
-    if (stats.cachedInputTokens > 0) {
-      const reusedPercent = stats.inputTokens > 0 ? ` (${this.formatPercent(stats.cachedInputTokens / stats.inputTokens)})` : '';
-      console.log(`    Cache: ${formatTokens(stats.cachedInputTokens)}${reusedPercent} reused`);
-    }
-  }
-
-  printSummary(): void {
-    console.log('\n' + chalk.bold('📊 Run Statistics:'));
-
-    if (this.githubApiCalls > 0) {
-      console.log(`  GitHub API: ${this.githubApiCalls} calls`);
-    }
-
-    this.printModelSummary();
-
-    const { triaged, deferred, failed } = this.countOutcomes();
-    const actionParts: string[] = [];
-    if (triaged > 0) actionParts.push(`✅ ${triaged} triaged`);
-    if (deferred > 0) actionParts.push(`⏸️ ${deferred} deferred`);
-    if (failed > 0) actionParts.push(`❌ ${failed} failed`);
-
-    if (actionParts.length > 0) {
-      console.log(`  Total: ${actionParts.join(' ')}`);
-    }
-
-    if (this.actionsPerformed.length > 0) {
-      console.log('\n' + chalk.bold('🎬 Actions Performed:'));
-
-      for (const [issueNumber, details] of [...this.getActionDetails()].sort(([a], [b]) => a - b)) {
-        console.log(`  #${issueNumber}: ${details.join(', ')}`);
-      }
-    }
-  }
-
   private summarizeRuns() {
-    const stats = this.calculateStats(this.modelRuns);
+    const durations = this.modelRuns.map(r => r.endTime - r.startTime).sort((a, b) => a - b);
+    const total = durations.reduce((sum, d) => sum + d, 0);
     return {
-      calls: this.modelRuns.length,
-      totalMs: Math.round(stats.total),
-      avgMs: Math.round(stats.avg),
-      p95Ms: Math.round(stats.p95),
+      calls: durations.length,
+      totalMs: total,
+      avgMs: durations.length > 0 ? Math.round(total / durations.length) : 0,
+      p95Ms: durations[Math.min(Math.floor(durations.length * 0.95), durations.length - 1)] ?? 0,
       ...sumTokens(this.modelRuns),
     };
   }
@@ -276,9 +224,7 @@ export class RunStatistics {
     const records = this.getItems();
     const actionsByIssue = groupByIssue(this.actionsPerformed, action => action.type);
     const actionsByKind: Record<string, number> = {};
-    for (const action of this.actionsPerformed) {
-      countKey(actionsByKind, action.type);
-    }
+    for (const { type } of this.actionsPerformed) actionsByKind[type] = (actionsByKind[type] ?? 0) + 1;
 
     // Fields are listed explicitly to keep the artifact's key order stable, and undefined fields are dropped by JSON serialization.
     const items = records.map(record => ({
@@ -294,9 +240,9 @@ export class RunStatistics {
 
     return {
       schemaVersion: 5,
-      repo: this.owner && this.repo ? `${this.owner}/${this.repo}` : '',
-      model: this.model || null,
-      config: this.runConfig,
+      repo: `${this.settings.owner}/${this.settings.repo}`,
+      model: this.settings.model.model,
+      config: { dryRun: this.settings.dryRun, maxRuns: this.settings.maxRuns },
       promptHash: this.promptHash,
       github: {
         calls: this.githubApiCalls,

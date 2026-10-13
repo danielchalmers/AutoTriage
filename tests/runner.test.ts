@@ -174,7 +174,7 @@ describe('runAutoTriage', () => {
   });
 
   function createStats() {
-    return new RunStatistics();
+    return new RunStatistics(makeConfig());
   }
 
   function summaryOf(stats: RunStatistics) {

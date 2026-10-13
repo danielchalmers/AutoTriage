@@ -57,7 +57,6 @@ describe('buildRunContext', () => {
 function createConfig(overrides: Partial<Config> = {}): Config {
   return makeConfig({
     promptPath: '',
-    readmePath: '',
     limits: { readmeChars: 0, issueBodyChars: 5000, timelineEvents: 10, timelineTextChars: 5000 },
     ...overrides,
   });
@@ -118,7 +117,7 @@ describe('processIssue', () => {
   it('analyzes the item once with the run\'s model and system prompt, then applies the plan', async () => {
     await withArtifactsDir(async (tempDir) => {
       const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
+      const stats = new RunStatistics(makeConfig());
       const gh = createGitHub({
         getIssue: vi.fn()
           .mockResolvedValueOnce(baseIssue)
@@ -164,7 +163,7 @@ describe('processIssue', () => {
       const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Nothing to do', [], 10)) } as any;
 
       const result = await processIssue(
-        { cfg: createConfig({ dryRun: false }), db, gh, model, stats: new RunStatistics() },
+        { cfg: createConfig({ dryRun: false }), db, gh, model, stats: new RunStatistics(makeConfig()) },
         processOptions()
       );
 
@@ -180,7 +179,7 @@ describe('processIssue', () => {
     await withArtifactsDir(async () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
+      const stats = new RunStatistics(makeConfig());
       const gh = createGitHub({
         getIssue: vi.fn().mockResolvedValue({ ...baseIssue, updated_at: '2024-04-12T00:00:00Z' }),
       });
@@ -234,7 +233,7 @@ describe('processIssue', () => {
           },
         },
       };
-      const stats = new RunStatistics();
+      const stats = new RunStatistics(makeConfig());
       const gh = createGitHub({ getIssue: vi.fn().mockRejectedValue(new Error('recheck failed')) });
       const model = {
         generateJson: vi.fn().mockResolvedValue(modelReply('Summary', [addBugLabel('policy')], 20)),
@@ -274,7 +273,7 @@ describe('processIssue', () => {
       const reanalyze = async (current: typeof renamed) => {
         const gh = createGitHub({ getIssue: vi.fn().mockResolvedValue(current) });
         const result = await processIssue(
-          { cfg: createConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics() },
+          { cfg: createConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics(makeConfig()) },
           processOptions({ issue: renamed, reanalysis: true })
         );
         return { result, gh };
@@ -299,7 +298,7 @@ describe('processIssue', () => {
   it('uses the analyzed watermark when the post-action refresh fails', async () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
+      const stats = new RunStatistics(makeConfig());
       const gh = createGitHub({
         getIssue: vi.fn()
           .mockResolvedValueOnce(baseIssue)
@@ -325,7 +324,7 @@ describe('processIssue', () => {
   it('does not recheck before executing a dry-run plan', async () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
+      const stats = new RunStatistics(makeConfig());
       const gh = createGitHub({ getIssue: vi.fn() });
       const model = {
         generateJson: vi.fn().mockResolvedValue(modelReply('Summary', [addBugLabel('policy')], 20)),
@@ -351,7 +350,7 @@ describe('processIssue', () => {
   it('retries a model reply without an operations array and falls back to the title for a non-string summary', async () => {
     await withArtifactsDir(async () => {
       const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
+      const stats = new RunStatistics(makeConfig());
       const fetch = chatFetch('{"summary":"s","operations":{}}', '{"summary":7,"operations":[]}');
       const model = new ChatClient(OPENAI, fetch);
       vi.spyOn(model as any, 'sleep').mockResolvedValue(undefined);
@@ -370,7 +369,7 @@ describe('processIssue', () => {
       const model = new ChatClient(OPENAI, fetch);
 
       const error = await processIssue(
-        { cfg: createConfig(), db, gh: createGitHub(), model, stats: new RunStatistics() },
+        { cfg: createConfig(), db, gh: createGitHub(), model, stats: new RunStatistics(makeConfig()) },
         processOptions()
       ).catch((err: unknown) => err);
 
@@ -385,7 +384,7 @@ describe('processIssue', () => {
     await withArtifactsDir(async (tempDir) => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       const db: TriageDb = { version: 2, items: {} };
-      const stats = new RunStatistics();
+      const stats = new RunStatistics(makeConfig());
       const gh = createGitHub({ getIssue: vi.fn().mockResolvedValue(baseIssue) });
       const operations = [
         addBugLabel('Policy 2 labels crashes as bugs'),
@@ -430,7 +429,7 @@ describe('processIssue', () => {
       const readError = githubError(502, 'Bad Gateway');
       const planner = { generateJson: vi.fn().mockResolvedValue(modelReply('Summary', [addBugLabel('policy')], 20)) } as any;
       const run = (model: any, gh: ReturnType<typeof createGitHub>) => processIssue(
-        { cfg: createConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics() },
+        { cfg: createConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics(makeConfig()) },
         processOptions()
       ).catch((err: unknown) => err);
 

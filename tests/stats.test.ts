@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { RunStatistics, describeModelRun, summarizePlan } from '../src/stats';
+import { makeConfig } from './fixtures';
 
 describe('RunStatistics', () => {
   let stats: RunStatistics;
@@ -18,7 +19,7 @@ describe('RunStatistics', () => {
   }
 
   beforeEach(() => {
-    stats = new RunStatistics();
+    stats = new RunStatistics(makeConfig());
   });
 
   describe('printSummary', () => {
@@ -45,7 +46,6 @@ describe('RunStatistics', () => {
     });
 
     it('formats run durations', () => {
-      stats.setModel('test-model');
       stats.trackModelRun({ startTime: 0, endTime: 400, inputTokens: 1, outputTokens: 1 });
       stats.trackModelRun({ startTime: 0, endTime: 125000, inputTokens: 1, outputTokens: 1 });
 
@@ -58,7 +58,6 @@ describe('RunStatistics', () => {
 
   describe('comprehensive scenario', () => {
     it('summarizes cached input with its share of the input', () => {
-      stats.setModel('gemini-3.8-flash');
       stats.trackModelRun({
         startTime: 0,
         endTime: 25700,
@@ -76,7 +75,7 @@ describe('RunStatistics', () => {
     });
 
     it('shows GitHub API calls', () => {
-      stats.incrementGithubApiCalls(15);
+      stats.setGithubApiCalls(15);
 
       const lines = captureSummaryOutput(() => stats.printSummary());
 
@@ -84,7 +83,6 @@ describe('RunStatistics', () => {
     });
 
     it('reports reasoning tokens on the token line when present', () => {
-      stats.setModel('test-model');
       stats.trackModelRun({
         startTime: 0,
         endTime: 16000,
@@ -110,12 +108,10 @@ describe('RunStatistics', () => {
 
   describe('toJSON run summary', () => {
     it('captures the model, the funnel, the usage and per-item rows', () => {
-      stats.setRepository('octo', 'demo');
-      stats.setModel('test-model');
+      stats = new RunStatistics(makeConfig({ owner: 'octo', repo: 'demo', dryRun: false }));
       stats.setDiscovered(100);
       stats.setCapReached();
-      stats.incrementGithubApiCalls(12);
-      stats.setRunConfig({ dryRun: false, maxRuns: 50 });
+      stats.setGithubApiCalls(12);
       stats.setPromptHash('sha256:aaaa');
 
       // Item 1: triaged with an action, after a first analysis that the item outdated by changing.
@@ -192,8 +188,6 @@ describe('RunStatistics', () => {
       expect(json.items).toEqual([]);
       expect(json.funnel).toEqual({ discovered: 0, processed: 0, triaged: 0, deferred: 0, failed: 0, capReached: false });
       expect(json.usage).toMatchObject({ calls: 0, inputTokens: 0 });
-      expect(json.model).toBeNull();
-      expect(json.config).toBeNull();
       expect(json.promptHash).toBeNull();
     });
 

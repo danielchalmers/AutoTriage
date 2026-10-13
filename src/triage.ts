@@ -1,6 +1,6 @@
+import { color } from './util';
 import type { AnalysisResult, ModelOperation } from './analysis';
-import type { Issue } from './github';
-import chalk from 'chalk';
+import type { GitHubClient, Issue } from './github';
 
 // A planned operation is a model operation plus the plan's explanation, which comments carry in a hidden block.
 // Deriving it keeps ModelOperation the single statement of what an operation is, so adding a kind there makes the switches below fail to compile until they handle it.
@@ -18,21 +18,9 @@ const OPERATION_KINDS: readonly ModelOperation['kind'][] = [
 
 const ISSUE_STATES: readonly Extract<ModelOperation, { kind: 'set_state' }>['state'][] = ['open', 'completed', 'not_planned'];
 
-export interface GitHubWriteClient {
-  addLabels(issueNumber: number, labels: string[]): Promise<void>;
-  removeLabel(issueNumber: number, name: string): Promise<void>;
-  createComment(issueNumber: number, body: string): Promise<void>;
-  updateTitle(issueNumber: number, title: string): Promise<void>;
-  updateIssueState(
-    issueNumber: number,
-    state: 'open' | 'closed',
-    reason?: 'completed' | 'not_planned'
-  ): Promise<void>;
-}
+export type GitHubWriteClient = Pick<GitHubClient, 'addLabels' | 'removeLabel' | 'createComment' | 'updateTitle' | 'updateIssueState'>;
 
-type StatefulIssue = Pick<Issue, 'number' | 'title' | 'state' | 'labels'> & {
-  state_reason?: string | null;
-};
+type StatefulIssue = Pick<Issue, 'number' | 'title' | 'state' | 'labels' | 'state_reason'>;
 
 function formatCommentBody(body: string, explanation?: string): string {
   // A '-->' or '--!>' in the explanation would end the hidden comment early and publish the rest, so escape its '>'.
@@ -73,11 +61,11 @@ export async function executeOperations(
   for (const operation of operations) {
     switch (operation.kind) {
       case 'add_labels':
-        console.log(`${chalk.cyan('🏷️ Labels')}: ${operation.labels.map(label => chalk.green(`+${label}`)).join(', ')}`);
+        console.log(`${color('cyan', '🏷️ Labels')}: ${operation.labels.map(label => color('green', `+${label}`)).join(', ')}`);
         if (!dryRun) await gh.addLabels(issue.number, operation.labels);
         break;
       case 'remove_labels':
-        console.log(`${chalk.cyan('🏷️ Labels')}: ${operation.labels.map(label => chalk.red(`-${label}`)).join(', ')}`);
+        console.log(`${color('cyan', '🏷️ Labels')}: ${operation.labels.map(label => color('red', `-${label}`)).join(', ')}`);
         if (!dryRun) {
           for (const label of operation.labels) {
             await gh.removeLabel(issue.number, label);
@@ -85,22 +73,22 @@ export async function executeOperations(
         }
         break;
       case 'comment':
-        console.log(chalk.cyan('💬 Comment:'));
-        console.log(chalk.green(commentPreview(operation.body)));
+        console.log(color('cyan', '💬 Comment:'));
+        console.log(color('green', commentPreview(operation.body)));
         if (!dryRun) await gh.createComment(issue.number, formatCommentBody(operation.body, operation.explanation));
         break;
       case 'set_title':
-        console.log(chalk.cyan('✏️ Title:'));
-        console.log(chalk.red(`-"${issue.title}"`));
-        console.log(chalk.green(`+"${operation.title}"`));
+        console.log(color('cyan', '✏️ Title:'));
+        console.log(color('red', `-"${issue.title}"`));
+        console.log(color('green', `+"${operation.title}"`));
         if (!dryRun) await gh.updateTitle(issue.number, operation.title);
         break;
       case 'set_state':
         if (operation.state === 'open') {
-          console.log(`${chalk.cyan('🔄 State')}: Reopening issue`);
+          console.log(`${color('cyan', '🔄 State')}: Reopening issue`);
           if (!dryRun) await gh.updateIssueState(issue.number, 'open');
         } else {
-          console.log(`${chalk.cyan('🔄 State')}: Closing issue as ${operation.state}`);
+          console.log(`${color('cyan', '🔄 State')}: Closing issue as ${operation.state}`);
           if (!dryRun) await gh.updateIssueState(issue.number, 'closed', operation.state);
         }
         break;

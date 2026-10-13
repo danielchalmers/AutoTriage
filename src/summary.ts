@@ -92,7 +92,7 @@ export async function writeJobSummary(
   for (const message of report.failures) paragraph(`❌ ${escapeHtml(message)}`);
   for (const message of report.warnings) paragraph(`⚠️ ${escapeHtml(message)}`);
 
-  const actions = [...stats.getActionDetails()].sort(([a], [b]) => a - b);
+  const actions = stats.getActionDetails();
   if (actions.length > 0) {
     summary.addHeading(cfg.dryRun ? 'Planned' : 'Acted on', 3).addTable([
       header('Item', 'Title', 'Operations'),
