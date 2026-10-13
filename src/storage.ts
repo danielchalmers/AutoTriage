@@ -98,18 +98,8 @@ function resolveFromCwd(filePath: string): string {
   return path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
 }
 
-export function loadReadme(): string {
-  try {
-    const resolved = resolveFromCwd('README.md');
-    return fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : '';
-  } catch (err) {
-    console.warn(`⚠️ Failed to read README.md: ${errorMessage(err)}`);
-    return '';
-  }
-}
-
-// The policy file's text, or undefined when the workspace doesn't have it.
-export function readPolicy(promptPath: string): string | undefined {
-  const resolved = resolveFromCwd(promptPath);
-  return fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : undefined;
+// A file's text from the workspace, or undefined when the job didn't check it out.
+export function readWorkspaceFile(filePath: string): string | undefined {
+  const resolved = resolveFromCwd(filePath);
+  return fs.existsSync(resolved) && fs.statSync(resolved).isFile() ? fs.readFileSync(resolved, 'utf8') : undefined;
 }

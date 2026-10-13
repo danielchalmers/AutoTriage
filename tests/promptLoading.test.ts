@@ -1,15 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { readPolicy } from '../src/storage'
-import { BUILTIN_LABEL_ONLY_PROMPT } from '../src/prompt'
+import { readWorkspaceFile } from '../src/storage'
+import { BUILTIN_LABEL_ONLY_PROMPT } from '../src/prompts'
 import { withTempFiles } from './fixtures'
 import * as path from 'path'
 
-describe('readPolicy', () => {
-  it('reads the policy file, or returns undefined when the workspace lacks it', () => {
+describe('readWorkspaceFile', () => {
+  it('reads a file, or returns undefined when the workspace lacks it or it is a directory', () => {
     withTempFiles({ 'prompt.txt': 'Custom test prompt' }, (file) => {
-      expect(readPolicy(file('prompt.txt'))).toBe('Custom test prompt')
+      expect(readWorkspaceFile(file('prompt.txt'))).toBe('Custom test prompt')
     })
-    expect(readPolicy(path.join(__dirname, 'does-not-exist.txt'))).toBeUndefined()
+    expect(readWorkspaceFile(path.join(__dirname, 'does-not-exist.txt'))).toBeUndefined()
+    expect(readWorkspaceFile(__dirname)).toBeUndefined()
   })
 })
 

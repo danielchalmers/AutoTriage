@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   issuesCreateComment: vi.fn(),
   issuesUpdate: vi.fn(),
   reposGetContent: vi.fn(),
+  reposGetReadme: vi.fn(),
 }));
 
 vi.mock('@actions/github', () => ({
@@ -56,7 +57,7 @@ beforeEach(() => {
         update: mocks.issuesUpdate,
       },
       pulls: { listFiles: mocks.pullsListFiles, listReviewComments: mocks.pullsListReviewComments },
-      repos: { getContent: mocks.reposGetContent },
+      repos: { getContent: mocks.reposGetContent, getReadme: mocks.reposGetReadme },
     },
     paginate: mocks.paginate,
   });
@@ -204,14 +205,34 @@ describe('GitHubClient listing', () => {
     ]);
   });
 
-  it('reports whether the repository has a file, treating any error as no', async () => {
+  it('reads a file as raw text at a commit, and returns undefined for a missing file or a directory', async () => {
     const client = new GitHubClient('token', 'owner', 'repo');
-    mocks.reposGetContent.mockResolvedValueOnce({ data: {} });
+    mocks.reposGetContent.mockResolvedValueOnce({ data: '## Policy' });
     mocks.reposGetContent.mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }));
+    mocks.reposGetContent.mockResolvedValueOnce({ data: [{ name: 'a.md' }] });
 
-    expect(await client.hasFile('.github/AutoTriage.prompt')).toBe(true);
-    expect(await client.hasFile('.github/AutoTriage.prompt')).toBe(false);
-    expect(mocks.reposGetContent).toHaveBeenCalledWith({ owner: 'owner', repo: 'repo', path: '.github/AutoTriage.prompt' });
+    expect(await client.readFile('.github/AutoTriage.prompt', 'abc123')).toBe('## Policy');
+    expect(await client.readFile('.github/AutoTriage.prompt')).toBeUndefined();
+    expect(await client.readFile('.github')).toBeUndefined();
+    expect(mocks.reposGetContent).toHaveBeenNthCalledWith(1, { owner: 'owner', repo: 'repo', path: '.github/AutoTriage.prompt', ref: 'abc123', mediaType: { format: 'raw' } });
+    expect(mocks.reposGetContent).toHaveBeenNthCalledWith(2, { owner: 'owner', repo: 'repo', path: '.github/AutoTriage.prompt', mediaType: { format: 'raw' } });
+  });
+
+  it('fails on any other error reading a file, so a missing permission is reported rather than read as no file', async () => {
+    const client = new GitHubClient('token', 'owner', 'repo');
+    mocks.reposGetContent.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }));
+
+    await expect(client.readFile('.github/AutoTriage.prompt')).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('reads the README GitHub shows, or an empty one when there is none', async () => {
+    const client = new GitHubClient('token', 'owner', 'repo');
+    mocks.reposGetReadme.mockResolvedValueOnce({ data: '# Project' });
+    mocks.reposGetReadme.mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }));
+
+    expect(await client.readReadme('abc123')).toBe('# Project');
+    expect(await client.readReadme()).toBe('');
+    expect(mocks.reposGetReadme).toHaveBeenNthCalledWith(1, { owner: 'owner', repo: 'repo', ref: 'abc123', mediaType: { format: 'raw' } });
   });
 
   it('keeps named repository labels and normalizes blank descriptions to null', async () => {

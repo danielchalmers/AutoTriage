@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 const processIssueMock = vi.hoisted(() => vi.fn());
 const githubContextMock = vi.hoisted(() => ({
   payload: {},
+  sha: undefined as string | undefined,
   serverUrl: 'https://github.com',
 }));
 
@@ -158,6 +159,7 @@ describe('runAutoTriage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     githubContextMock.payload = {};
+    githubContextMock.sha = undefined;
     processIssueMock.mockReset();
     processIssueMock.mockImplementation(async (_deps, { issue }) => triaged(issue.number));
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -192,7 +194,8 @@ describe('runAutoTriage', () => {
       listRecentlyClosedIssues: vi.fn().mockResolvedValue([]),
       getIssue: vi.fn(async (issueNumber: number) => makeIssue(issueNumber, '2024-04-05T00:00:00Z')),
       getApiCallCount: vi.fn().mockReturnValue(0),
-      hasFile: vi.fn().mockResolvedValue(false),
+      readFile: vi.fn().mockResolvedValue(undefined),
+      readReadme: vi.fn().mockResolvedValue(''),
     };
   }
 
@@ -648,34 +651,59 @@ describe('runAutoTriage', () => {
 
       await run({ ...baseConfig, promptPath: '.github/AutoTriage.prompt', issueNumbers: [5] }, { gh });
 
-      expect(gh.hasFile).toHaveBeenCalledWith('.github/AutoTriage.prompt');
+      expect(gh.readFile).toHaveBeenCalledWith('.github/AutoTriage.prompt', undefined);
       expect(readJobSummary()).toContain('<li>Policy: the built-in label-only policy, because no policy file was found</li>');
       expect(core.warning).not.toHaveBeenCalled();
       expect(processIssueMock).toHaveBeenCalled();
     });
   });
 
-  it('warns when the repository has a policy file that the workspace lacks, as without actions/checkout', async () => {
+  it("reads the policy and README from GitHub at the run's commit when the job has no checkout", async () => {
     await withArtifactsDir(async () => {
       const gh = createGitHub();
-      gh.hasFile.mockResolvedValue(true);
+      gh.readFile.mockResolvedValue('## Policy from GitHub');
+      gh.readReadme.mockResolvedValue('# README from GitHub');
+      githubContextMock.sha = 'abc123';
 
       await run({ ...baseConfig, promptPath: '.github/AutoTriage.prompt', issueNumbers: [5] }, { gh });
 
-      expect(core.warning).toHaveBeenCalledWith("This run used the built-in label-only policy, because the repository has .github/AutoTriage.prompt but the workspace doesn't. Add actions/checkout before AutoTriage.");
-      expect(core.setFailed).not.toHaveBeenCalled();
-      expect(processIssueMock).toHaveBeenCalled();
+      expect(gh.readFile).toHaveBeenCalledWith('.github/AutoTriage.prompt', 'abc123');
+      expect(gh.readReadme).toHaveBeenCalledWith('abc123');
+      const systemPrompt = processIssueMock.mock.calls[0]![1].systemPrompt;
+      expect(systemPrompt).toContain('## Policy from GitHub');
+      expect(systemPrompt).toContain('# README from GitHub');
+      expect(readJobSummary()).toContain('<li>Policy: <code>.github/AutoTriage.prompt</code></li>');
     });
   });
 
-  it('fails without triaging when a custom prompt-path is missing', async () => {
+  it('prefers checked-out files, and reads nothing from GitHub then', async () => {
+    const gh = createGitHub();
+    fs.writeFileSync(path.join(artifactsRoot, 'README.md'), '# Checked-out README');
+
+    await run({ ...baseConfig, issueNumbers: [5] }, { gh });
+
+    expect(gh.readFile).not.toHaveBeenCalled();
+    expect(gh.readReadme).not.toHaveBeenCalled();
+    expect(processIssueMock.mock.calls[0]![1].systemPrompt).toContain('# Checked-out README');
+  });
+
+  it('fails without triaging when a custom prompt-path is in neither the workspace nor the repository', async () => {
     const gh = createGitHub();
 
     await run({ ...baseConfig, promptPath: '.github/missing.prompt', issueNumbers: [5] }, { gh });
 
-    expect(core.setFailed).toHaveBeenCalledWith("Triage didn't start: prompt-path '.github/missing.prompt' isn't in the workspace. Check the path, and that the job runs actions/checkout before AutoTriage.");
+    expect(core.setFailed).toHaveBeenCalledWith("Triage didn't start: prompt-path '.github/missing.prompt' isn't in the repository. Check the path.");
     expect(processIssueMock).not.toHaveBeenCalled();
-    expect(gh.hasFile).not.toHaveBeenCalled();
+  });
+
+  it('fails as a configuration error when the token may not read the policy', async () => {
+    const gh = createGitHub();
+    gh.readFile.mockRejectedValue(githubError(403, 'Resource not accessible by integration'));
+
+    await run({ ...baseConfig, promptPath: '.github/AutoTriage.prompt', issueNumbers: [5] }, { gh });
+
+    expect(vi.mocked(core.setFailed).mock.calls[0]?.[0]).toContain("Triage didn't start");
+    expect(processIssueMock).not.toHaveBeenCalled();
   });
 
   it('hands every item the one system prompt, and writes it and the run summary as artifacts', async () => {

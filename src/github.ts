@@ -51,6 +51,10 @@ export type TimelineEvent = {
   milestone?: string | null;
 };
 
+function isNotFound(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { status?: unknown }).status === 404;
+}
+
 export class GitHubClient {
   private octokit;
   private apiCallCount = 0;
@@ -138,13 +142,28 @@ export class GitHubClient {
     return data.map((issue: any) => this.buildMetadata(issue));
   }
 
-  async hasFile(path: string): Promise<boolean> {
+  // A file's text at ref, or undefined when there's no such file there. Without a ref, it's read from the default branch.
+  async readFile(path: string, ref?: string): Promise<string | undefined> {
     this.incrementApiCalls();
     try {
-      await this.octokit.rest.repos.getContent({ owner: this.owner, repo: this.repo, path });
-      return true;
-    } catch {
-      return false;
+      const { data } = await this.octokit.rest.repos.getContent({ owner: this.owner, repo: this.repo, path, ...(ref ? { ref } : {}), mediaType: { format: 'raw' } });
+      // A directory comes back as a listing rather than text.
+      return typeof data === 'string' ? data : undefined;
+    } catch (err) {
+      if (isNotFound(err)) return undefined;
+      throw err;
+    }
+  }
+
+  // The README GitHub shows for the repository at ref, wherever it is kept, or '' when there isn't one.
+  async readReadme(ref?: string): Promise<string> {
+    this.incrementApiCalls();
+    try {
+      const { data } = await this.octokit.rest.repos.getReadme({ owner: this.owner, repo: this.repo, ...(ref ? { ref } : {}), mediaType: { format: 'raw' } });
+      return typeof data === 'string' ? data : '';
+    } catch (err) {
+      if (isNotFound(err)) return '';
+      throw err;
     }
   }
 

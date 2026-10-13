@@ -1,8 +1,17 @@
 import type { Issue, TimelineEvent } from './github';
-import { loadReadme } from './storage';
 import type { RepoLabel } from './analysis';
 import { normalizeRepoLabels } from './analysis';
 import type { PromptLimits } from './config';
+
+// The policy for a repository without a policy file.
+export const BUILTIN_LABEL_ONLY_PROMPT = `## Default Label-Only Policy
+- Analyze the issue or pull request using the repository labels provided elsewhere in the system prompt.
+- Add every repository label that the item's main request, status, or content strongly supports, judging each label by its name and description.
+- You may only emit \`add_labels\` operations.
+- Never emit \`remove_labels\`, \`comment\`, \`set_state\`, or \`set_title\` operations.
+- Use only labels that already exist in the repository labels section.
+- Never remove, replace, or "correct" existing labels.
+- If no clearly justified new label should be added, return an empty operations array.`;
 
 function clampText(value: string | null | undefined, maxChars: number): string {
   if (!value || maxChars <= 0) return '';
@@ -28,11 +37,12 @@ function applyTimelineLimits(events: TimelineEvent[], limits: PromptLimits): Tim
  */
 export function buildSystemPrompt(
   policy: string,
+  readme: string,
   repoLabels: RepoLabel[],
   additionalInstructions: string | undefined,
   limits: PromptLimits,
 ): string {
-  const readme = clampText(loadReadme(), limits.readmeChars);
+  const readmeText = clampText(readme, limits.readmeChars);
   const normalizedRepoLabels = normalizeRepoLabels(repoLabels);
   return `
 === SECTION: PROMPT MAP ===
@@ -115,7 +125,7 @@ ${policy}
 ${additionalInstructions ? `\n=== SECTION: ADDITIONAL INSTRUCTIONS ===\n${additionalInstructions}\n` : ''}
 === SECTION: REPOSITORY LABELS (JSON) ===
 ${JSON.stringify(normalizedRepoLabels, null, 2)}
-${readme ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${readme}` : ''}
+${readmeText ? `\n=== SECTION: PROJECT README (MARKDOWN) ===\n${readmeText}` : ''}
 `;
 }
 

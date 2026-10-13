@@ -11,7 +11,7 @@ describe('additional instructions', () => {
 
   it('includes additional instructions in the system prompt when provided', () => {
     const additionalInstructions = 'Always add the "urgent" label to issues'
-    const systemPrompt = buildSystemPrompt('Base prompt content', mockRepoLabels, additionalInstructions, limits)
+    const systemPrompt = buildSystemPrompt('Base prompt content', '', mockRepoLabels, additionalInstructions, limits)
 
     expect(systemPrompt).toContain('Base prompt content')
     expect(systemPrompt).toContain(additionalInstructions)
@@ -27,7 +27,7 @@ describe('additional instructions', () => {
   })
 
   it('does not include additional instructions section when not provided', () => {
-    const systemPrompt = buildSystemPrompt('Base prompt content', mockRepoLabels, undefined, limits)
+    const systemPrompt = buildSystemPrompt('Base prompt content', '', mockRepoLabels, undefined, limits)
 
     expect(systemPrompt).toContain('Base prompt content')
     expect(systemPrompt).not.toContain('=== SECTION: ADDITIONAL INSTRUCTIONS ===')
