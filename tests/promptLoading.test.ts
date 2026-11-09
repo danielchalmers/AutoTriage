@@ -19,6 +19,10 @@ describe('built-in policy', () => {
   it('asks for every label the item strongly supports, since a policy that only allows labels leaves Haiku skipping obvious ones', () => {
     expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- Add every repository label that the item\'s main request, status, or content strongly supports, judging each label by its name and description.')
   })
+
+  it('gives an item one of the labels that are alternatives to each other, since Haiku otherwise added both of two close ones, or neither', () => {
+    expect(BUILTIN_LABEL_ONLY_PROMPT).toContain('- Where names and descriptions make labels alternatives to each other, an item takes only one of them: when more than one could fit, add the best fit alone, and add it even when the choice between them is close.')
+  })
 })
 
 describe('summary field', () => {

@@ -7,6 +7,7 @@ import type { PromptLimits } from './config';
 export const BUILTIN_LABEL_ONLY_PROMPT = `## Default Label-Only Policy
 - Analyze the issue or pull request using the repository labels provided elsewhere in the system prompt.
 - Add every repository label that the item's main request, status, or content strongly supports, judging each label by its name and description.
+- Where names and descriptions make labels alternatives to each other, an item takes only one of them: when more than one could fit, add the best fit alone, and add it even when the choice between them is close.
 - You may only emit \`add_labels\` operations.
 - Never emit \`remove_labels\`, \`comment\`, \`set_state\`, or \`set_title\` operations.
 - Use only labels that already exist in the repository labels section.
