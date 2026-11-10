@@ -434,6 +434,41 @@ describe('processIssue', () => {
     });
   });
 
+  it("keeps an earlier run's hidden explanation out of the prompt, and still posts the new one for people to read", async () => {
+    await withArtifactsDir(async () => {
+      const earlier: TimelineEvent[] = [
+        {
+          event: 'commented',
+          actor: 'triage-bot[bot]',
+          actor_type: 'Bot',
+          created_at: '2024-04-09T00:00:00Z',
+          body: 'Could you share a repro?\n\n<!--\nSummary: The author is not a maintainer.\nOperations:\n- comment: Policy 3 asks for a repro\n-->',
+        },
+        { event: 'commented', actor: 'octocat', actor_type: 'User', created_at: '2024-04-10T00:00:00Z', body: 'Here it is.' },
+      ];
+      const gh = createGitHub({
+        listTimelineEvents: vi.fn().mockResolvedValue({ raw: earlier, filtered: earlier }),
+        getIssue: vi.fn().mockResolvedValue(baseIssue),
+      });
+      const operations = [{ kind: 'comment', body: 'Thanks for the repro.', authorization: 'Policy 4 thanks the reporter' }];
+      const model = { generateJson: vi.fn().mockResolvedValue(modelReply('Repro received', operations, 20)) } as any;
+
+      await processIssue(
+        { cfg: createConfig({ dryRun: false }), db: { version: 2, items: {} }, gh, model, stats: new RunStatistics(makeConfig()) },
+        processOptions()
+      );
+
+      const { userPrompt } = model.generateJson.mock.calls[0][0];
+      expect(userPrompt).toContain('"body": "Could you share a repro?"');
+      expect(userPrompt).toContain('"body": "Here it is."');
+      expect(userPrompt).not.toContain('not a maintainer');
+      expect(gh.createComment).toHaveBeenCalledWith(
+        42,
+        'Thanks for the repro.\n\n<!--\nSummary: Repro received\nOperations:\n- comment: Policy 4 thanks the reporter\n-->'
+      );
+    });
+  });
+
   it('passes a failed model call, GitHub write or timeline read to the runner unchanged', async () => {
     await withArtifactsDir(async () => {
       const unavailable = new ModelError('503 UNAVAILABLE', 'capacity');
