@@ -2,6 +2,7 @@ import type { Issue, TimelineEvent } from './github';
 import type { RepoLabel } from './analysis';
 import { normalizeRepoLabels } from './analysis';
 import type { PromptLimits } from './config';
+import { stripHiddenBlock } from './triage';
 
 // The policy for a repository without a policy file.
 export const BUILTIN_LABEL_ONLY_PROMPT = `## Default Label-Only Policy
@@ -17,6 +18,18 @@ export const BUILTIN_LABEL_ONLY_PROMPT = `## Default Label-Only Policy
 function clampText(value: string | null | undefined, maxChars: number): string {
   if (!value || maxChars <= 0) return '';
   return value.length > maxChars ? value.slice(0, maxChars) : value;
+}
+
+// Leaves the hidden explanation block out of the action's own earlier comments, because the model reads an earlier run's reasoning as evidence and repeats its mistakes.
+// The block stays in the comment on GitHub, where people read it.
+// The action posts with the workflow's token, so its comments come from a bot account, and nothing in the timeline says which one.
+// So any bot's comment counts, and only a block of the exact shape the action writes is removed.
+function withoutHiddenBlocks(events: TimelineEvent[]): TimelineEvent[] {
+  return events.map((event) => (
+    event.event === 'commented' && event.actor_type === 'Bot' && typeof event.body === 'string'
+      ? { ...event, body: stripHiddenBlock(event.body) }
+      : event
+  ));
 }
 
 function applyTimelineLimits(events: TimelineEvent[], limits: PromptLimits): TimelineEvent[] {
@@ -166,7 +179,8 @@ export function buildUserPrompt(
   runTimestamp: string,
 ): string {
   const promptIssue = { ...issue, body: clampText(issue.body, limits.issueBodyChars) };
-  const promptTimelineEvents = applyTimelineLimits(timelineEvents, limits);
+  // The blocks come out before the text is cut to length, because a block that was cut no longer has its shape.
+  const promptTimelineEvents = applyTimelineLimits(withoutHiddenBlocks(timelineEvents), limits);
 
   return `
 === SECTION: TRIAGE TASK ===

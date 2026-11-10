@@ -51,6 +51,7 @@ Start with the smallest useful context:
   danielchalmers/Nuntia copies `src/llm/` and `tests/llm/` verbatim, so change them here first and copy them over in a paired PR.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` - the built-in policy and prompt assembly.
+  A bot's earlier comments reach the prompt without the hidden explanation block that the action ends its comments with, and `src/triage.ts` holds the one pattern for that block.
 - `src/storage.ts` and `src/stats.ts` - persisted triage data and run metrics.
 - `src/util.ts` - shared error-detail and timestamp helpers.
   `errorMessage` is imported straight from `src/llm/chat.ts`.

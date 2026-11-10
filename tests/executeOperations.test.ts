@@ -1,6 +1,6 @@
 /// <reference types="vitest" />
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { describeOperation, executeOperations } from '../src/triage';
+import { describeOperation, executeOperations, stripHiddenBlock } from '../src/triage';
 import type { GitHubWriteClient, PlannedOperation } from '../src/triage';
 
 describe('executeOperations', () => {
@@ -69,6 +69,32 @@ describe('executeOperations', () => {
     const body = vi.mocked(gh.createComment).mock.calls[0]![1];
     expect(body).toBe('Hello there\n\n<!--\nArrow --&gt; here, bang --!&gt; there -- done\n-->');
     expect(body.match(/--!?>/g)).toEqual(['-->']);
+  });
+
+  it('posts a hidden block that stripHiddenBlock removes whole, whatever the explanation holds, so the two cannot drift apart', async () => {
+    const bodies = ['Hello there', 'Hello there\n\n<!--\nA note of its own.\n-->\n\nMore to read.'];
+    const explanations = [
+      undefined,
+      'Internal note',
+      'Summary: Crash on save\nOperations:\n- add_labels: Policy 2 labels crashes as bugs',
+      'Arrow --> here, bang --!> there -- done',
+      'Quotes a block:\n\n<!--\ninner\n-->\n\nand goes on',
+      'Ends in dashes --',
+    ];
+
+    for (const body of bodies) {
+      for (const explanation of explanations) {
+        vi.mocked(gh.createComment).mockClear();
+        await executeOperations(
+          [{ kind: 'comment', body, authorization: 'auth', ...(explanation ? { explanation } : {}) }],
+          { issue, dryRun: false, gh }
+        );
+
+        const posted = vi.mocked(gh.createComment).mock.calls[0]![1];
+        expect(posted).toMatch(/\n-->$/);
+        expect(stripHiddenBlock(posted)).toBe(body);
+      }
+    }
   });
 
   it('falls back to a placeholder when the explanation is missing', async () => {

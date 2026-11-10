@@ -22,14 +22,25 @@ export type GitHubWriteClient = Pick<GitHubClient, 'addLabels' | 'removeLabel' |
 
 type StatefulIssue = Pick<Issue, 'number' | 'title' | 'state' | 'labels' | 'state_reason'>;
 
+// A posted comment ends with a hidden block: a blank line, then the plan's explanation on lines of its own between '<!--' and '-->'.
+// formatCommentBody writes that shape and HIDDEN_BLOCK is the one pattern that reads it back, for the preview and for the prompt.
+// Nothing inside the block closes it, because formatCommentBody escapes whatever would.
+// The line breaks may be CRLF, which is how GitHub returns a comment that was edited on the website.
+const HIDDEN_BLOCK = /(?:\r?\n){2}<!--\r?\n(?:(?!--!?>)[\s\S])*\r?\n-->$/;
+
 function formatCommentBody(body: string, explanation?: string): string {
   // A '-->' or '--!>' in the explanation would end the hidden comment early and publish the rest, so escape its '>'.
   const hiddenBlock = (explanation ?? '').trim().replace(/--(!?)>/g, '--$1&gt;') || 'No explanation provided';
   return `${body}\n\n<!--\n${hiddenBlock}\n-->`;
 }
 
+// Removes the hidden block from the end of a comment, and changes nothing else.
+export function stripHiddenBlock(body: string): string {
+  return body.replace(HIDDEN_BLOCK, '');
+}
+
 function commentPreview(body: string): string {
-  return body.replace(/\n\n<!--[\s\S]*?-->$/g, '').replace(/^/gm, '> ');
+  return stripHiddenBlock(body).replace(/^/gm, '> ');
 }
 
 export function describeOperation(operation: PlannedOperation): string {
