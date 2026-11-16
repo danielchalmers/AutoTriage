@@ -87,7 +87,7 @@ function formatTokens(count: number): string {
   return `${(count / 1000000).toFixed(1)}M`;
 }
 
-// Some providers, such as Claude's compatibility API, report no reasoning tokens, so the log says so rather than leaving reasoning out.
+// Some providers report no reasoning tokens, as Claude does on some replies, so the log says so rather than leaving reasoning out.
 function describeTokens(tokens: { inputTokens: number; outputTokens: number; reasoningTokens: number }): string {
   const reasoning = tokens.reasoningTokens > 0 ? `${formatTokens(tokens.reasoningTokens)} reasoning` : 'reasoning not reported';
   return `${formatTokens(tokens.inputTokens)} input • ${formatTokens(tokens.outputTokens)} output • ${reasoning}`;
