@@ -46,8 +46,9 @@ Start with the smallest useful context:
 - `src/summary.ts` - the job summary and the warning annotations.
 - `src/github.ts` - GitHub API boundary.
 - `src/llm/` - the model API boundary, with no SDK.
-  `endpoint.ts` picks the Chat Completions endpoint and key for a model input.
+  `endpoint.ts` picks the endpoint and key for a model input.
   `chat.ts` is the one client every provider goes through, with its retries, per-call deadline, error classification, and undici fetch.
+  It speaks Chat Completions to every host except `api.anthropic.com`, which gets Claude's own Messages API so that effort can be set (`xhigh`), since Claude's Chat Completions layer ignores `reasoning_effort`.
   danielchalmers/Nuntia copies `src/llm/` and `tests/llm/` verbatim, so change them here first and copy them over in a paired PR.
 - `src/analysis.ts` and `src/triage.ts` - response schema and operation planning.
 - `src/prompts.ts` - the built-in policy and prompt assembly.
