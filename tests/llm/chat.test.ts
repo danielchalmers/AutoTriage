@@ -92,13 +92,20 @@ describe('ChatClient requests', () => {
     expect(messages[0].content.endsWith(JSON.stringify(SCHEMA))).toBe(true)
   })
 
-  it('sends Claude a text call at its default effort', async () => {
-    const fetch = stubFetch(claudeReply('  Release notes  '))
+  it('sends Claude a text call at xhigh effort too, and without it once the model rejects it', async () => {
+    const fetch = stubFetch(
+      claudeReply('  Release notes  '),
+      error(400, { type: 'error', error: { type: 'invalid_request_error', message: 'This model does not support the effort parameter.' } }),
+      claudeReply('Release notes'),
+    )
+    const client = new ChatClient(CLAUDE, fetch)
 
-    const result = await new ChatClient(CLAUDE, fetch).generateText({ ...REQUEST, systemPrompt: '' })
+    const result = await client.generateText({ ...REQUEST, systemPrompt: '' })
+    await client.generateText({ ...REQUEST, systemPrompt: '' })
 
     expect(result.text).toBe('Release notes')
-    expect(fetch.bodies[0]).toEqual({ model: 'test-model', max_tokens: 64000, messages: [{ role: 'user', content: 'user' }] })
+    const body = { model: 'test-model', max_tokens: 64000, messages: [{ role: 'user', content: 'user' }] }
+    expect(fetch.bodies).toEqual([{ ...body, output_config: { effort: 'xhigh' } }, { ...body, output_config: { effort: 'xhigh' } }, body])
   })
 
   it('leaves effort off for the rest of the run on a Claude model that rejects it, and keeps the schema', async () => {
