@@ -249,7 +249,7 @@ export class ChatClient {
     });
   }
 
-  // Call the model for a plain text reply, at its default reasoning settings.
+  // Call the model for a plain text reply, at its default reasoning settings, except that Claude gets the effort a JSON call gets, because Haiku's default is medium.
   generateText(request: ChatRequest): Promise<{ text: string } & Usage> {
     return this.withRetries(deadline => this.complete(() => this.textBody(request), deadline).then(({ text, usage }) => ({ text, ...usage })));
   }
@@ -261,6 +261,7 @@ export class ChatClient {
         max_tokens: CLAUDE_MAX_TOKENS,
         ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
         messages: [{ role: 'user', content: request.userPrompt }],
+        ...(this.dropped.has('effort') ? {} : { output_config: { effort: CLAUDE_EFFORT } }),
       };
     }
     return {
