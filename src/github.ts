@@ -266,6 +266,11 @@ export class GitHubClient {
         case 'subscribed':
         case 'unsubscribed':
           return null;
+        // GitHub records these on the original issue when another one is marked as its duplicate, without naming either, so a model reads this issue as the duplicate.
+        // The duplicate itself gets a `closed` event with state_reason `duplicate`, which is kept.
+        case 'marked_as_duplicate':
+        case 'unmarked_as_duplicate':
+          return null;
         default:
           return base;
       }
