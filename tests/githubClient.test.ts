@@ -293,6 +293,21 @@ describe('GitHubClient.listTimelineEvents', () => {
     ]);
   });
 
+  it('leaves out duplicate marks, which land on the original issue without saying which one is the duplicate', async () => {
+    // Shaped like the event GitHub added to MudBlazor 5309 when 5664 was closed as its duplicate.
+    mocks.paginate.mockResolvedValueOnce([
+      { event: 'marked_as_duplicate', actor, created_at: at(1) },
+      { event: 'unmarked_as_duplicate', actor, created_at: at(2) },
+      { event: 'closed', actor, state_reason: 'duplicate', created_at: at(3) },
+    ]);
+
+    const client = new GitHubClient('token', 'owner', 'repo');
+    const { raw, filtered } = await client.listTimelineEvents(42, 100);
+
+    expect(raw).toHaveLength(3);
+    expect(filtered).toEqual([expect.objectContaining({ event: 'closed', state_reason: 'duplicate' })]);
+  });
+
   it('keeps only the newest events up to the limit and sorts undated events last', async () => {
     mocks.paginate.mockResolvedValueOnce([
       { event: 'commented', body: 'undated' },
