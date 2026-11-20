@@ -47,7 +47,7 @@ function triaged(issueNumber: number, overrides: Partial<ItemRecord> = {}): Item
 function deferred(issueNumber: number, overrides: Partial<ItemRecord> = {}): ItemRecord {
   return triaged(issueNumber, { outcome: 'deferred', ...overrides });
 }
-// Deferred because the item changed during analysis, which earns it one more analysis.
+// Deferred because the item changed during analysis, which earns it another analysis.
 function changed(issueNumber: number, overrides: Partial<ItemRecord> = {}): ItemRecord {
   return deferred(issueNumber, { changedDuringAnalysis: true, detail: "It changed while it was being analyzed, so the plan wasn't applied.", ...overrides });
 }
@@ -366,19 +366,58 @@ describe('runAutoTriage', () => {
     expect(core.warning).not.toHaveBeenCalled();
   });
 
-  it('defers an item that changed again during its re-analysis, without a third analysis', async () => {
+  it('keeps analyzing an item that changes again until it holds still', async () => {
+    const gh = createGitHub();
+    const latest = makeIssue(5, '2024-04-07T00:00:00Z', { title: 'Reviewed' });
+    gh.getIssue
+      .mockResolvedValueOnce(makeIssue(5, '2024-04-05T00:00:00Z'))
+      .mockResolvedValueOnce(makeIssue(5, '2024-04-06T00:00:00Z'))
+      .mockResolvedValueOnce(latest);
+    processIssueMock
+      .mockResolvedValueOnce(changed(5))
+      .mockResolvedValueOnce(changed(5, { reanalyzed: true }))
+      .mockResolvedValueOnce(triaged(5, { reanalyzed: true }));
+    const stats = createStats();
+
+    await run({ ...baseConfig, issueNumbers: [5, 6] }, { gh, stats });
+
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 5, 6]);
+    expect(processIssueMock.mock.calls[2]![1]).toMatchObject({ issue: latest, reanalysis: true });
+    expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'triaged', reanalyzed: true });
+    expect(summaryOf(stats).funnel).toMatchObject({ processed: 2, triaged: 2, deferred: 0 });
+    expect(core.warning).not.toHaveBeenCalled();
+  });
+
+  it('defers an item that changed during each of its three re-analyses, without a fifth analysis', async () => {
+    const detail = "It changed again while it was being re-analyzed, so the plan wasn't applied.";
+    processIssueMock
+      .mockResolvedValueOnce(changed(5))
+      .mockResolvedValueOnce(changed(5, { reanalyzed: true, detail }))
+      .mockResolvedValueOnce(changed(5, { reanalyzed: true, detail }))
+      .mockResolvedValueOnce(changed(5, { reanalyzed: true, detail }));
+    const stats = createStats();
+
+    await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
+
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 5, 5, 6]);
+    expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'deferred', reanalyzed: true });
+    expect(warnings()).toEqual([`#5 deferred: ${detail}`]);
+    expect(core.setFailed).not.toHaveBeenCalled();
+  });
+
+  it('stops re-analyzing a changing item when max-runs is reached', async () => {
     const detail = "It changed again while it was being re-analyzed, so the plan wasn't applied.";
     processIssueMock
       .mockResolvedValueOnce(changed(5))
       .mockResolvedValueOnce(changed(5, { reanalyzed: true, detail }));
     const stats = createStats();
 
-    await run({ ...baseConfig, issueNumbers: [5, 6] }, { stats });
+    await run({ ...baseConfig, issueNumbers: [5, 6], maxRuns: 2 }, { stats });
 
-    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5, 6]);
+    expect(processIssueMock.mock.calls.map(([, options]) => options.issue.number)).toEqual([5, 5]);
+    expect(logSpy).toHaveBeenCalledWith("⏳ #5 isn't analyzed again, because the run reached max-runs (2)");
     expect(summaryOf(stats).items[0]).toMatchObject({ number: 5, outcome: 'deferred', reanalyzed: true });
     expect(warnings()).toEqual([`#5 deferred: ${detail}`]);
-    expect(core.setFailed).not.toHaveBeenCalled();
   });
 
   it('counts both analyses of a re-analyzed item against max-runs', async () => {

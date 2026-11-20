@@ -29,6 +29,10 @@ export interface ListTargetsDeps {
 // After this many items in a row fail, the cause is most likely an outage, so the run stops.
 const MAX_CONSECUTIVE_FAILURES = 3;
 
+// An item that keeps changing during analysis is analyzed at most this many more times.
+// A new pull request often gets a bot's review within a minute, which can land during two analyses in a row.
+const MAX_REANALYSES = 3;
+
 // A failure fails the job at once, and the job summary repeats it.
 function fail(report: RunReport, message: string): void {
   report.failures.push(message);
@@ -121,18 +125,18 @@ async function triageTargets(deps: AutoTriageDeps, report: RunReport, policy: st
     try {
       issue = await gh.getIssue(issueNumber);
       let record = await processIssue(itemDeps, { ...itemOptions, issue });
-      // An item that changed during analysis gets one more analysis with its latest state, if max-runs allows it.
-      // It runs from here so that the first analysis's log group is closed, because log groups don't nest.
-      if (record.changedDuringAnalysis) {
+      // An item that changed during analysis is analyzed again with its latest state until it holds still, up to MAX_REANALYSES times and within max-runs.
+      // Each one runs from here so that the previous analysis's log group is closed, because log groups don't nest.
+      for (let reanalyses = 0; record.changedDuringAnalysis && reanalyses < MAX_REANALYSES; reanalyses++) {
         if (runsPerformed >= cfg.maxRuns) {
           console.log(`⏳ #${issueNumber} isn't analyzed again, because the run reached max-runs (${cfg.maxRuns})`);
-        } else {
-          console.log(`🔁 Analyzing #${issueNumber} again, because it changed while it was being analyzed`);
-          reanalyzed = true;
-          runsPerformed++;
-          issue = await gh.getIssue(issueNumber);
-          record = await processIssue(itemDeps, { ...itemOptions, issue, reanalysis: true });
+          break;
         }
+        console.log(`🔁 Analyzing #${issueNumber} again, because it changed while it was being analyzed`);
+        reanalyzed = true;
+        runsPerformed++;
+        issue = await gh.getIssue(issueNumber);
+        record = await processIssue(itemDeps, { ...itemOptions, issue, reanalysis: true });
       }
       stats.recordItem(record);
       consecutiveFailures = 0;
