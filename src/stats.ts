@@ -36,7 +36,7 @@ export interface ItemRecord {
   type?: string | undefined;
   title?: string | undefined;
   outcome: ItemOutcome;
-  // True when the item changed during its first analysis and was analyzed again, so the record describes the second analysis.
+  // True when the item changed during its first analysis and was analyzed again, so the record describes its last analysis.
   reanalyzed?: boolean | undefined;
   // True when the plan was deferred because the item changed during analysis, rather than because it couldn't be rechecked.
   changedDuringAnalysis?: boolean | undefined;
