@@ -36,7 +36,7 @@ export interface ItemRecord {
   type?: string | undefined;
   title?: string | undefined;
   outcome: ItemOutcome;
-  // True when the item changed during its first analysis and was analyzed again, so the record describes the second analysis.
+  // True when the item changed during its first analysis and was analyzed again, so the record describes its last analysis.
   reanalyzed?: boolean | undefined;
   // True when the plan was deferred because the item changed during analysis, rather than because it couldn't be rechecked.
   changedDuringAnalysis?: boolean | undefined;
@@ -87,7 +87,7 @@ function formatTokens(count: number): string {
   return `${(count / 1000000).toFixed(1)}M`;
 }
 
-// Some providers, such as Claude's compatibility API, report no reasoning tokens, so the log says so rather than leaving reasoning out.
+// Some providers report no reasoning tokens, as Claude does on some replies, so the log says so rather than leaving reasoning out.
 function describeTokens(tokens: { inputTokens: number; outputTokens: number; reasoningTokens: number }): string {
   const reasoning = tokens.reasoningTokens > 0 ? `${formatTokens(tokens.reasoningTokens)} reasoning` : 'reasoning not reported';
   return `${formatTokens(tokens.inputTokens)} input • ${formatTokens(tokens.outputTokens)} output • ${reasoning}`;
