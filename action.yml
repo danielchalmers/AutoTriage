@@ -1,5 +1,5 @@
 name: "AutoTriage"
-description: "GitHub Action for AI-assisted issue and pull request triage using a repository-defined prompt."
+description: "Label, answer, retitle and close issues and pull requests with an AI model, following a plain-text policy in your repo."
 author: "Daniel Chalmers"
 branding:
   color: "blue"

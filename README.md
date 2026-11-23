@@ -106,3 +106,7 @@ To do more, such as asking for details, retitling or closing stale items, write 
 Every run writes a job summary with the model, the policy, the items it acted on (or would have, in a dry run) and anything that failed or was left out. The `artifacts/` directory holds the prompts, each plan and a machine-readable `run-summary.json`. Upload it with `actions/upload-artifact` to keep it.
 
 A run fails only when something needs fixing: invalid configuration, a rejected key or unknown model, missing permissions, or a bug in AutoTriage. Provider outages, rate limits and bad replies only show as warnings.
+
+## Related
+
+[Nuntia](https://github.com/danielchalmers/Nuntia) writes release notes and migration guides into each GitHub release. It takes the same model keys as AutoTriage, so one set of secrets works for both.
